@@ -1,0 +1,12 @@
+# Chiavi API: mai sotto controllo di versione.
+.env
+
+# Dati: gli input sono export di oTree con ID Prolific e testi di chat,
+# gli output ne derivano. Restano in locale.
+input/*
+!input/.gitkeep
+output/*
+!output/.gitkeep
+
+__pycache__/
+*.py[cod]
