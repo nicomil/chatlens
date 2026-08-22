@@ -15,7 +15,49 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from web import views  # noqa: E402
 from web.runner import Runner, build_command  # noqa: E402
+
+
+class FormWiringTests(unittest.TestCase):
+    """Il run deve partire solo dall'invio del modulo."""
+
+    def test_form_tag_has_exactly_one_destination(self):
+        """Due hx-post sullo stesso elemento: ogni cambiamento lanciava un run.
+
+        E' successo davvero: la richiesta della stima era stata messa sul form,
+        che gia' aveva quella del run, e spuntare una casella faceva partire
+        l'esecuzione.
+        """
+        import re
+
+        form = views.form_panel()
+        opening = re.search(r'<form\b[^>]*>', form).group(0)
+        self.assertEqual(opening.count('hx-post'), 1, msg=opening)
+        self.assertIn('/run', opening)
+
+    def test_estimate_lives_on_its_own_element(self):
+        import re
+
+        panel = views.estimate_panel({})
+        opening = re.search(r'<div\b[^>]*>', panel).group(0)
+        self.assertIn('/estimate', opening)
+        # Si aggiorna ascoltando il modulo, senza esserne parte attiva.
+        self.assertIn('hx-trigger="change from:#launch"', opening)
+        self.assertIn('hx-include="#launch"', opening)
+
+    def test_no_element_triggers_run_on_change(self):
+        """Nessun elemento deve chiamare /run se non per invio esplicito."""
+        import re
+
+        form = views.form_panel()
+        for tag in re.findall(r'<[a-z]+\b[^>]*hx-post="/run"[^>]*>', form):
+            self.assertNotIn('hx-trigger', tag, msg=tag)
+
+    def test_presets_are_choices_not_submitters(self):
+        form = views.form_panel()
+        self.assertIn('type="radio" name="preset"', form)
+        self.assertNotIn('type="submit" class="preset"', form)
 
 
 class CommandBuildingTests(unittest.TestCase):

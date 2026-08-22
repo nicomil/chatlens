@@ -79,13 +79,21 @@ PRESETS = [
 ]
 
 
-def presets_panel() -> str:
+def presets_panel(active='base') -> str:
+    """La scelta principale: cosa si vuole ottenere.
+
+    Sono caselle di scelta vere, non pulsanti: una alla volta, raggiungibili da
+    tastiera, e con uno stato visibile. Le opzioni di dettaglio le riflettono e
+    restano modificabili per chi deve scostarsene.
+    """
     cards = ''.join(
-        f'<button type="button" class="preset" data-preset="{_e(p["id"])}">'
+        f'<label class="preset{" on" if p["id"] == active else ""}">'
+        f'<input type="radio" name="preset" value="{_e(p["id"])}"'
+        f'{" checked" if p["id"] == active else ""}>'
         f'<span class="nome">{_e(p["nome"])}</span>'
-        f'<span class="desc">{_e(p["descrizione"])}</span>'
         f'<span class="costo {"free" if p["costo"] == "gratis" else "paid"}">'
-        f'{_e(p["costo"])}</span></button>'
+        f'{_e(p["costo"])}</span>'
+        f'<span class="desc">{_e(p["descrizione"])}</span></label>'
         for p in PRESETS
     )
     return f'<div class="presets">{cards}</div>'
@@ -108,9 +116,11 @@ def estimate_panel(form=None) -> str:
     """Stima delle chiamate che la configurazione corrente comporta."""
     form = form or {}
     counts = _unit_counts()
+    live = ('hx-post="/estimate" hx-trigger="change from:#launch" '
+            'hx-include="#launch" hx-target="this" hx-swap="outerHTML"')
     if not counts:
-        return ('<div id="estimate" class="estimate muted">La stima compare '
-                'dopo il primo run.</div>')
+        return (f'<div id="estimate" class="estimate muted" {live}>La stima '
+                f'compare dopo il primo run.</div>')
 
     calls = 0
     parts = []
@@ -132,13 +142,13 @@ def estimate_panel(form=None) -> str:
             parts.append(f'topic ~{n}')
 
     if not calls:
-        return ('<div id="estimate" class="estimate free">Nessuna chiamata a '
-                'pagamento · pochi secondi</div>')
+        return (f'<div id="estimate" class="estimate free" {live}>Nessuna '
+                f'chiamata a pagamento · pochi secondi</div>')
 
     # Circa un secondo e mezzo per chiamata, misurato sui run veri.
     minuti = max(1, round(calls * 1.5 / 60))
     dettaglio = ' + '.join(parts)
-    return (f'<div id="estimate" class="estimate paid">'
+    return (f'<div id="estimate" class="estimate paid" {live}>'
             f'<strong>~{calls} chiamate</strong> ({dettaglio}) · '
             f'circa {minuti} min</div>')
 
@@ -208,73 +218,65 @@ def _level_options(selected: str) -> str:
 
 def form_panel() -> str:
     disabled = ' disabled' if runner.running else ''
-    # Ogni cambiamento nel modulo aggiorna la stima: e' cio' che rende
-    # concreta una scelta altrimenti astratta.
-    live = ('hx-post="/estimate" hx-trigger="change" '
-            'hx-target="#estimate" hx-swap="outerHTML"')
 
     return f'''
-{presets_panel()}
-<form id="launch" hx-post="/run" hx-target="#logwrap" hx-swap="innerHTML" {live}>
+<form id="launch" hx-post="/run" hx-target="#logwrap" hx-swap="innerHTML">
   <fieldset{disabled}>
-    <label class="field">
-      <span>Cosa eseguire</span>
-      <select name="command">
-        <option value="all">Tutto — unisce i dati e li analizza</option>
-        <option value="merge">Solo unione — prepara i dati, non li analizza</option>
-        <option value="analyze">Solo analisi — riusa i dati gia uniti</option>
-      </select>
-    </label>
+    {presets_panel()}
+    {estimate_panel()}
+    <button type="submit" class="go">{'In corso…' if runner.running else 'Lancia'}</button>
 
-    <details class="opt" id="opt-llm">
-      <summary>
-        <label class="inline">
+    <details class="advanced">
+      <summary>Regola i dettagli</summary>
+
+      <label class="field">
+        <span>Cosa eseguire</span>
+        <select name="command">
+          <option value="all">Tutto — unisce i dati e li analizza</option>
+          <option value="merge">Solo unione — prepara i dati, non li analizza</option>
+          <option value="analyze">Solo analisi — riusa i dati gia uniti</option>
+        </select>
+      </label>
+
+      <div class="block">
+        <label class="inline head">
           <input type="checkbox" name="llm" value="1"> Rubrica di validazione
-        </label>{_help(OPTION_HELP['llm'])}<span class="tag">a pagamento</span>
-      </summary>
-      <p class="why">Fa valutare le conversazioni a un modello, per verificare
-        che gli indici calcolati dai dizionari misurino davvero quello che
-        dicono.</p>
-      <div class="row">
-        <label class="field"><span>Modello</span>
-          <select name="llm_model">{_options(MODELS_RUBRICA)}</select></label>
-        <label class="field"><span>Repliche {_help(OPTION_HELP['replicates'])}</span>
-          <select name="llm_replicates">
-            <option>1</option><option>2</option><option>3</option>
-          </select></label>
+        </label>
+        <p class="why">Fa valutare le conversazioni a un modello, per verificare
+          che gli indici calcolati dai dizionari misurino davvero quello che
+          dicono.</p>
+        <div class="row">
+          <label class="field"><span>Modello</span>
+            <select name="llm_model">{_options(MODELS_RUBRICA)}</select></label>
+          <label class="field"><span>Repliche {_help(OPTION_HELP['replicates'])}</span>
+            <select name="llm_replicates">
+              <option>1</option><option>2</option><option>3</option>
+            </select></label>
+        </div>
+        <div class="levels">
+          <span class="lbl">Su quali unità valutare</span>
+          {''.join(_level_checkbox(lv, lv == 'group') for lv in LEVELS)}
+        </div>
       </div>
-      <div class="levels">
-        <span class="lbl">Su quali unità valutare</span>
-        {''.join(_level_checkbox(lv, lv == 'group') for lv in LEVELS)}
-      </div>
-    </details>
 
-    <details class="opt" id="opt-topics">
-      <summary>
-        <label class="inline">
+      <div class="block">
+        <label class="inline head">
           <input type="checkbox" name="topics" value="1"> Temi delle conversazioni
-        </label>{_help(OPTION_HELP['topics'])}<span class="tag">a pagamento</span>
-      </summary>
-      <p class="why">TopicGPT prima <b>scopre</b> quali temi esistono leggendo i
-        testi più lunghi, poi li <b>attribuisce</b> alle unità più fini.</p>
-      <div class="row">
-        <label class="field"><span>Modello</span>
-          <select name="topicgpt_model">{_options(MODELS_TOPIC, 'gpt-4o')}</select></label>
-      </div>
-      <div class="row">
-        <label class="field grow">
+        </label>
+        <p class="why">TopicGPT prima <b>scopre</b> quali temi esistono leggendo
+          i testi più lunghi, poi li <b>attribuisce</b> alle unità più fini.</p>
+        <div class="row">
+          <label class="field"><span>Modello</span>
+            <select name="topicgpt_model">{_options(MODELS_TOPIC, 'gpt-4o')}</select></label>
+        </div>
+        <label class="field">
           <span>Scopre i temi leggendo {_help(OPTION_HELP['induzione'])}</span>
           <select name="topicgpt_unit">{_level_options('group')}</select></label>
-      </div>
-      <div class="row">
-        <label class="field grow">
+        <label class="field">
           <span>Li attribuisce a {_help(OPTION_HELP['assegnazione'])}</span>
           <select name="topicgpt_assign_unit">{_level_options('dyad_directed')}</select></label>
       </div>
     </details>
-
-    {estimate_panel()}
-    <button type="submit" class="go">{'In corso…' if runner.running else 'Lancia'}</button>
   </fieldset>
 </form>'''
 

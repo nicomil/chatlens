@@ -15,9 +15,8 @@
   });
 })();
 
-// I preset compilano il modulo al posto dell'utente: quasi sempre si vuole uno
-// scenario, non una combinazione di opzioni. Le opzioni restano lì sotto per
-// chi ha bisogno di scostarsene.
+// I preset sono la scelta principale: impostano le opzioni di dettaglio, che
+// restano visibili e modificabili per chi deve scostarsene.
 (function () {
   var PRESETS = {
     base:        { llm: false, topics: false },
@@ -25,27 +24,44 @@
     completa:    { llm: true,  topics: true }
   };
 
+  var form = document.getElementById('launch');
+  if (!form) { return; }
+
   function apply(name) {
     var preset = PRESETS[name];
     if (!preset) { return; }
-    ['llm', 'topics'].forEach(function (field) {
-      var box = document.querySelector('input[name="' + field + '"]');
-      if (!box) { return; }
-      box.checked = preset[field];
-      // Aprire la sezione scelta e chiudere l'altra rende visibile cosa
-      // comporta il preset, invece di limitarsi a spuntare una casella.
-      var section = box.closest('details');
-      if (section) { section.open = preset[field]; }
+    Object.keys(preset).forEach(function (field) {
+      var box = form.querySelector('input[name="' + field + '"]');
+      if (box) { box.checked = preset[field]; }
     });
-    document.querySelectorAll('.preset').forEach(function (b) {
-      b.classList.toggle('on', b.dataset.preset === name);
+    form.querySelectorAll('.preset').forEach(function (card) {
+      card.classList.toggle('on', card.querySelector('input').checked);
     });
-    // La stima si aggiorna da sola: htmx ascolta i cambiamenti del modulo.
-    htmx.trigger('#launch', 'change');
+    // Un solo evento, sul form: la stima lo ascolta. Il run parte soltanto
+    // dall'invio del modulo, mai da un cambiamento.
+    form.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  document.body.addEventListener('click', function (event) {
-    var button = event.target.closest('.preset');
-    if (button) { apply(button.dataset.preset); }
+  form.addEventListener('change', function (event) {
+    if (event.target.name === 'preset') {
+      apply(event.target.value);
+      return;
+    }
+    // Toccando le caselle di dettaglio la scelta non corrisponde piu' a nessun
+    // preset: si toglie l'evidenziazione invece di lasciarla mentire.
+    if (event.target.name === 'llm' || event.target.name === 'topics') {
+      var stato = {
+        llm: form.querySelector('input[name="llm"]').checked,
+        topics: form.querySelector('input[name="topics"]').checked
+      };
+      var match = Object.keys(PRESETS).find(function (k) {
+        return PRESETS[k].llm === stato.llm && PRESETS[k].topics === stato.topics;
+      });
+      form.querySelectorAll('.preset').forEach(function (card) {
+        var input = card.querySelector('input');
+        input.checked = input.value === match;
+        card.classList.toggle('on', input.checked);
+      });
+    }
   });
 })();
