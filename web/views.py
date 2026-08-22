@@ -13,6 +13,7 @@ iniziale usano lo stesso codice e non possono divergere.
 from __future__ import annotations
 
 import html
+import re
 from pathlib import Path
 
 from src import archive, config
@@ -22,6 +23,42 @@ MODELS_RUBRICA = ['', 'gpt-4o', 'gpt-4.1', 'gpt-5.6-terra', 'gpt-5.6-luna',
                   'gpt-5.6-sol', 'claude-opus-5', 'llama3']
 MODELS_TOPIC = ['gpt-4o', 'gpt-4.1']
 LEVELS = ['group', 'dyad_directed', 'dyad', 'sender_group']
+
+# Cosa significa ciascuna unità di analisi. Sono i termini che compaiono ovunque
+# nei dati, e senza una spiegazione a portata di mano non si scelgono a ragion
+# veduta.
+LEVEL_HELP = {
+    'group': 'La conversazione dell\'intera triade: tutti i messaggi scambiati '
+             'fra i tre partecipanti. È l\'unità con più testo.',
+    'dyad_directed': 'I messaggi che una persona manda a un\'altra, in una sola '
+                     'direzione. È l\'unità della persuasione: conta chi parla.',
+    'dyad': 'La conversazione fra due persone, in entrambe le direzioni.',
+    'sender_group': 'Tutto ciò che una persona ha scritto nel gruppo, a '
+                    'chiunque fosse rivolto.',
+}
+
+OPTION_HELP = {
+    'llm': 'Fa valutare le stesse conversazioni a un modello linguistico con una '
+           'rubrica esplicita, per validare le misure calcolate dai dizionari. '
+           'Consuma chiamate a pagamento.',
+    'topics': 'Estrae i temi delle conversazioni con TopicGPT: prima li induce '
+              'dai testi, poi li assegna alle unità più fini. Consuma chiamate '
+              'a pagamento.',
+    'replicates': 'Quante volte valutare ogni testo. Con più di una si ottiene '
+                  'la dispersione fra valutazioni, cioè una stima dell\'errore '
+                  'di misura. Il costo cresce in proporzione.',
+    'induzione': 'Su quale unità scoprire quali temi esistono. Serve testo '
+                 'abbastanza lungo: su testi brevi il modello non riconosce '
+                 'nulla.',
+    'assegnazione': 'A quale unità attribuire i temi già scoperti. Può essere '
+                    'più fine dell\'induzione: riconoscere è più facile che '
+                    'scoprire.',
+}
+
+
+def _help(text: str) -> str:
+    """Punto interrogativo con la spiegazione al passaggio del mouse."""
+    return f'<span class="help" data-tip="{_e(text)}">?</span>' 
 
 
 def _e(text) -> str:
@@ -50,7 +87,7 @@ def status_panel() -> str:
 
     body = ''.join(
         f'<tr><td><span class="dot {cls}"></span>{_e(label)}</td>'
-        f'<td class="right muted">{_e(value)}</td></tr>'
+        f'<td class="num muted">{_e(value)}</td></tr>'
         for cls, label, value in rows
     )
     return f'<table class="mini"><tbody>{body}</tbody></table>'
@@ -66,7 +103,7 @@ def _options(values, selected='') -> str:
 def form_panel() -> str:
     disabled = ' disabled' if runner.running else ''
     return f'''
-<form id="launch" hx-post="/run" hx-target="#log" hx-swap="innerHTML">
+<form id="launch" hx-post="/run" hx-target="#logwrap" hx-swap="innerHTML">
   <fieldset{disabled}>
     <div class="row">
       <label class="grow">
@@ -82,11 +119,11 @@ def form_panel() -> str:
     <details class="opt">
       <summary><label class="inline">
         <input type="checkbox" name="llm" value="1"> Rubrica di validazione
-      </label><span class="tag">chiave</span></summary>
+      </label>{_help(OPTION_HELP['llm'])}<span class="tag">chiave</span></summary>
       <div class="row">
         <label><span>Modello</span>
           <select name="llm_model">{_options(MODELS_RUBRICA)}</select></label>
-        <label><span>Repliche</span>
+        <label><span>Repliche {_help(OPTION_HELP['replicates'])}</span>
           <select name="llm_replicates">
             <option>1</option><option>2</option><option>3</option>
           </select></label>
@@ -94,8 +131,9 @@ def form_panel() -> str:
       <div class="row">
         <label class="grow"><span>Livelli</span>
           <span class="checks">{''.join(
-            f'<label class="inline"><input type="checkbox" name="llm_level" '
-            f'value="{lv}"{" checked" if lv == "group" else ""}> {lv}</label>'
+            f'<label class="inline" data-tip="{_e(LEVEL_HELP[lv])}">'
+            f'<input type="checkbox" name="llm_level" value="{lv}"'
+            f'{" checked" if lv == "group" else ""}> {lv}</label>'
             for lv in LEVELS)}</span></label>
       </div>
     </details>
@@ -103,13 +141,13 @@ def form_panel() -> str:
     <details class="opt">
       <summary><label class="inline">
         <input type="checkbox" name="topics" value="1"> Topic con TopicGPT
-      </label><span class="tag">chiave</span></summary>
+      </label>{_help(OPTION_HELP['topics'])}<span class="tag">chiave</span></summary>
       <div class="row">
         <label><span>Modello</span>
           <select name="topicgpt_model">{_options(MODELS_TOPIC, 'gpt-4o')}</select></label>
-        <label><span>Induzione su</span>
+        <label><span>Induzione su {_help(OPTION_HELP['induzione'])}</span>
           <select name="topicgpt_unit">{_options(LEVELS, 'group')}</select></label>
-        <label><span>Assegna a</span>
+        <label><span>Assegna a {_help(OPTION_HELP['assegnazione'])}</span>
           <select name="topicgpt_assign_unit">{_options(LEVELS, 'dyad_directed')}</select></label>
       </div>
     </details>
@@ -119,36 +157,138 @@ def form_panel() -> str:
 </form>'''
 
 
-def log_panel() -> str:
+# Fasi di un run, nell'ordine in cui compaiono, con il testo che le annuncia
+# nel log. Serve a mostrare a che punto siamo senza dover leggere il log.
+PHASES = [
+    ('Unione', 'Input:'),
+    ('Misure', 'Misure testuali'),
+    ('Rubrica', 'Rubrica di validazione'),
+    ('Topic', 'TopicGPT'),
+    ('Rapporto', 'Riassunto leggibile'),
+]
+
+BAR_RE = re.compile(r'(\d+)%\|')
+KEYVALUE_RE = re.compile(r'^(\s*)([^:]{2,60}?)\s*:\s{1,}(.+)$')
+PHASE_RE = re.compile(r'^\s*\[(\d)/(\d)\]\s*(.+)$')
+
+
+def _phases(lines) -> str:
+    """Barra delle fasi: quelle gia' viste sono fatte, l'ultima e' in corso."""
+    text = '\n'.join(lines)
+    seen = [name for name, marker in PHASES if marker in text]
+    if not seen:
+        return ''
+    current = seen[-1]
+    chips = []
+    for name, _marker in PHASES:
+        if name not in seen:
+            state = 'todo'
+        elif name == current:
+            state = 'now'
+        else:
+            state = 'done'
+        chips.append(f'<span class="phase {state}">{_e(name)}</span>')
+    return f'<div class="phases">{"".join(chips)}</div>'
+
+
+def _render_line(line: str) -> str:
+    """Una riga di log diventa un elemento con la sua forma.
+
+    Le righe hanno strutture ricorrenti — barre, coppie chiave/valore, percorsi,
+    avvisi — e renderle tutte come testo grezzo costringe a rileggerle ogni
+    volta per capire cosa siano.
+    """
+    stripped = line.strip()
+
+    bar = BAR_RE.search(stripped)
+    if bar and '|' in stripped:
+        pct = min(100, int(bar.group(1)))
+        tail = stripped.split('|')[-1].strip()
+        return (f'<div class="l bar"><div class="track">'
+                f'<div class="fill" style="width:{pct}%"></div></div>'
+                f'<span class="pct">{pct}%</span>'
+                f'<span class="tail">{_e(tail)}</span></div>')
+
+    phase = PHASE_RE.match(line)
+    if phase:
+        return (f'<div class="l step"><span class="n">{_e(phase.group(1))}/'
+                f'{_e(phase.group(2))}</span>{_e(phase.group(3))}</div>')
+
+    low = stripped.lower()
+    if low.startswith(('attenzione', 'errore', 'error')):
+        return f'<div class="l warn">{_e(stripped)}</div>'
+
+    if stripped.startswith('/'):
+        # I percorsi assoluti occupano tutta la riga e la parte utile e' in
+        # fondo: si mostra il nome del file, con il percorso intero a richiesta.
+        return (f'<div class="l path" title="{_e(stripped)}">'
+                f'<span class="file">{_e(Path(stripped).name)}</span></div>')
+
+    keyvalue = KEYVALUE_RE.match(line)
+    if keyvalue:
+        indent = ' indent' if keyvalue.group(1) else ''
+        return (f'<div class="l kv{indent}"><span class="k">'
+                f'{_e(keyvalue.group(2).strip())}</span>'
+                f'<span class="v">{_e(keyvalue.group(3).strip())}</span></div>')
+
+    return f'<div class="l">{_e(stripped)}</div>'
+
+
+def log_body() -> str:
+    """Contenuto del log. Vive dentro un contenitore che non viene sostituito."""
     state = runner.snapshot()
     lines = state['lines']
 
     if not lines and not state['running']:
-        return ('<div id="log" class="log empty">Nessun run in questa sessione. '
-                'Scegli le opzioni e premi Lancia.</div>')
+        return ('<div id="logbody" class="logbody empty">'
+                'Nessun run in questa sessione. Scegli le opzioni e premi '
+                'Lancia.</div>')
 
-    # Finché il run è in corso il pannello si richiede da solo ogni secondo;
-    # quando finisce smette, e chiede l'aggiornamento del resto della pagina.
     if state['running']:
+        # Il contenuto si richiede da solo: il contenitore che scorre resta al
+        # suo posto, quindi la posizione dello scroll non viene persa.
         attrs = ('hx-get="/log" hx-trigger="load delay:1s" '
-                 'hx-target="#log" hx-swap="outerHTML"')
-        badge = '<span class="badge run">in corso</span>'
+                 'hx-target="#logbody" hx-swap="outerHTML"')
     else:
         attrs = ('hx-get="/done" hx-trigger="load" hx-target="#after" '
                  'hx-swap="innerHTML"')
+
+    rendered = ''.join(_render_line(line) for line in lines)
+    return (f'<div id="logbody" class="logbody" {attrs}>'
+            f'{_phases(lines)}{rendered}</div>')
+
+
+def log_head() -> str:
+    state = runner.snapshot()
+    if state['running']:
+        badge = '<span class="badge run">in corso</span>'
+    elif state['command']:
         code = state['returncode']
         ok = code == 0
-        cls = 'ok' if ok else 'ko'
-        label = 'completato' if ok else f'uscita {code}'
-        badge = f'<span class="badge {cls}">{label}</span>' 
+        badge = (f'<span class="badge {"ok" if ok else "ko"}">'
+                 f'{"completato" if ok else f"uscita {code}"}</span>')
+    else:
+        return '<div id="loghead" class="loghead"></div>'
 
     finished = state['finished']
     when = _e(state['started'] or '') + (f' → {_e(finished)}' if finished else '')
-    header = (f'<div class="loghead">{badge}'
-              f'<code>{_e(state["command"])}</code>'
-              f'<span class="muted">{when}</span></div>')
-    body = '\n'.join(_e(line) for line in lines)
-    return f'<div id="log" class="log" {attrs}>{header}<pre>{body}</pre></div>'
+    command = state['command']
+    # Il comando intero e' lungo e ripete opzioni gia' scelte nel modulo: si
+    # mostra compatto, per intero al passaggio del mouse.
+    short = command.replace('python run.py ', '').split(' --topicgpt-repo')[0]
+    return (f'<div id="loghead" class="loghead">{badge}'
+            f'<code title="{_e(command)}">{_e(short)}</code>'
+            f'<span class="muted when">{when}</span></div>')
+
+
+def log_panel() -> str:
+    """Contenuto di #logwrap: intestazione e corpo.
+
+    Il contenitore che scorre non fa parte di quello che viene sostituito:
+    e' l'unico modo perche' la posizione dello scroll sopravviva agli
+    aggiornamenti automatici.
+    """
+    return log_head() + log_body()
 
 
 def runs_panel() -> str:
@@ -187,7 +327,8 @@ def report_panel() -> str:
 
 def after_run() -> str:
     """Cosa si aggiorna quando un run finisce."""
-    return (f'<div hx-swap-oob="innerHTML:#status">{status_panel()}</div>'
+    return (f'<div hx-swap-oob="innerHTML:#loghead">{log_head()}</div>'
+            f'<div hx-swap-oob="innerHTML:#status">{status_panel()}</div>'
             f'<div hx-swap-oob="innerHTML:#formbox">{form_panel()}</div>'
             f'<div hx-swap-oob="innerHTML:#runs">{runs_panel()}</div>'
             f'<div hx-swap-oob="innerHTML:#report">{report_panel()}</div>')
@@ -216,7 +357,7 @@ def page() -> str:
 </header>
 
 <main>
-  <section class="col left">
+  <section class="col col-side">
     <h2>Stato</h2>
     <div id="status">{status_panel()}</div>
     <h2>Lancia un run</h2>
@@ -225,13 +366,14 @@ def page() -> str:
     <div id="runs">{runs_panel()}</div>
   </section>
 
-  <section class="col right">
+  <section class="col col-main">
     <h2>Esecuzione</h2>
-    {log_panel()}
+    <div id="logwrap" class="log">{log_panel()}</div>
     <h2>Rapporto</h2>
     <div id="report">{report_panel()}</div>
   </section>
 </main>
 
 <div id="after" hidden></div>
+<script src="/static/app.js"></script>
 </body></html>'''

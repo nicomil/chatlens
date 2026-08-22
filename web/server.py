@@ -80,7 +80,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == '/':
             self._html(views.page())
         elif route == '/log':
-            self._html(views.log_panel())
+            self._html(views.log_body())
         elif route == '/done':
             self._html(views.after_run())
         elif route == '/report.html':
@@ -106,8 +106,8 @@ class Handler(BaseHTTPRequestHandler):
         form = parse_qs(self.rfile.read(length).decode('utf-8'))
 
         if not runner.start(build_command(form)):
-            self._html('<div id="log" class="log">'
-                       'Un run e\' gia\' in corso: attendi che finisca.</div>')
+            self._html('<div class="logbody empty">Un run e\' gia\' in corso: '
+                       'attendi che finisca.</div>')
             return
         self._html(views.log_panel())
 
