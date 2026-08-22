@@ -651,6 +651,214 @@ class RubricCacheTests(unittest.TestCase):
             self._teardown()
 
 
+def analysis_args(outdir, merged_dir, stem, **overrides):
+    """Spazio dei nomi equivalente a quello costruito da run.py."""
+    from types import SimpleNamespace
+
+    base = dict(
+        merged_dir=merged_dir, outdir=outdir, stem=stem, verbose=False,
+        llm=False, llm_provider=None, llm_models=None, llm_replicates=1,
+        llm_levels=['group'], llm_batch=False, llm_dry_run=False,
+        topics=False, topicgpt_repo='/percorso/inesistente',
+        topicgpt_api='openai', topicgpt_model='gpt-4o',
+        topicgpt_unit='dyad_directed', topicgpt_no_refine=False,
+        topicgpt_dry_run=False,
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+class PreflightTests(unittest.TestCase):
+    """I prerequisiti si verificano prima di spendere, non dopo."""
+
+    def setUp(self):
+        import os
+        from src import llm_rubric, pipeline
+        self.pipeline = pipeline
+        self.llm = llm_rubric
+        self.os = os
+        self._saved = {
+            k: os.environ.pop(k, None)
+            for k in ('ANTHROPIC_API_KEY', 'OPENAI_API_KEY')
+        }
+        self._real_probe = llm_rubric._ollama_is_running
+        llm_rubric._ollama_is_running = lambda: False
+
+    def tearDown(self):
+        self.llm._ollama_is_running = self._real_probe
+        for key, value in self._saved.items():
+            if value is None:
+                self.os.environ.pop(key, None)
+            else:
+                self.os.environ[key] = value
+
+    def _args(self, **kw):
+        return analysis_args(Path('/tmp'), Path('/tmp'), 't', **kw)
+
+    def test_passes_when_nothing_extra_is_requested(self):
+        self.pipeline.preflight(self._args())  # non deve sollevare
+
+    def test_missing_topicgpt_stops_before_any_call(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self.pipeline.preflight(self._args(topics=True))
+        message = str(ctx.exception)
+        self.assertIn('Nessuna chiamata', message)
+        self.assertIn('topicgpt_python', message)
+
+    def test_all_problems_are_reported_together(self):
+        """Meglio una lista sola che scoprirne uno per volta."""
+        with self.assertRaises(SystemExit) as ctx:
+            self.pipeline.preflight(self._args(llm=True, topics=True))
+        message = str(ctx.exception)
+        self.assertIn('topicgpt_python', message)
+        self.assertIn('OPENAI_API_KEY', message)
+
+    def test_dry_run_needs_no_prerequisites(self):
+        self.pipeline.preflight(
+            self._args(llm=True, topics=True,
+                       llm_dry_run=True, topicgpt_dry_run=True)
+        )
+
+    def test_batch_with_the_wrong_provider_is_caught_upfront(self):
+        self.os.environ['OPENAI_API_KEY'] = 'sk-finta'
+        with self.assertRaises(SystemExit) as ctx:
+            self.pipeline.preflight(self._args(llm=True, llm_batch=True))
+        self.assertIn('--llm-batch', str(ctx.exception))
+
+
+class PartialResultsTests(unittest.TestCase):
+    """Se uno stadio a valle fallisce, quello gia' pagato va comunque salvato."""
+
+    STEM = 't'
+
+    def setUp(self):
+        import os
+        # La rubrica e' simulata, ma il controllo preliminare pretende comunque
+        # un fornitore: gliene si dichiara uno, altrimenti si fermerebbe prima
+        # di arrivare allo scenario che il test vuole esercitare.
+        self.os = os
+        self._saved = os.environ.get('OPENAI_API_KEY')
+        os.environ['OPENAI_API_KEY'] = 'sk-finta'
+
+    def tearDown(self):
+        if self._saved is None:
+            self.os.environ.pop('OPENAI_API_KEY', None)
+        else:
+            self.os.environ['OPENAI_API_KEY'] = self._saved
+
+    def _write_merged(self, merged_dir):
+        import csv as _csv
+
+        merged_dir.mkdir(parents=True, exist_ok=True)
+        messages = [dict(
+            group_uid='g1', sender_id_in_group='1', receiver_id_in_group='2',
+            dyad_key='1_2', sender_color='Yellow', receiver_color='Orange',
+            treatment='private', timestamp='100.0',
+            body='I will support you if you support me',
+        )]
+        by_partner = [dict(group_uid='g1', focal_id_in_group='1',
+                           partner_id_in_group='2', dyad_key='1_2')]
+        aggregated = [dict(group_uid='g1', focal_id_in_group='1')]
+
+        for name, rows in (
+            ('messages_long', messages),
+            ('chat_by_partner', by_partner),
+            ('chat_aggregated', aggregated),
+        ):
+            path = merged_dir / f'{self.STEM}_{name}.csv'
+            with path.open('w', encoding='utf-8', newline='') as handle:
+                writer = _csv.DictWriter(handle, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+
+    def test_datasets_are_written_even_if_topics_fails(self):
+        import contextlib
+        import csv as _csv
+        import io
+        import tempfile
+        from src import pipeline
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir) / 'output'
+            merged_dir = outdir / 'merged'
+            self._write_merged(merged_dir)
+
+            real_topics = pipeline.run_topics_stage
+            real_llm = pipeline.run_llm_stage
+
+            def failing_topics(messages, args):
+                raise RuntimeError('TopicGPT esploso a meta strada')
+
+            def fake_llm(features, transcripts, args):
+                # Simula valutazioni gia' pagate.
+                for row in features['group']:
+                    row['llm_analytic'] = 77.0
+
+            pipeline.run_topics_stage = failing_topics
+            pipeline.run_llm_stage = fake_llm
+            try:
+                args = analysis_args(outdir, merged_dir, self.STEM,
+                                     llm=True, topics=True,
+                                     topicgpt_dry_run=True)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    summary = pipeline.run(args)
+            finally:
+                pipeline.run_topics_stage = real_topics
+                pipeline.run_llm_stage = real_llm
+
+            # Il fallimento e' registrato, non nascosto.
+            self.assertIsNotNone(summary['failed_stage'])
+            self.assertEqual(summary['failed_stage'][0], 'TopicGPT')
+
+            # I dataset esistono e contengono le valutazioni gia' pagate.
+            for path in summary['datasets']:
+                self.assertTrue(path.is_file(), msg=str(path))
+            with summary['datasets'][1].open(encoding='utf-8-sig') as handle:
+                rows = list(_csv.DictReader(handle))
+            self.assertEqual(float(rows[0]['nlp_group_llm_analytic']), 77.0)
+
+            # E il programma deve segnalare l'esito parziale con codice non zero.
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(pipeline.print_summary(summary), 1)
+
+    def test_run_refuses_to_start_when_prerequisites_are_missing(self):
+        """Il controllo dev'essere invocato da run(), non solo esistere."""
+        import contextlib
+        import io
+        import tempfile
+        from src import pipeline
+
+        self.os.environ.pop('OPENAI_API_KEY', None)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir) / 'output'
+            merged_dir = outdir / 'merged'
+            self._write_merged(merged_dir)
+            args = analysis_args(outdir, merged_dir, self.STEM, topics=True)
+
+            with self.assertRaises(SystemExit) as ctx:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    pipeline.run(args)
+            self.assertIn('Nessuna chiamata', str(ctx.exception))
+            # E non deve aver prodotto nulla.
+            self.assertFalse((outdir / 'datasets').exists())
+
+    def test_clean_run_returns_zero(self):
+        import contextlib
+        import io
+        import tempfile
+        from src import pipeline
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir) / 'output'
+            merged_dir = outdir / 'merged'
+            self._write_merged(merged_dir)
+            args = analysis_args(outdir, merged_dir, self.STEM)
+            with contextlib.redirect_stdout(io.StringIO()):
+                summary = pipeline.run(args)
+                self.assertEqual(pipeline.print_summary(summary), 0)
+            self.assertIsNone(summary['failed_stage'])
+
+
 class ConfigTests(unittest.TestCase):
     """Chiavi API e percorsi: devono essere prevedibili e non sorprendere."""
 
