@@ -98,6 +98,54 @@ class CommandBuildingTests(unittest.TestCase):
         self.assertIn('--topicgpt-model', argv)
 
 
+class ArchiveViewTests(unittest.TestCase):
+    """L'archivio e' un indice: da una riga si arriva a tutto quel run."""
+
+    def _a_run(self):
+        from src import archive, config
+
+        runs = archive.list_runs(config.OUTPUT_DIR)
+        if not runs:
+            self.skipTest('nessun run archiviato in questo ambiente')
+        return runs[0]
+
+    def test_every_row_opens_its_own_run(self):
+        import re
+
+        from src import archive, config
+
+        panel = views.runs_panel()
+        if not archive.list_runs(config.OUTPUT_DIR):
+            self.skipTest('nessun run archiviato in questo ambiente')
+        targets = re.findall(r'hx-get="/run/([^"]+)"', panel)
+        self.assertTrue(targets)
+        # Ogni riga porta al proprio run, non tutte allo stesso.
+        self.assertEqual(len(targets), len(set(targets)))
+
+    def test_detail_shows_parameters_and_files(self):
+        run = self._a_run()
+        detail = views.run_detail(run['path'].name)
+        self.assertIn('Messaggi analizzati', detail)
+        # I file prodotti sono raggiungibili da lì.
+        self.assertIn(f'/runs/{run["path"].name}/', detail)
+        # E si può tornare all'ultimo risultato.
+        self.assertIn('hx-get="/report"', detail)
+
+    def test_unknown_run_is_handled(self):
+        self.assertIn('non trovato', views.run_detail('non-esiste'))
+
+    def test_failure_is_stated_not_implied(self):
+        """Un run incompleto deve dirlo a parole, non solo con un colore."""
+        from src import archive, config
+
+        failed = [r for r in archive.list_runs(config.OUTPUT_DIR)
+                  if r.get('failed_stage')]
+        if not failed:
+            self.skipTest('nessun run incompleto in questo ambiente')
+        detail = views.run_detail(failed[0]['path'].name)
+        self.assertIn('non completato', detail)
+
+
 class LogReadingTests(unittest.TestCase):
     def _run(self, script):
         runner = Runner()

@@ -294,7 +294,34 @@ ul.runs .failed {
   overflow: hidden; text-overflow: ellipsis;
 }
 ul.runs .failed::before { content: "⚠ "; }
-ul.runs a { color: var(--accent); text-align: right; }
+ul.runs li { cursor: pointer; }
+ul.runs li:hover { background: var(--band); }
+ul.runs li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+ul.runs .go-arrow { color: var(--muted); text-align: right; font-size: 1rem; }
+ul.runs li:hover .go-arrow { color: var(--accent); }
+
+/* dettaglio di un run */
+.detailhead {
+  display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+  margin-bottom: .8rem;
+}
+.detailhead .back {
+  margin-left: auto; font: inherit; font-size: .78rem; cursor: pointer;
+  background: none; border: 1px solid var(--rule); border-radius: 4px;
+  color: var(--muted); padding: .2rem .55rem;
+}
+.detailhead .back:hover { border-color: var(--accent); color: var(--accent); }
+table.params { margin-bottom: .9rem; }
+table.params td:first-child { color: var(--muted); }
+ul.files {
+  list-style: none; margin: 0 0 .9rem; padding: 0; font-size: .8rem;
+}
+ul.files li {
+  display: flex; gap: .6rem; padding: .25rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+ul.files a { color: var(--accent); overflow-wrap: anywhere; }
+ul.files .muted { margin-left: auto; white-space: nowrap; }
 ul.runs li[data-tip]:hover::after { top: auto; margin-top: .2rem; }
 
 /* rapporto */

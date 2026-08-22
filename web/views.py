@@ -513,26 +513,117 @@ def runs_panel() -> str:
                    if index == 0 else '')
 
         name = run['path'].name
-        link = ('<a href="/runs/{n}/report.html" target="_blank">rapporto</a>'
-                .format(n=_e(name))
-                if (run['path'] / 'report.html').is_file() else '<span></span>')
-
+        # La riga intera apre il run: e' l'indice di quello che si e' fatto,
+        # non un elenco di collegamenti a un solo file.
         rows.append(
-            f'<li data-tip="{_e(_run_tooltip(run))}">'
+            f'<li hx-get="/run/{_e(name)}" hx-target="#report" '
+            f'hx-swap="innerHTML" tabindex="0" role="button">'
             f'<span class="when">{_e(_run_time(run.get("timestamp", "")))}</span>'
             f'<span class="chips">{stages}{current}</span>'
-            f'{note}{link}</li>'
+            f'{note}<span class="go-arrow">›</span></li>'
         )
     return f'<ul class="runs">{"".join(rows)}</ul>'
 
 
+def _human_size(n: int) -> str:
+    return f'{n // 1024} KB' if n >= 1024 else f'{n} B'
+
+
+def _run_files(run_dir: Path, name: str) -> str:
+    """Cosa ha prodotto quel run, scaricabile."""
+    items = []
+    for path in sorted(run_dir.rglob('*')):
+        if not path.is_file() or path.name == archive.RUN_INFO:
+            continue
+        rel = path.relative_to(run_dir).as_posix()
+        items.append(
+            f'<li><a href="/runs/{_e(name)}/{_e(rel)}" target="_blank">'
+            f'{_e(rel)}</a>'
+            f'<span class="muted">{_e(_human_size(path.stat().st_size))}</span></li>'
+        )
+    if not items:
+        return ''
+    return f'<ul class="files">{"".join(items)}</ul>'
+
+
+def _params_table(run: dict) -> str:
+    rows = []
+
+    def add(label, value):
+        rows.append(f'<tr><td>{_e(label)}</td>'
+                    f'<td class="num">{_e(value)}</td></tr>')
+
+    add('Messaggi analizzati', run.get('n_messages', '—'))
+    for level, count in (run.get('levels') or {}).items():
+        nome = LEVEL_LABELS.get(level, (level, ''))[0]
+        add(f'Unità · {nome}', count)
+
+    rubrica = run.get('rubrica') or {}
+    if rubrica:
+        n = rubrica.get('replicates', 1)
+        add('Rubrica · fornitore', rubrica.get('provider', '—'))
+        add('Rubrica · modello', rubrica.get('models', '—'))
+        add('Rubrica · repliche', '1 replica' if n == 1 else f'{n} repliche')
+        add('Rubrica · livelli', ', '.join(rubrica.get('levels') or []))
+
+    topic = run.get('topic') or {}
+    if topic:
+        add('Topic · modello', topic.get('model', '—'))
+        add('Topic · scopre leggendo',
+            LEVEL_LABELS.get(topic.get('unit'), (topic.get('unit'), ''))[0])
+        add('Topic · attribuisce a',
+            LEVEL_LABELS.get(topic.get('assign_unit'),
+                             (topic.get('assign_unit'), ''))[0])
+        add('Topic · seed', Path(topic.get('seed') or '—').name)
+
+    return f'<table class="mini params"><tbody>{"".join(rows)}</tbody></table>'
+
+
+def run_detail(name: str) -> str:
+    """Tutto quello che riguarda un run archiviato."""
+    run = next((r for r in archive.list_runs(config.OUTPUT_DIR)
+                if r['path'].name == name), None)
+    if run is None:
+        return '<p class="muted">Run non trovato.</p>'
+
+    stages = ' · '.join(run.get('stages') or ['?'])
+    stato = (f'<span class="badge ko">{_e(run["failed_stage"])} '
+             f'non completato</span>' if run.get('failed_stage')
+             else '<span class="badge ok">completato</span>')
+
+    report = run['path'] / 'report.html'
+    if report.is_file():
+        viewer = (f'<div class="reportbar">'
+                  f'<a href="/runs/{_e(name)}/report.html" target="_blank">'
+                  f'apri a tutta pagina</a></div>'
+                  f'<iframe src="/runs/{_e(name)}/report.html" '
+                  f'title="Rapporto"></iframe>')
+    else:
+        viewer = ('<p class="muted">Questo run non ha prodotto un rapporto: '
+                  'era una sola unione dei dati.</p>')
+
+    return (
+        f'<div class="detailhead">'
+        f'<div><b>{_e(_run_time(run.get("timestamp", "")))}</b> '
+        f'<span class="muted">{_e(stages)}</span></div>'
+        f'{stato}'
+        f'<button class="back" hx-get="/report" hx-target="#report" '
+        f'hx-swap="innerHTML">torna all\'ultimo</button></div>'
+        f'{_params_table(run)}'
+        f'{_run_files(run["path"], name)}'
+        f'{viewer}'
+    )
+
+
 def report_panel() -> str:
+    """L'ultimo risultato: quello che sta nei percorsi fissi di output/."""
     reports = sorted(config.OUTPUT_DIR.glob('*_report.html'))
     if not reports:
         return ('<p class="muted">Il rapporto compare qui dopo il primo run '
                 'con analisi.</p>')
     latest = reports[-1]
     return (f'<div class="reportbar">'
+            f'<span class="badge ok">in output/</span>'
             f'<a href="/report.html" target="_blank">apri a tutta pagina</a>'
             f'<span class="muted">{_e(latest.name)}</span></div>'
             f'<iframe src="/report.html" title="Rapporto"></iframe>')

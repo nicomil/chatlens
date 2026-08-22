@@ -83,6 +83,15 @@ class Handler(BaseHTTPRequestHandler):
             self._html(views.log_body())
         elif route == '/done':
             self._html(views.after_run())
+        elif route == '/report':
+            self._html(views.report_panel())
+        elif route.startswith('/run/'):
+            # Solo il nome della cartella: nessun percorso, nessuna risalita.
+            name = route[len('/run/'):].strip('/')
+            if '/' in name or name in ('', '.', '..'):
+                self._html('<h1>404</h1>', status=404)
+            else:
+                self._html(views.run_detail(name))
         elif route == '/report.html':
             reports = sorted(config.OUTPUT_DIR.glob('*_report.html'))
             if reports:
