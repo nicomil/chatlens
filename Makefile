@@ -37,7 +37,15 @@ help: ## Elenca i comandi disponibili
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "Percorso tipico:  make setup  ->  make keys  ->  make all"
+	@echo "  [CHIAVE] = richiede una chiave API configurata con: make keys"
+	@echo ""
+	@echo "Quale uso?"
+	@echo "  make all    unione + misure automatiche. Non serve alcuna chiave,"
+	@echo "              dura pochi secondi. E' il punto di partenza."
+	@echo "  make full   le stesse cose piu' la rubrica di validazione e i"
+	@echo "              topic. Serve una chiave e ci mette molto piu' tempo."
+	@echo ""
+	@echo "Percorso tipico:  make setup  ->  make all  ->  (make keys  ->  make full)"
 	@echo "Opzioni extra:    make analyze ARGS=\"--llm-replicates 3\""
 
 ## --- Preparazione ----------------------------------------------------------
@@ -93,22 +101,22 @@ check: test status ## Test + stato dell'ambiente
 
 ## --- Analisi ---------------------------------------------------------------
 
-all: $(DEPS) ## Unisce i dati ed esegue l'analisi (il caso normale)
+all: $(DEPS) ## Unione + misure automatiche  [nessuna chiave, secondi]
 	@$(PY) run.py all $(ARGS)
 
 merge: $(DEPS) ## Solo unione di scelte e chat
 	@$(PY) run.py merge $(ARGS)
 
-analyze: $(DEPS) ## Solo analisi del testo
+analyze: $(DEPS) ## Solo misure automatiche, sui dati gia' uniti
 	@$(PY) run.py analyze $(ARGS)
 
-llm: $(DEPS) ## Analisi + rubrica di validazione (richiede una chiave)
+llm: $(DEPS) ## Misure + rubrica di validazione  [CHIAVE]
 	@$(PY) run.py analyze --llm --llm-replicates 2 $(ARGS)
 
-topics: $(DEPS) ## Analisi + topic con TopicGPT (richiede una chiave)
+topics: $(DEPS) ## Misure + topic con TopicGPT  [CHIAVE]
 	@$(PY) run.py analyze --topics --topicgpt-repo "$(TOPICGPT_REPO)" $(ARGS)
 
-full: $(DEPS) ## Tutto: unione, misure, rubrica e topic
+full: $(DEPS) ## Come all, piu' rubrica e topic  [CHIAVE, lento]
 	@$(PY) run.py all --llm --llm-replicates 2 \
 	    --topics --topicgpt-repo "$(TOPICGPT_REPO)" $(ARGS)
 

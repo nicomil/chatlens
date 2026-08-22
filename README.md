@@ -36,19 +36,25 @@ make all      # unisce i dati ed esegue l'analisi
 
 `make` da solo elenca tutti i comandi. I principali:
 
-| Comando | Cosa fa |
-|---|---|
-| `make setup` | prepara l'ambiente virtuale del progetto |
-| `make keys` | configura le chiavi API, guidato |
-| `make all` | unione + analisi, il caso normale |
-| `make merge` / `make analyze` | i due passi separati |
-| `make llm` | analisi + rubrica di validazione |
-| `make topics` | analisi + topic con TopicGPT |
-| `make full` | tutto insieme |
-| `make status` | cosa c'è in input, in output e fra le chiavi |
-| `make test` | verifica gli strumenti |
-| `make check` | test + stato dell'ambiente |
-| `make clean` | svuota `output/` (`clean-all` rimuove anche `.venv/`) |
+| Comando | Cosa fa | Chiave API |
+|---|---|---|
+| `make setup` | prepara l'ambiente virtuale del progetto | — |
+| `make keys` | configura le chiavi API, guidato | — |
+| `make all` | unione + misure automatiche, pochi secondi | **no** |
+| `make merge` / `make analyze` | i due passi separati | no |
+| `make llm` | misure + rubrica di validazione | sì |
+| `make topics` | misure + topic con TopicGPT | sì |
+| `make full` | come `all`, più rubrica e topic | sì |
+| `make status` | cosa c'è in input, in output e fra le chiavi | — |
+| `make test` / `make check` | verifica gli strumenti | — |
+| `make clean` | svuota `output/` (`clean-all` rimuove anche `.venv/`) | — |
+
+**`all` e `full` non sono sinonimi.** `all` vuol dire «entrambi i *passi*» —
+unione più analisi — in contrapposizione a `merge` e `analyze` presi
+singolarmente: esegue solo le misure automatiche, non richiede alcuna chiave e
+dura pochi secondi. `full` fa le stesse cose e in più la rubrica di validazione
+e i topic, quindi richiede una chiave e impiega molto più tempo. Si comincia da
+`all`; a `full` si passa quando le chiavi ci sono.
 
 Per le opzioni meno comuni: `make analyze ARGS="--llm-replicates 3"`.
 
