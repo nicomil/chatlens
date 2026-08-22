@@ -8,5 +8,8 @@ input/*
 output/*
 !output/.gitkeep
 
+# Ambiente virtuale del progetto.
+.venv/
+
 __pycache__/
 *.py[cod]

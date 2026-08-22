@@ -58,34 +58,40 @@ def custom_calculate_payoff_vector(decisions, no_deadweight_loss=False):
     return (0, 0, 0), 'disagreement'
 
 
+EXPERIMENT_UTILS = PROJECT_ROOT.parent / 'bargaining_tdl_common' / 'utils.py'
+
+
 def _experiment_payoff_rule():
-    """Implementazione dell'esperimento, se raggiungibile da qui.
+    """Estrae la regola di payoff dal sorgente dell'esperimento, se c'è.
 
-    L'import trascina la configurazione di oTree, che pretende di girare dalla
-    cartella dell'esperimento e può fallire per ragioni che non riguardano
-    questo progetto: qualunque problema si traduce in "non disponibile", e il
-    confronto viene saltato anziché segnalare un falso errore.
+    La funzione viene isolata dal file con l'analizzatore sintattico ed
+    eseguita da sola, senza importare il pacchetto: importarlo trascinerebbe
+    oTree, che in questo progetto non è installato e non deve esserlo. Così il
+    confronto gira davvero nel flusso normale, invece di essere saltato ogni
+    volta e dare una falsa sensazione di copertura.
+
+    Restituisce None solo quando il file dell'esperimento non è raggiungibile,
+    cioè quando questo progetto è usato in modo autonomo.
     """
-    import os
+    import ast
 
-    experiment_root = PROJECT_ROOT.parent
-    if not (experiment_root / 'bargaining_tdl_common').is_dir():
+    if not EXPERIMENT_UTILS.is_file():
         return None
 
-    previous_cwd = os.getcwd()
-    sys.path.insert(0, str(experiment_root))
-    try:
-        os.chdir(experiment_root)
-        from bargaining_tdl_common.utils import (
-            custom_calculate_payoff_vector as reference,
-        )
-        return reference
-    except Exception:  # noqa: BLE001 - dipende dall'ambiente, non dal codice
+    tree = ast.parse(EXPERIMENT_UTILS.read_text(encoding='utf-8'))
+    wanted = 'custom_calculate_payoff_vector'
+    node = next(
+        (n for n in tree.body
+         if isinstance(n, ast.FunctionDef) and n.name == wanted),
+        None,
+    )
+    if node is None:
         return None
-    finally:
-        os.chdir(previous_cwd)
-        if sys.path and sys.path[0] == str(experiment_root):
-            sys.path.pop(0)
+
+    namespace = {'VALID_DECISIONS': mod.VALID_DECISIONS}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(EXPERIMENT_UTILS),
+                 'exec'), namespace)
+    return namespace[wanted]
 
 
 def _load_module():

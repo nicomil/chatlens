@@ -10,7 +10,8 @@ funzionare. Gli unici legami sono i due CSV in `input/`.
 
 ```
 text_analysis/
-├── run.py            un solo punto di ingresso
+├── Makefile          i comandi principali
+├── run.py            il punto di ingresso vero e proprio
 ├── input/            i CSV esportati da oTree  ← metti qui i dati
 ├── output/           tutto ciò che viene prodotto
 ├── src/              il codice dei passi di analisi
@@ -29,17 +30,32 @@ vengono riconosciuti dal nome. Per questo la procedura si riduce a un comando.
 testi di chat.
 
 ```bash
-pip install -r requirements.txt   # una volta sola
-python run.py all                 # unisce i dati ed esegue l'analisi
+make setup    # una volta sola: crea l'ambiente e installa le dipendenze
+make all      # unisce i dati ed esegue l'analisi
 ```
+
+`make` da solo elenca tutti i comandi. I principali:
 
 | Comando | Cosa fa |
 |---|---|
-| `python run.py all` | unione + analisi, il caso normale |
-| `python run.py merge` | solo l'unione di scelte e chat |
-| `python run.py analyze` | solo l'analisi del testo |
-| `python run.py keys` | configura le chiavi API |
-| `python run.py status` | cosa c'è in input, in output e fra le chiavi |
+| `make setup` | prepara l'ambiente virtuale del progetto |
+| `make keys` | configura le chiavi API, guidato |
+| `make all` | unione + analisi, il caso normale |
+| `make merge` / `make analyze` | i due passi separati |
+| `make llm` | analisi + rubrica di validazione |
+| `make topics` | analisi + topic con TopicGPT |
+| `make full` | tutto insieme |
+| `make status` | cosa c'è in input, in output e fra le chiavi |
+| `make test` | verifica gli strumenti |
+| `make check` | test + stato dell'ambiente |
+| `make clean` | svuota `output/` (`clean-all` rimuove anche `.venv/`) |
+
+Per le opzioni meno comuni: `make analyze ARGS="--llm-replicates 3"`.
+
+**Senza make** — su Windows, o per preferenza — gli stessi comandi sono
+`python run.py <comando>`: `run.py all`, `run.py keys`, `run.py status` e così
+via. Il Makefile non fa altro che chiamarli, dopo essersi assicurato che
+l'ambiente esista.
 
 ## Indice
 
@@ -86,8 +102,12 @@ Tutto il codice dei passi di analisi sta in `src/`; il punto di ingresso è
 Dalla cartella del progetto, una volta sola:
 
 ```bash
-pip install -r requirements.txt
+make setup
 ```
+
+Crea l'ambiente virtuale in `.venv/` e installa le dipendenze. Non serve
+attivarlo: se ne occupa il Makefile. Senza make: `pip install -r
+requirements.txt`.
 
 Installa il necessario per il sentiment e per i client delle API. Le misure
 deterministiche funzionerebbero anche senza, ma il sentiment ripiegherebbe su
@@ -96,9 +116,11 @@ una versione più povera, dichiarandolo nella colonna `sentiment_backend`.
 **Solo se servono i topic**, va anche clonato il repository di TopicGPT:
 
 ```bash
-git clone https://github.com/chtmp223/topicGPT.git ~/src/topicGPT
-pip install ~/src/topicGPT
+make topicgpt
 ```
+
+Clona il repository in `~/src/topicGPT` e lo installa; con
+`make topicgpt TOPICGPT_REPO=<percorso>` si sceglie dove.
 
 Due avvertenze sul perché si installa dal repository e non da PyPI: i file di
 prompt fanno parte del metodo e **non sono dentro il pacchetto pubblicato**; e
@@ -489,8 +511,7 @@ presenti, senza uscire in rete.
 ## 11. Verifica degli strumenti
 
 ```bash
-python tests/test_merge.py
-python tests/test_analysis.py
+make test
 ```
 
 Girano senza rete e senza credenziali. Se entrambi finiscono con `OK`, gli
