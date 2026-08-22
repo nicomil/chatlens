@@ -45,6 +45,7 @@ make all      # unisce i dati ed esegue l'analisi
 | `make llm` | misure + rubrica di validazione | sì |
 | `make topics` | misure + topic con TopicGPT | sì |
 | `make full` | come `all`, più rubrica e topic | sì |
+| `make report` | rigenera il riassunto leggibile e lo apre | — |
 | `make status` | cosa c'è in input, in output e fra le chiavi | — |
 | `make test` / `make check` | verifica gli strumenti | — |
 | `make clean` | svuota `output/` (`clean-all` rimuove anche `.venv/`) | — |
@@ -302,6 +303,20 @@ python run.py analyze --topics --topicgpt-repo ~/src/topicGPT
 ## 5. I file prodotti
 
 Tutto sotto `output/`.
+
+### Il riassunto dell'esecuzione
+
+Ogni esecuzione produce `output/<nome>_report.md` e `<nome>_report.html`: una
+pagina sola con copertura del campione, esiti del gioco, variabili
+comportamentali, misure del linguaggio e — quando gli stadi sono stati
+eseguiti — rubrica e topic. Serve a capire com'è andata senza aprire CSV da
+trecento colonne. L'HTML è autosufficiente: si apre con un doppio clic e si può
+mandare a qualcuno.
+
+Le sezioni degli stadi non eseguiti non compaiono. I confronti fra trattamenti
+sono descrittivi per scelta: su numeri come quelli del pilota servono a
+verificare che la pipeline produca risultati sensati, non a trarne conclusioni.
+Per rigenerarlo senza rifare l'analisi: `make report`.
 
 ### Da portare in Stata
 

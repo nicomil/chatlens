@@ -102,6 +102,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_input_options(sp_analyze)
     add_analysis_options(sp_analyze)
 
+    sp_report = sub.add_parser(
+        'report', help='rigenera il riassunto leggibile dai file gia prodotti')
+    add_input_options(sp_report)
+
     sub.add_parser('keys', help='configura le chiavi API')
     sub.add_parser('status', help='cosa c\'è in input, in output e fra le chiavi')
 
@@ -148,6 +152,17 @@ def cmd_all(args) -> int:
     return cmd_analyze(args)
 
 
+def cmd_report(args) -> int:
+    from src import report
+
+    _wide, _chat, stem = resolve_dataset(args)
+    paths = report.write(config.OUTPUT_DIR, stem)
+    print('Riassunto leggibile:')
+    for path in paths:
+        print(f'  {path}')
+    return 0
+
+
 def cmd_keys(_args) -> int:
     from src import setup_keys
 
@@ -188,6 +203,7 @@ COMMANDS = {
     'all': cmd_all,
     'merge': cmd_merge,
     'analyze': cmd_analyze,
+    'report': cmd_report,
     'keys': cmd_keys,
     'status': cmd_status,
 }

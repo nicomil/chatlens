@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 from . import aggregate as agg  # noqa: E402
-from . import config, llm_rubric, topicgpt  # noqa: E402
+from . import config, llm_rubric, report, topicgpt  # noqa: E402
 
 
 def read_csv(path: Path) -> list[dict]:
@@ -301,7 +301,10 @@ def run(args) -> dict:
     agg.write_csv(out_partner, by_partner)
     agg.write_csv(out_aggregated, aggregated)
 
+    report_paths = report.write(outdir, args.stem)
+
     return dict(
+        report=report_paths,
         n_messages=len(messages),
         levels={level: len(rows) for level, rows in features.items()},
         datasets=[out_partner, out_aggregated],
@@ -317,6 +320,11 @@ def print_summary(summary: dict) -> int:
     for path in summary['datasets']:
         print(f'  {path}')
     print(f"Misure intermedie: {summary['features_dir']}")
+    if summary.get('report'):
+        print()
+        print('Riassunto leggibile:')
+        for path in summary['report']:
+            print(f'  {path}')
 
     failed = summary.get('failed_stage')
     if not failed:

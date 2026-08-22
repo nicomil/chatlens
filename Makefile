@@ -27,7 +27,7 @@ ARGS ?=
 
 .DEFAULT_GOAL := help
 .PHONY: help setup keys status check test all merge analyze llm topics full \
-        topicgpt clean clean-all
+        topicgpt report clean clean-all
 
 ## --- Aiuto -----------------------------------------------------------------
 
@@ -95,6 +95,10 @@ topicgpt: $(DEPS) ## Installa TopicGPT dal repository ufficiale
 	@echo "==> TopicGPT installato e verificato ($(TOPICGPT_REPO))"
 
 ## --- Diagnostica -----------------------------------------------------------
+
+report: $(DEPS) ## Rigenera il riassunto leggibile (md + html) e lo apre
+	@$(PY) run.py report
+	@command -v open >/dev/null && open output/*_report.html || true
 
 status: $(DEPS) ## Mostra input, output e chiavi configurate
 	@$(PY) run.py status

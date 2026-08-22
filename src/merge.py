@@ -785,7 +785,7 @@ def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
         build_aggregated(wide_rows, wide_cols, groups, uid_by_code, messages),
     )
 
-    return dict(
+    summary = dict(
         paths=paths,
         n_input=len(all_rows),
         n_participants=len(wide_rows),
@@ -800,6 +800,13 @@ def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
         n_messages_resolved=len(messages),
         warnings=warnings + anomalies,
     )
+
+    # Su file, cosi' il rapporto puo' essere rigenerato senza rifare il merge.
+    serialisable = {k: v for k, v in summary.items() if k != 'paths'}
+    (outdir / f'{stem}_summary.json').write_text(
+        json.dumps(serialisable, indent=2, ensure_ascii=False), encoding='utf-8'
+    )
+    return summary
 
 
 def print_summary(summary: dict) -> None:

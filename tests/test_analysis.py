@@ -861,6 +861,133 @@ class PartialResultsTests(unittest.TestCase):
             self.assertIsNone(summary['failed_stage'])
 
 
+class ReportTests(unittest.TestCase):
+    """Il riassunto deve reggere anche quando mancano gli stadi facoltativi."""
+
+    def _write(self, outdir, aggregated, by_partner, summary=None):
+        import csv as _csv
+        import json as _json
+
+        datasets = outdir / 'datasets'
+        merged = outdir / 'merged'
+        datasets.mkdir(parents=True, exist_ok=True)
+        merged.mkdir(parents=True, exist_ok=True)
+        for name, rows in (('chat_aggregated_nlp', aggregated),
+                           ('chat_by_partner_nlp', by_partner)):
+            path = datasets / f't_{name}.csv'
+            with path.open('w', encoding='utf-8', newline='') as handle:
+                writer = _csv.DictWriter(handle, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+        if summary is not None:
+            (merged / 't_summary.json').write_text(
+                _json.dumps(summary), encoding='utf-8')
+
+    def _minimal(self):
+        aggregated = [
+            dict(group_uid='g1', treatment='private', group_valid='1',
+                 focal_decision='Right', cc_i='1.0', strategic_deception='0',
+                 group_outcome='mutual_12', group_coordinate='1',
+                 group_total_payoff='6', focal_payoff_theoretical='3'),
+            dict(group_uid='g1', treatment='private', group_valid='1',
+                 focal_decision='Left', cc_i='0.5', strategic_deception='0',
+                 group_outcome='mutual_12', group_coordinate='1',
+                 group_total_payoff='6', focal_payoff_theoretical='3'),
+        ]
+        by_partner = [
+            dict(group_uid='g1', treatment='private', persuasion_ij='1',
+                 S_ij='1', C_ij='1'),
+            dict(group_uid='g1', treatment='private', persuasion_ij='0',
+                 S_ij='0', C_ij='1'),
+        ]
+        return aggregated, by_partner
+
+    def test_works_without_any_optional_stage(self):
+        import tempfile
+        from src import report
+
+        aggregated, by_partner = self._minimal()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir)
+            self._write(outdir, aggregated, by_partner)
+            paths = report.write(outdir, 't')
+            self.assertEqual(len(paths), 2)
+            markdown = paths[0].read_text(encoding='utf-8')
+        self.assertIn('Copertura', markdown)
+        self.assertIn('Esiti del gioco', markdown)
+        # Le sezioni degli stadi non eseguiti non devono comparire.
+        self.assertNotIn('Rubrica di validazione', markdown)
+        self.assertNotIn('## Topic', markdown)
+
+    def test_group_variables_are_not_counted_once_per_member(self):
+        """Le variabili di triade si ripetono su ogni riga: vanno deduplicate."""
+        import tempfile
+        from src import report
+
+        aggregated, by_partner = self._minimal()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir)
+            self._write(outdir, aggregated, by_partner)
+            data = report.collect(outdir, 't')
+
+        self.assertEqual(data['coverage']['n_triads'], 1)
+        self.assertEqual(data['coverage']['n_participants'], 2)
+        # Il payoff di gruppo e' 6, non 12.
+        self.assertEqual(data['outcomes']['per_treatment'][0]['mean_group_payoff'], 6.0)
+
+    def test_optional_sections_appear_when_their_data_is_there(self):
+        import tempfile
+        from src import report
+
+        aggregated, by_partner = self._minimal()
+        for row in aggregated:
+            row.update({'nlp_group_analytic_100': '70.0',
+                        'nlp_group_clout_100': '50.0',
+                        'nlp_group_wc': '120',
+                        'nlp_group_llm_analytic': '40.0'})
+        for row in by_partner:
+            row['nlp_sent_topics'] = 'Commitment|Coalition Proposal'
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir)
+            self._write(outdir, aggregated, by_partner)
+            markdown = report.write(outdir, 't')[0].read_text(encoding='utf-8')
+
+        self.assertIn('Linguaggio', markdown)
+        self.assertIn('Rubrica di validazione', markdown)
+        self.assertIn('## Topic', markdown)
+        self.assertIn('Commitment', markdown)
+
+    def test_html_is_self_contained_and_escaped(self):
+        import tempfile
+        from src import report
+
+        aggregated, by_partner = self._minimal()
+        aggregated[0]['group_outcome'] = '<script>alert(1)</script>'
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir)
+            self._write(outdir, aggregated, by_partner)
+            page = report.write(outdir, 't')[1].read_text(encoding='utf-8')
+
+        self.assertIn('<style>', page)          # niente fogli di stile esterni
+        self.assertNotIn('<script>alert', page)  # contenuto sfuggito
+        self.assertIn('&lt;script&gt;', page)
+
+    def test_empty_values_do_not_crash(self):
+        import tempfile
+        from src import report
+
+        aggregated, by_partner = self._minimal()
+        for row in aggregated:
+            row['group_total_payoff'] = ''
+            row['cc_i'] = ''
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir)
+            self._write(outdir, aggregated, by_partner)
+            markdown = report.write(outdir, 't')[0].read_text(encoding='utf-8')
+        self.assertIn('—', markdown)
+
+
 class ConfigTests(unittest.TestCase):
     """Chiavi API e percorsi: devono essere prevedibili e non sorprendere."""
 
