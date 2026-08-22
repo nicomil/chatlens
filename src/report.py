@@ -102,7 +102,7 @@ def _triads(rows):
     return list(seen.values())
 
 
-def collect(outdir: Path, stem: str) -> dict:
+def collect(outdir: Path, stem: str, stages=None) -> dict:
     """Raccoglie tutto il necessario dai file prodotti dall'esecuzione."""
     datasets = outdir / 'datasets'
     aggregated = _read(datasets / f'{stem}_chat_aggregated_nlp.csv')
@@ -120,6 +120,7 @@ def collect(outdir: Path, stem: str) -> dict:
 
     data = dict(
         stem=stem,
+        stages=list(stages) if stages else None,
         generated=datetime.now().strftime('%d/%m/%Y %H:%M'),
         merge=merge_summary,
         coverage=_coverage(aggregated, by_partner, merge_summary),
@@ -383,7 +384,9 @@ def render_markdown(data: dict) -> str:
     parts = [
         f"# Analisi del testo — {data['stem']}",
         '',
-        f"Esecuzione del {data['generated']}.",
+        f"Esecuzione del {data['generated']}."
+        + (f" Stadi eseguiti: {', '.join(data['stages'])}."
+           if data.get('stages') else ''),
         '',
         '## Copertura',
         '',
@@ -557,7 +560,9 @@ def render_html(data: dict) -> str:
 
     body = [
         f"<h1>Analisi del testo — {html.escape(data['stem'])}</h1>",
-        f"<p class=\"meta\">Esecuzione del {html.escape(data['generated'])}</p>",
+        f"<p class=\"meta\">Esecuzione del {html.escape(data['generated'])}"
+        + (f" &middot; stadi: {html.escape(', '.join(data['stages']))}"
+           if data.get('stages') else '') + "</p>",
         '<div class="cards">',
         *(f'<div class="card"><div class="v">{v}</div>'
           f'<div class="l">{l}</div></div>' for v, l in cards),
@@ -642,9 +647,9 @@ def render_html(data: dict) -> str:
     )
 
 
-def write(outdir: Path, stem: str) -> list[Path]:
+def write(outdir: Path, stem: str, stages=None) -> list[Path]:
     """Genera il rapporto nei due formati e restituisce i percorsi."""
-    data = collect(outdir, stem)
+    data = collect(outdir, stem, stages=stages)
     md_path = outdir / f'{stem}_report.md'
     html_path = outdir / f'{stem}_report.html'
     md_path.write_text(render_markdown(data), encoding='utf-8')

@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 from . import aggregate as agg  # noqa: E402
-from . import config, llm_rubric, report, topicgpt  # noqa: E402
+from . import archive, config, llm_rubric, report, topicgpt  # noqa: E402
 
 
 def read_csv(path: Path) -> list[dict]:
@@ -301,10 +301,17 @@ def run(args) -> dict:
     agg.write_csv(out_partner, by_partner)
     agg.write_csv(out_aggregated, aggregated)
 
-    report_paths = report.write(outdir, args.stem)
+    report_paths = report.write(outdir, args.stem,
+                                stages=archive.stages_of(args))
+    run_dir = archive.save(outdir, args.stem, args, dict(
+        n_messages=len(messages),
+        levels={level: len(rows) for level, rows in features.items()},
+        failed_stage=failed_stage,
+    ))
 
     return dict(
         report=report_paths,
+        run_dir=run_dir,
         n_messages=len(messages),
         levels={level: len(rows) for level, rows in features.items()},
         datasets=[out_partner, out_aggregated],
@@ -325,6 +332,8 @@ def print_summary(summary: dict) -> int:
         print('Riassunto leggibile:')
         for path in summary['report']:
             print(f'  {path}')
+    if summary.get('run_dir'):
+        print(f"Copia archiviata: {summary['run_dir']}")
 
     failed = summary.get('failed_stage')
     if not failed:

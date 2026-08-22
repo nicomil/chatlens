@@ -106,6 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
         'report', help='rigenera il riassunto leggibile dai file gia prodotti')
     add_input_options(sp_report)
 
+    sub.add_parser('runs', help='elenca le esecuzioni archiviate')
     sub.add_parser('keys', help='configura le chiavi API')
     sub.add_parser('status', help='cosa c\'è in input, in output e fra le chiavi')
 
@@ -163,6 +164,19 @@ def cmd_report(args) -> int:
     return 0
 
 
+def cmd_runs(_args) -> int:
+    from src import archive
+
+    runs = archive.list_runs(config.OUTPUT_DIR)
+    print(f'Esecuzioni archiviate in {config.OUTPUT_DIR / "runs"}:')
+    print()
+    print(archive.render_list(runs))
+    if runs:
+        print()
+        print("L'ultima esecuzione e' anche in output/, a percorsi fissi.")
+    return 0
+
+
 def cmd_keys(_args) -> int:
     from src import setup_keys
 
@@ -204,6 +218,7 @@ COMMANDS = {
     'merge': cmd_merge,
     'analyze': cmd_analyze,
     'report': cmd_report,
+    'runs': cmd_runs,
     'keys': cmd_keys,
     'status': cmd_status,
 }

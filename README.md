@@ -46,9 +46,10 @@ make all      # unisce i dati ed esegue l'analisi
 | `make topics` | misure + topic con TopicGPT | sì |
 | `make full` | come `all`, più rubrica e topic | sì |
 | `make report` | rigenera il riassunto leggibile e lo apre | — |
+| `make runs` | elenca le esecuzioni archiviate | — |
 | `make status` | cosa c'è in input, in output e fra le chiavi | — |
 | `make test` / `make check` | verifica gli strumenti | — |
-| `make clean` | svuota `output/` (`clean-all` rimuove anche `.venv/`) | — |
+| `make clean` | svuota l'ultimo risultato; archivio e cache restano | — |
 
 **`all` e `full` non sono sinonimi.** `all` vuol dire «entrambi i *passi*» —
 unione più analisi — in contrapposizione a `merge` e `analyze` presi
@@ -303,6 +304,25 @@ python run.py analyze --topics --topicgpt-repo ~/src/topicGPT
 ## 5. I file prodotti
 
 Tutto sotto `output/`.
+
+### Cosa succede rilanciando
+
+`output/` contiene sempre **l'ultima** esecuzione, a percorsi fissi: è quello
+che si apre e che si porta in Stata. Ogni esecuzione viene però anche copiata in
+`output/runs/<data_ora>/`, con i due dataset, il rapporto, l'elenco dei topic
+usati e un `run.json` con i parametri.
+
+Serve perché due esecuzioni non producono gli stessi file: una senza `--llm`
+riscrive i dataset **senza** le colonne della rubrica, e senza archivio quel
+lavoro sparirebbe dai file finali pur restando in cache.
+
+```bash
+make runs      # elenca le esecuzioni, con gli stadi e i parametri di ciascuna
+make clean     # svuota l'ultimo risultato; archivio e cache restano
+make clean-runs  # cancella l'archivio
+```
+
+Le misure intermedie non vengono archiviate: si rigenerano.
 
 ### Il riassunto dell'esecuzione
 

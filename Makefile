@@ -27,7 +27,7 @@ ARGS ?=
 
 .DEFAULT_GOAL := help
 .PHONY: help setup keys status check test all merge analyze llm topics full \
-        topicgpt report clean clean-all
+        topicgpt report runs clean clean-runs clean-all
 
 ## --- Aiuto -----------------------------------------------------------------
 
@@ -100,6 +100,9 @@ report: $(DEPS) ## Rigenera il riassunto leggibile (md + html) e lo apre
 	@$(PY) run.py report
 	@command -v open >/dev/null && open output/*_report.html || true
 
+runs: $(DEPS) ## Elenca le esecuzioni archiviate
+	@$(PY) run.py runs
+
 status: $(DEPS) ## Mostra input, output e chiavi configurate
 	@$(PY) run.py status
 
@@ -132,10 +135,15 @@ full: $(DEPS) ## Come all, piu' rubrica e topic  [CHIAVE, lento]
 
 ## --- Pulizia ---------------------------------------------------------------
 
-clean: ## Cancella i risultati prodotti (input e chiavi restano)
-	@find output -mindepth 1 ! -name '.gitkeep' -delete
+clean: ## Cancella l'ultimo risultato (archivio, input e chiavi restano)
+	@find output -mindepth 1 -maxdepth 1 ! -name '.gitkeep' ! -name 'runs' \
+	   ! -name 'cache' -exec rm -rf {} +
 	@find . -name '__pycache__' -type d -prune -exec rm -rf {} +
-	@echo "==> output/ svuotato"
+	@echo "==> output/ svuotato (runs/ e cache/ conservati)"
+
+clean-runs: ## Cancella l'archivio delle esecuzioni
+	@rm -rf output/runs
+	@echo "==> archivio delle esecuzioni rimosso"
 
 clean-all: clean ## Cancella anche l'ambiente virtuale
 	@rm -rf $(VENV)

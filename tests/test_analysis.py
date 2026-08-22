@@ -988,6 +988,118 @@ class ReportTests(unittest.TestCase):
         self.assertIn('—', markdown)
 
 
+class ArchiveTests(unittest.TestCase):
+    """Rilanciare non deve cancellare l'esecuzione precedente."""
+
+    def _args(self, **kw):
+        from types import SimpleNamespace
+
+        base = dict(stem='t', llm=False, llm_dry_run=False, topics=False,
+                    topicgpt_dry_run=False, llm_provider=None, llm_models=None,
+                    llm_replicates=1, llm_levels=['group'])
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    def _prepare(self, outdir, marker='a'):
+        (outdir / 'datasets').mkdir(parents=True, exist_ok=True)
+        (outdir / 'datasets' / 't_chat_aggregated_nlp.csv').write_text(
+            f'col\n{marker}\n', encoding='utf-8')
+        (outdir / 't_report.md').write_text(f'# rapporto {marker}',
+                                            encoding='utf-8')
+
+    def test_stages_reflect_what_was_actually_run(self):
+        from src import archive
+
+        self.assertEqual(archive.stages_of(self._args()), ['misure'])
+        self.assertEqual(
+            archive.stages_of(self._args(llm=True, topics=True)),
+            ['misure', 'rubrica', 'topic'])
+        # Le prove in secca non sono esecuzioni.
+        self.assertEqual(
+            archive.stages_of(self._args(llm=True, llm_dry_run=True)),
+            ['misure'])
+
+    def test_a_second_run_does_not_erase_the_first(self):
+        import tempfile
+        from src import archive
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir)
+            self._prepare(outdir, 'primo')
+            first = archive.save(outdir, 't', self._args(), {})
+
+            self._prepare(outdir, 'secondo')
+            second = archive.save(outdir, 't', self._args(llm=True), {})
+
+            self.assertNotEqual(first, second)
+            self.assertIn('primo', (first / 'datasets' /
+                                    't_chat_aggregated_nlp.csv').read_text())
+            self.assertIn('secondo', (second / 'datasets' /
+                                      't_chat_aggregated_nlp.csv').read_text())
+            self.assertEqual(len(archive.list_runs(outdir)), 2)
+
+    def test_same_second_collision_is_resolved(self):
+        """Due esecuzioni possono chiudersi nello stesso secondo."""
+        import tempfile
+        from src import archive
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir)
+            self._prepare(outdir)
+            paths = {archive.save(outdir, 't', self._args(), {})
+                     for _ in range(3)}
+            self.assertEqual(len(paths), 3)
+
+    def test_parameters_are_recorded_so_runs_can_be_told_apart(self):
+        import json as _json
+        import tempfile
+        from src import archive
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir)
+            self._prepare(outdir)
+            args = self._args(llm=True, llm_provider='openai',
+                              llm_replicates=2, llm_levels=['group', 'dyad'])
+            run_dir = archive.save(outdir, 't', args, dict(n_messages=283))
+
+            info = _json.loads((run_dir / 'run.json').read_text(encoding='utf-8'))
+        self.assertEqual(info['stages'], ['misure', 'rubrica'])
+        self.assertEqual(info['rubrica']['provider'], 'openai')
+        self.assertEqual(info['rubrica']['replicates'], 2)
+        self.assertEqual(info['n_messages'], 283)
+
+    def test_listing_is_ordered_by_recorded_instant(self):
+        """I suffissi delle collisioni non seguono l'ordine alfabetico."""
+        import json as _json
+        import tempfile
+        from src import archive
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir)
+            runs = outdir / 'runs'
+            for name, stamp in (('2026-01-01_120000_10', '2026-01-01T12:00:10'),
+                                ('2026-01-01_120000_2', '2026-01-01T12:00:02')):
+                (runs / name).mkdir(parents=True)
+                (runs / name / 'run.json').write_text(
+                    _json.dumps({'timestamp': stamp, 'stages': ['misure']}),
+                    encoding='utf-8')
+            listed = [r['path'].name for r in archive.list_runs(outdir)]
+        self.assertEqual(listed[0], '2026-01-01_120000_10')
+
+    def test_unreadable_run_does_not_break_the_listing(self):
+        import tempfile
+        from src import archive
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = Path(tmpdir)
+            (outdir / 'runs' / 'rotta').mkdir(parents=True)
+            (outdir / 'runs' / 'rotta' / 'run.json').write_text(
+                '{non json', encoding='utf-8')
+            runs = archive.list_runs(outdir)
+        self.assertEqual(len(runs), 1)
+        self.assertIn('?', archive.render_list(runs))
+
+
 class ConfigTests(unittest.TestCase):
     """Chiavi API e percorsi: devono essere prevedibili e non sorprendere."""
 
