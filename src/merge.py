@@ -2,7 +2,17 @@
 Unisce l'export delle scelte (``all_apps_wide``) con quello della chat
 (``ChatMessages``) e costruisce le variabili di analisi dell'esperimento.
 
-Produce tre file, nessuna riga esclusa rispetto all'input:
+Chi entra nell'analisi
+----------------------
+Vengono tenuti i partecipanti che soddisfano due condizioni: hanno un
+identificativo Prolific valido in ``participant.label``, il che scarta le
+sessioni di collaudo interne, e hanno fatto parte di una triade, il che tiene
+solo chi ha potuto comunicare. Chi e' stato poi escluso per inattivita' resta
+nel dataset: la sua esclusione dalle analisi principali si governa con
+``group_valid``. Con ``keep_all`` non si filtra nulla, per ispezionare i dati
+grezzi.
+
+Produce tre file:
 
 ``<stem>_messages_long.csv``
     Una riga per messaggio, con mittente e destinatario risolti in modo
@@ -150,6 +160,46 @@ def is_grouped(row) -> bool:
     return bool((row.get(MAIN + 'player.treatment') or '').strip()) and _int(
         row.get(MAIN + 'player.id_in_group')
     ) in (1, 2, 3)
+
+
+# Un PROLIFIC_PID e' una stringa di 24 caratteri esadecimali. Il formato separa
+# in modo netto i partecipanti reali da chi ha digitato un identificativo a mano
+# durante i collaudi interni.
+PROLIFIC_PID_RE = re.compile(r'^[0-9a-f]{24}$')
+
+
+def has_prolific_label(row) -> bool:
+    """True se il partecipante arriva davvero da Prolific.
+
+    Si legge ``participant.label``, che oTree scrive dall'URL e il partecipante
+    non puo' modificare, e non ``prolific_id``, che e' un campo di modulo e
+    accetta anche testo digitato a mano.
+    """
+    return bool(PROLIFIC_PID_RE.match((row.get('participant.label') or '').strip()))
+
+
+def select_participants(wide_rows):
+    """Tiene i partecipanti reali che hanno fatto parte di una triade.
+
+    Sono le due condizioni volute per l'analisi: identificativo Prolific valido,
+    che scarta le sessioni di collaudo interne, ed effettiva appartenenza a un
+    gruppo, che tiene solo chi ha potuto comunicare.
+
+    Chi e' stato poi escluso per inattivita' resta dentro: ha comunicato, e la
+    sua esclusione dalle analisi principali si governa con ``group_valid``, non
+    togliendolo dal dataset.
+
+    Restituisce le righe tenute e il conteggio degli scarti per motivo.
+    """
+    kept, dropped = [], {'mai_raggruppati': 0, 'senza_pid_prolific': 0}
+    for row in wide_rows:
+        if not is_grouped(row):
+            dropped['mai_raggruppati'] += 1
+        elif not has_prolific_label(row):
+            dropped['senza_pid_prolific'] += 1
+        else:
+            kept.append(row)
+    return kept, dropped
 
 
 def build_groups(wide_rows, chat_rows):
@@ -681,17 +731,42 @@ def write_csv(path: Path, rows):
             writer.writerow(row)
 
 
-def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str) -> dict:
+def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
+        keep_all: bool = False) -> dict:
     """Passo 1: unisce scelte e chat e costruisce le variabili dell'esperimento.
+
+    Per impostazione predefinita tiene i soli partecipanti reali che hanno fatto
+    parte di una triade (vedi `select_participants`). Con ``keep_all`` non
+    filtra nulla: serve a ispezionare i dati grezzi, non ad analizzarli.
 
     Restituisce un riepilogo con i percorsi prodotti e i numeri da controllare.
     """
-    wide_cols, wide_rows = load_wide(wide_path)
+    wide_cols, all_rows = load_wide(wide_path)
     chat_rows = load_chat(chat_path)
+
+    if keep_all:
+        wide_rows, dropped = all_rows, {}
+    else:
+        wide_rows, dropped = select_participants(all_rows)
+
     wide_by_code = {r['participant.code']: r for r in wide_rows}
 
-    uid_by_code, groups, warnings = build_groups(wide_rows, chat_rows)
-    messages, anomalies = build_messages(chat_rows, wide_by_code, uid_by_code)
+    # I messaggi di chi e' stato filtrato via non sono anomalie: si contano a
+    # parte, cosi' il totale torna e non si confondono con quelli irrisolvibili.
+    kept_codes = set(wide_by_code)
+    all_codes = {r['participant.code'] for r in all_rows}
+    chat_kept, chat_filtered = [], 0
+    for message in chat_rows:
+        code = message.get('participant_code')
+        if code in kept_codes:
+            chat_kept.append(message)
+        elif code in all_codes:
+            chat_filtered += 1
+        else:
+            chat_kept.append(message)  # mittente ignoto: lo tratta build_messages
+
+    uid_by_code, groups, warnings = build_groups(wide_rows, chat_rows=chat_kept)
+    messages, anomalies = build_messages(chat_kept, wide_by_code, uid_by_code)
 
     outdir.mkdir(parents=True, exist_ok=True)
     paths = dict(
@@ -712,28 +787,39 @@ def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str) -> dict:
 
     return dict(
         paths=paths,
+        n_input=len(all_rows),
         n_participants=len(wide_rows),
         n_grouped=len(uid_by_code),
         n_groups=len(groups),
         n_valid_groups=sum(
             group_validity(m)['group_valid'] for m in groups.values()
         ),
+        dropped=dropped,
         n_messages_in=len(chat_rows),
+        n_messages_filtered=chat_filtered,
         n_messages_resolved=len(messages),
         warnings=warnings + anomalies,
     )
 
 
 def print_summary(summary: dict) -> None:
-    print(f"Partecipanti in input     : {summary['n_participants']}")
-    print(f"  di cui raggruppati      : {summary['n_grouped']}")
-    print(f"  mai raggruppati         : "
-          f"{summary['n_participants'] - summary['n_grouped']}")
+    dropped = summary.get('dropped') or {}
+    print(f"Partecipanti nell'export  : {summary['n_input']}")
+    if dropped:
+        print(f"  esclusi, mai raggruppati       : {dropped['mai_raggruppati']}")
+        print(f"  esclusi, senza PID Prolific    : {dropped['senza_pid_prolific']}")
+    print(f"Partecipanti analizzati   : {summary['n_participants']}")
     print(f"Triadi ricostruite        : {summary['n_groups']}")
-    print(f"Triadi valide             : {summary['n_valid_groups']}")
-    print(f"Messaggi in input         : {summary['n_messages_in']}")
-    print(f"Messaggi risolti          : {summary['n_messages_resolved']}")
-    if summary['n_messages_resolved'] != summary['n_messages_in']:
+    print(f"Triadi valide             : {summary['n_valid_groups']}"
+          f"   (le altre hanno un membro escluso per inattivita', "
+          f"ma restano nel dataset)")
+    print(f"Messaggi nell'export      : {summary['n_messages_in']}")
+    if summary.get('n_messages_filtered'):
+        print(f"  di partecipanti esclusi : {summary['n_messages_filtered']}")
+    print(f"Messaggi analizzati       : {summary['n_messages_resolved']}")
+
+    atteso = summary['n_messages_in'] - summary.get('n_messages_filtered', 0)
+    if summary['n_messages_resolved'] != atteso:
         print('  ATTENZIONE: non tutti i messaggi sono stati ricondotti a un '
               'partecipante; vedi gli avvisi qui sotto.')
     print()

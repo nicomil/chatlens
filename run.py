@@ -41,6 +41,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="export all_apps_wide, se non è quello in input/")
         sp.add_argument('--chat', type=Path, default=None,
                         help="export ChatMessages, se non è quello in input/")
+        sp.add_argument('--keep-all', action='store_true',
+                        help='non filtrare: tiene anche le sessioni di collaudo '
+                             'e chi non ha mai fatto parte di un gruppo')
 
     def add_analysis_options(sp):
         sp.add_argument('--verbose', action='store_true')
@@ -109,7 +112,8 @@ def cmd_merge(args) -> int:
     print(f'Input:  {wide.name}')
     print(f'        {chat.name}')
     print()
-    summary = merge.run(wide, chat, config.MERGED_DIR, stem)
+    summary = merge.run(wide, chat, config.MERGED_DIR, stem,
+                        keep_all=getattr(args, 'keep_all', False))
     merge.print_summary(summary)
     return 0
 

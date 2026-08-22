@@ -252,11 +252,24 @@ Qui vengono già costruite le variabili dell'esperimento: persuasione, coerenza
 segnale-scelta, inganno strategico, payoff di gruppo e i flag di validità delle
 triadi.
 
+**Chi entra nell'analisi.** Vengono tenuti i partecipanti che soddisfano due
+condizioni:
+
+- hanno un identificativo Prolific valido in `participant.label`, il che
+  scarta le sessioni di collaudo interne;
+- hanno fatto parte di una triade, il che tiene solo chi ha potuto comunicare.
+
+Chi è stato poi **escluso per inattività resta nel dataset**: ha comunicato, e
+la sua esclusione dalle analisi principali si governa con `group_valid`, non
+togliendolo dai dati. Con `--keep-all` non si filtra nulla, per ispezionare
+l'export grezzo.
+
 **Cosa controllare nel riepilogo a schermo.** Il comando stampa quanti
-partecipanti ha letto, quante triadi ha ricostruito e quanti messaggi ha
-risolto. I messaggi risolti devono essere **tutti** quelli in input: se il
-numero è inferiore, in coda compaiono righe di avviso che spiegano quali non
-sono stati ricondotti a un partecipante.
+partecipanti c'erano nell'export, quanti ne ha esclusi e per quale motivo,
+quante triadi ha ricostruito e quanti messaggi ha analizzato. Il conto dei
+messaggi deve tornare: quelli di partecipanti esclusi più quelli analizzati
+fanno il totale dell'export. Se non torna, in coda compaiono righe di avviso
+che spiegano quali non sono stati ricondotti a un partecipante.
 
 ### Passo 3 — Analisi del testo
 
@@ -545,13 +558,16 @@ Stadio 1 eseguito su tutti i 311 messaggi del pilota del 18 agosto 2026.
 
 | Livello | Unità |
 |---|---|
-| coppia ordinata (i→j) | 118 |
-| coppia | 66 |
-| partecipante nel gruppo | 66 |
-| gruppo | 24 |
+| coppia ordinata (i→j) | 91 |
+| coppia | 48 |
+| partecipante nel gruppo | 50 |
+| gruppo | 18 |
 
-Controlli di conservazione: 1.952 parole e 311 messaggi si ritrovano identici a
-tutti e quattro i livelli. Le distribuzioni non sono degeneri — a livello di
+Sono **18 triadi e 54 partecipanti**: sei per trattamento, dalle tre sessioni
+Prolific vere. Le altre sette triadi presenti nell'export venivano da sessioni
+di collaudo interne e sono state escluse dal filtro sull'identificativo
+Prolific. Dei 311 messaggi dell'export, 28 appartenevano a quelle sessioni e
+283 entrano nell'analisi. Le distribuzioni non sono degeneri — a livello di
 gruppo `analytic_cdi` va da −30 a +49 con 21 valori distinti su 24 unità — e gli
 z-score hanno media 0 e deviazione 1 per costruzione.
 

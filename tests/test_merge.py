@@ -121,13 +121,21 @@ WIDE_COLUMNS = [
 ]
 
 
+# Un identificativo Prolific plausibile: 24 caratteri esadecimali. Serve perche'
+# il merge tiene solo i partecipanti reali, e le fixture rappresentano appunto
+# partecipanti reali.
+def fake_prolific_pid(seed) -> str:
+    return f'{abs(hash(str(seed))):024x}'[:24]
+
+
 def make_player(session, code, pid, treatment, decision, sig_left, sig_right,
                 payoff, group_db_id='', id_in_subsession='2', dropped='0',
-                decision_inactive='0'):
+                decision_inactive='0', label=None):
     row = {c: '' for c in WIDE_COLUMNS}
     row.update({
         'participant.id_in_session': str(pid),
         'participant.code': code,
+        'participant.label': fake_prolific_pid(code) if label is None else label,
         'participant.treatment': treatment,
         'participant.part1_group_id': group_db_id,
         'session.code': session,
@@ -156,6 +164,25 @@ def make_ungrouped(session, code, pid):
         MAIN + 'group.id_in_subsession': '1',
     })
     return row
+
+
+def _run_raw(wide_rows, chat_rows, tmpdir, keep_all=False):
+    """Esegue il merge e restituisce il riepilogo."""
+    wide_path = Path(tmpdir) / 'wide.csv'
+    chat_path = Path(tmpdir) / 'chat.csv'
+    with wide_path.open('w', encoding='utf-8', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=WIDE_COLUMNS)
+        writer.writeheader()
+        writer.writerows(wide_rows)
+    chat_cols = ['session_code', 'id_in_session', 'participant_code', 'channel',
+                 'nickname', 'body', 'timestamp']
+    with chat_path.open('w', encoding='utf-8', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=chat_cols)
+        writer.writeheader()
+        writer.writerows(chat_rows)
+    with contextlib.redirect_stdout(io.StringIO()):
+        return mod.run(wide_path, chat_path, Path(tmpdir) / 'out', 't',
+                       keep_all=keep_all)
 
 
 def run_merge(wide_rows, chat_rows, tmpdir):
@@ -337,11 +364,11 @@ class DerivedVariableTests(unittest.TestCase):
 
 
 class GroupingTests(unittest.TestCase):
-    def test_ungrouped_do_not_form_a_group(self):
-        """Chi non e' mai stato raggruppato resta nel gruppo residuale 1.
+    def test_ungrouped_are_excluded_from_the_analysis(self):
+        """Chi non e' mai stato raggruppato non ha comunicato: resta fuori.
 
-        Se venisse trattato come una triade, il gruppo 1 diventerebbe un
-        finto gruppo con molti membri.
+        Il gruppo residuale in cui oTree parcheggia i non raggruppati non e'
+        una triade, e i suoi membri non hanno mai potuto scambiarsi messaggi.
         """
         wide = [
             make_player('s1', 'a1', 1, 'private', 'Right', 'split_you',
@@ -356,12 +383,10 @@ class GroupingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             _long, by_partner, aggregated = run_merge(wide, [], tmpdir)
 
-        self.assertEqual(len(aggregated), 9)
-        never = [r for r in aggregated if r['chat_status'] == 'never_grouped']
-        self.assertEqual(len(never), 6)
-        # Sei coppie ordinate per l'unica triade, piu' una riga per ciascun
-        # partecipante mai raggruppato: nessuno viene perso.
-        self.assertEqual(len(by_partner), 6 + 6)
+        # Solo la triade: sei coppie ordinate e tre partecipanti.
+        self.assertEqual(len(aggregated), 3)
+        self.assertEqual(len(by_partner), 6)
+        self.assertEqual({r['group_uid'] for r in aggregated}, {'s1-db7'})
 
     def test_group_uid_survives_members_without_chat(self):
         """Un membro silenzioso non deve finire in una triade separata."""
@@ -451,9 +476,105 @@ class MessageDirectionTests(unittest.TestCase):
         self.assertEqual(int(rows[(1, 2)]['dyad_n_messages']), 1)
 
 
+class ParticipantFilterTests(unittest.TestCase):
+    """Entrano solo i partecipanti reali che hanno fatto parte di una triade."""
+
+    def _triad(self, prefix, group_db_id, **kw):
+        # id_in_subsession distinto per triade, come nei dati reali: due gruppi
+        # della stessa sessione non condividono mai quel numero.
+        kw.setdefault('id_in_subsession', str(group_db_id))
+        return [
+            make_player('s1', f'{prefix}1', 1, 'private', 'Right', 'split_you',
+                        'split_you', 3, group_db_id=group_db_id, **kw),
+            make_player('s1', f'{prefix}2', 2, 'private', 'Left', 'split_you',
+                        'split_you', 3, group_db_id=group_db_id, **kw),
+            make_player('s1', f'{prefix}3', 3, 'private', 'NoOne', 'split_you',
+                        'split_you', 0, group_db_id=group_db_id, **kw),
+        ]
+
+    def test_prolific_label_recognises_only_real_identifiers(self):
+        self.assertTrue(mod.has_prolific_label(
+            {'participant.label': '665b7b047373d8da553237a6'}))
+        for fake in ('test', 'shshaga', '', '665b7b047373d8da553237a', 'ABCDEF'):
+            self.assertFalse(
+                mod.has_prolific_label({'participant.label': fake}), msg=fake)
+
+    def test_internal_test_sessions_are_excluded(self):
+        """Chi non ha un identificativo Prolific viene da un collaudo interno."""
+        wide = self._triad('a', '7')
+        wide += self._triad('t', '8', label='test')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _long, _by_partner, aggregated = run_merge(wide, [], tmpdir)
+
+        self.assertEqual(len(aggregated), 3)
+        self.assertEqual({r['group_uid'] for r in aggregated}, {'s1-db7'})
+
+    def test_inactive_participants_stay_in(self):
+        """Ha comunicato: si esclude dalle analisi con group_valid, non qui."""
+        wide = self._triad('a', '7')
+        wide[2][MAIN + 'player.decision_inactive'] = '99'
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _long, _by_partner, aggregated = run_merge(wide, [], tmpdir)
+
+        self.assertEqual(len(aggregated), 3)
+        # La triade resta nel dataset, ma e' marcata come non valida.
+        self.assertTrue(all(int(r['group_valid']) == 0 for r in aggregated))
+        flags = {int(r['focal_id_in_group']): int(r['focal_timeout_flag'])
+                 for r in aggregated}
+        self.assertEqual(flags, {1: 0, 2: 0, 3: 1})
+
+    def test_keep_all_disables_the_filter(self):
+        wide = self._triad('a', '7') + [make_ungrouped('s1', 'u9', 9)]
+        wide += self._triad('t', '8', label='test')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary = _run_raw(wide, [], tmpdir, keep_all=True)
+        self.assertEqual(summary['n_participants'], 7)
+        self.assertEqual(summary['n_groups'], 2)
+
+    def test_summary_reports_what_was_excluded(self):
+        wide = self._triad('a', '7') + [make_ungrouped('s1', 'u9', 9)]
+        wide += self._triad('t', '8', label='test')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary = _run_raw(wide, [], tmpdir)
+        self.assertEqual(summary['n_input'], 7)
+        self.assertEqual(summary['n_participants'], 3)
+        self.assertEqual(summary['dropped']['mai_raggruppati'], 1)
+        self.assertEqual(summary['dropped']['senza_pid_prolific'], 3)
+
+    def test_messages_of_excluded_participants_are_counted_not_lost(self):
+        """Il totale deve tornare: filtrati + analizzati = quelli in input."""
+        wide = self._triad('a', '7') + self._triad('t', '8', label='test')
+        chat = [
+            dict(session_code='s1', id_in_session='1', participant_code='a1',
+                 channel='4-bargaining_tdl_main-7_1_2', nickname='LeftPartner',
+                 body='messaggio vero', timestamp='100.0'),
+            dict(session_code='s1', id_in_session='1', participant_code='t1',
+                 channel='4-bargaining_tdl_main-8_1_2', nickname='LeftPartner',
+                 body='messaggio di collaudo', timestamp='101.0'),
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary = _run_raw(wide, chat, tmpdir)
+
+        self.assertEqual(summary['n_messages_in'], 2)
+        self.assertEqual(summary['n_messages_filtered'], 1)
+        self.assertEqual(summary['n_messages_resolved'], 1)
+        self.assertEqual(summary['warnings'], [])
+
+
 class OutputHygieneTests(unittest.TestCase):
     def test_mturk_columns_are_dropped(self):
-        wide = [make_ungrouped('s1', 'u1', 1)]
+        wide = [
+            make_player('s1', 'a1', 1, 'private', 'Right', 'split_you',
+                        'split_you', 3, group_db_id='7'),
+            make_player('s1', 'a2', 2, 'private', 'Left', 'split_you',
+                        'split_you', 3, group_db_id='7'),
+            make_player('s1', 'a3', 3, 'private', 'NoOne', 'split_you',
+                        'split_you', 0, group_db_id='7'),
+        ]
         with tempfile.TemporaryDirectory() as tmpdir:
             _long, by_partner, aggregated = run_merge(wide, [], tmpdir)
         for rows in (by_partner, aggregated):
