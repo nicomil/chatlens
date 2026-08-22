@@ -280,6 +280,10 @@ ul.runs .chip.rubrica, ul.runs .chip.topic {
   background: var(--accent-dim); color: var(--accent);
   border: 1px solid var(--accent);
 }
+ul.runs .times {
+  font-size: .62rem; font-weight: 600; padding: .1rem .3rem; border-radius: 3px;
+  background: var(--band); color: var(--muted); cursor: help; white-space: nowrap;
+}
 ul.runs .current {
   font-size: .6rem; letter-spacing: .05em; text-transform: uppercase;
   padding: .05rem .35rem; border-radius: 3px;
@@ -311,6 +315,7 @@ ul.runs li:hover .go-arrow { color: var(--accent); }
   color: var(--muted); padding: .2rem .55rem;
 }
 .detailhead .back:hover { border-color: var(--accent); color: var(--accent); }
+p.rip { margin: 0 0 .7rem; font-size: .8rem; }
 table.params { margin-bottom: .9rem; }
 table.params td:first-child { color: var(--muted); }
 ul.files {

@@ -434,6 +434,15 @@ def _run_time(stamp: str) -> str:
     return f'{prefix} {moment.strftime("%H:%M")}'
 
 
+def _run_span(gruppo) -> str:
+    """Da quando a quando e' durata una serie di esecuzioni identiche."""
+    def orario(run):
+        stamp = run.get('timestamp') or ''
+        return stamp[11:19] or '?'
+
+    return f'dalle {orario(gruppo[-1])} alle {orario(gruppo[0])}'
+
+
 def _run_detail(run: dict) -> str:
     """Cosa distingue questo run dagli altri.
 
@@ -488,6 +497,36 @@ def _run_tooltip(run: dict) -> str:
 STAGE_LABELS = {'misure': 'misure', 'rubrica': 'rubrica', 'topic': 'topic'}
 
 
+def _signature(run: dict):
+    """Cosa rende due esecuzioni la stessa cosa: gli stessi parametri.
+
+    Rilanciare per prova produce piu' cartelle identiche nel contenuto. Mostrarle
+    come righe distinte fa credere che siano successe cose diverse, quando
+    l'unica differenza sono pochi secondi.
+    """
+    import json as _json
+
+    return _json.dumps([
+        run.get('stages'), run.get('rubrica'), run.get('topic'),
+        run.get('n_messages'), run.get('failed_stage'),
+    ], sort_keys=True)
+
+
+def _group_runs(runs):
+    """Accorpa esecuzioni consecutive con gli stessi parametri.
+
+    Solo consecutive: la stessa configurazione rilanciata a distanza di ore e'
+    un'altra sessione di lavoro, e va tenuta separata.
+    """
+    grouped = []
+    for run in runs:
+        if grouped and _signature(grouped[-1][0]) == _signature(run):
+            grouped[-1].append(run)
+        else:
+            grouped.append([run])
+    return grouped
+
+
 def runs_panel() -> str:
     runs = archive.list_runs(config.OUTPUT_DIR)
     if not runs:
@@ -495,7 +534,8 @@ def runs_panel() -> str:
                 'salvata qui, cosi\' rilanciare non cancella la precedente.</p>')
 
     rows = []
-    for index, run in enumerate(runs[:12]):
+    for index, gruppo in enumerate(_group_runs(runs)[:12]):
+        run = gruppo[0]
         stages = ''.join(
             f'<span class="chip {name}">{_e(STAGE_LABELS.get(name, name))}</span>'
             for name in (run.get('stages') or [])
@@ -512,6 +552,12 @@ def runs_panel() -> str:
         current = ('<span class="current">in output/</span>'
                    if index == 0 else '')
 
+        # Piu' esecuzioni identiche diventano una riga sola, che dice quante.
+        ripetuto = (f'<span class="times" data-tip="Stessa configurazione '
+                    f'eseguita {len(gruppo)} volte di seguito: '
+                    f'{_e(_run_span(gruppo))}. Si apre la piu\' recente.">'
+                    f'×{len(gruppo)}</span>') if len(gruppo) > 1 else ''
+
         name = run['path'].name
         # La riga intera apre il run: e' l'indice di quello che si e' fatto,
         # non un elenco di collegamenti a un solo file.
@@ -519,7 +565,7 @@ def runs_panel() -> str:
             f'<li hx-get="/run/{_e(name)}" hx-target="#report" '
             f'hx-swap="innerHTML" tabindex="0" role="button">'
             f'<span class="when">{_e(_run_time(run.get("timestamp", "")))}</span>'
-            f'<span class="chips">{stages}{current}</span>'
+            f'<span class="chips">{stages}{current}{ripetuto}</span>'
             f'{note}<span class="go-arrow">›</span></li>'
         )
     return f'<ul class="runs">{"".join(rows)}</ul>'
@@ -591,6 +637,17 @@ def run_detail(name: str) -> str:
              f'non completato</span>' if run.get('failed_stage')
              else '<span class="badge ok">completato</span>')
 
+    # Se la stessa configurazione e' stata eseguita piu' volte di seguito, va
+    # detto: altrimenti sembra un'esecuzione isolata e non si capisce perche'
+    # nell'archivio compaia una sola riga per piu' cartelle.
+    gruppo = next((g for g in _group_runs(archive.list_runs(config.OUTPUT_DIR))
+                   if any(r['path'].name == name for r in g)), [run])
+    ripetizione = (
+        f'<p class="muted rip">Stessa configurazione eseguita '
+        f'{len(gruppo)} volte di seguito, {_e(_run_span(gruppo))}. '
+        f'Qui sotto la più recente.</p>' if len(gruppo) > 1 else ''
+    )
+
     report = run['path'] / 'report.html'
     if report.is_file():
         viewer = (f'<div class="reportbar">'
@@ -609,6 +666,7 @@ def run_detail(name: str) -> str:
         f'{stato}'
         f'<button class="back" hx-get="/report" hx-target="#report" '
         f'hx-swap="innerHTML">torna all\'ultimo</button></div>'
+        f'{ripetizione}'
         f'{_params_table(run)}'
         f'{_run_files(run["path"], name)}'
         f'{viewer}'
