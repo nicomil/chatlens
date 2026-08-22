@@ -167,6 +167,52 @@ def check_installation(repo_path: Path) -> None:
         )
 
 
+def check_model_compatibility(api: str, model: str) -> None:
+    """Verifica che il modello accetti i parametri che TopicGPT invia.
+
+    TopicGPT fissa `temperature` e `top_p` in tutte le fasi. Alcuni modelli
+    recenti li rifiutano con un 400, e la libreria reagisce riprovando tre
+    volte con sessanta secondi di attesa fra un tentativo e l'altro: senza
+    questo controllo l'incompatibilita' emergerebbe dopo due minuti di nulla,
+    e su ogni documento.
+
+    Si prova con una chiamata minima invece di tenere un elenco di modelli
+    incompatibili, che sarebbe vecchio il mese prossimo.
+    """
+    if api != 'openai':
+        return
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return
+
+    try:
+        OpenAI().chat.completions.create(
+            model=model,
+            messages=[{'role': 'user', 'content': 'ok'}],
+            temperature=0.0,
+            top_p=1.0,
+            max_completion_tokens=5,
+        )
+    except Exception as exc:  # noqa: BLE001 - qualunque rifiuto e' informativo
+        message = str(exc)
+        if 'temperature' in message or 'top_p' in message:
+            raise TopicGPTUnavailable(
+                f"Il modello {model} non accetta i parametri che TopicGPT "
+                f"invia (temperature e top_p sono fissati nel codice degli "
+                f"autori).\n"
+                f"  Usa un modello che li supporta, per esempio gpt-4o, che e' "
+                f"anche quello del paper.\n"
+                f"  I modelli recenti restano utilizzabili per la rubrica: "
+                f"--llm-models {model}"
+            ) from None
+        # Qualunque altro errore (chiave, rete, modello inesistente) viene
+        # riportato tale e quale: non e' un problema di compatibilita'.
+        raise TopicGPTUnavailable(
+            f'Il modello {model} non risponde: {message[:200]}'
+        ) from None
+
+
 def build_documents(messages, unit: str = 'dyad_directed') -> list[dict]:
     """Compone i documenti per TopicGPT a partire dai messaggi.
 

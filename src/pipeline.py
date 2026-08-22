@@ -218,7 +218,11 @@ def preflight(args) -> None:
         if args.topicgpt_api == 'openai':
             try:
                 config.require_key('OPENAI_API_KEY')
+                topicgpt.check_model_compatibility(
+                    args.topicgpt_api, args.topicgpt_model)
             except SystemExit as exc:
+                problems.append(str(exc).strip())
+            except topicgpt.TopicGPTUnavailable as exc:
                 problems.append(str(exc).strip())
 
     if problems:

@@ -526,6 +526,18 @@ pertinenti. Su un corpus grande ci si aspetta che ne emergano altri. Il
 contenuto del seed va rivisto e approvato da chi conduce lo studio prima di
 usare i topic in un'analisi.
 
+**Modelli: TopicGPT e la rubrica non accettano gli stessi.** TopicGPT fissa
+`temperature` e `top_p` in tutte le fasi, dentro il codice degli autori. I
+modelli recenti che ammettono solo la temperatura predefinita — verificato su
+`gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol` — li rifiutano con un errore 400,
+e la libreria reagisce riprovando tre volte a un minuto di distanza: senza
+controllo, l'incompatibilità emergerebbe dopo due minuti per ogni documento. Il
+controllo preliminare la intercetta con una chiamata minima e si ferma subito.
+
+Per i topic conviene quindi restare su `gpt-4o`, che è anche il modello del
+paper. La rubrica non manda `temperature` e funziona con tutti: si sceglie con
+`--llm-models`.
+
 **Backend.** TopicGPT parla con OpenAI, Azure, Vertex, Gemini, Ollama o vLLM. Il
 paper usa OpenAI ed è la scelta più fedele. Per usare Claude ci sono due strade
 che non richiedono di modificare il codice degli autori: il backend `vertex`,
