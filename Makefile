@@ -14,6 +14,13 @@ PY            := $(VENV)/bin/python
 PIP           := $(PY) -m pip
 TOPICGPT_REPO ?= $(HOME)/src/topicGPT
 
+# Testimone dell'installazione: dipende da requirements.txt, quindi se l'elenco
+# delle dipendenze cambia il prossimo comando le aggiorna da solo. Legare i
+# comandi al solo interprete non basterebbe: l'ambiente esisterebbe gia' e una
+# dipendenza aggiunta non arriverebbe mai, facendo fallire la pipeline con un
+# errore di import che non spiega la causa.
+DEPS := $(VENV)/.deps-installed
+
 # Opzioni aggiuntive da passare alla pipeline, es:
 #   make analyze ARGS="--llm-replicates 3"
 ARGS ?=
@@ -35,27 +42,39 @@ help: ## Elenca i comandi disponibili
 
 ## --- Preparazione ----------------------------------------------------------
 
-# L'ambiente virtuale e' un file-obiettivo: i comandi che ne dipendono lo
-# creano da soli la prima volta, senza che serva ricordarsene.
-$(PY):
-	@echo "==> Creo l'ambiente virtuale in $(VENV)/"
-	$(PYTHON) -m venv $(VENV)
-	@$(PIP) install --quiet --upgrade pip
+# I comandi dipendono da $(DEPS): l'ambiente viene creato e aggiornato da solo
+# alla prima esecuzione e ogni volta che requirements.txt cambia.
+$(DEPS): requirements.txt
+	@test -d $(VENV) || { \
+	    echo "==> Creo l'ambiente virtuale in $(VENV)/"; \
+	    $(PYTHON) -m venv $(VENV); \
+	    $(PIP) install --quiet --upgrade pip; \
+	}
 	@echo "==> Installo le dipendenze"
 	@$(PIP) install --quiet -r requirements.txt
-	@echo "==> Ambiente pronto"
+	@touch $(DEPS)
 
-setup: $(PY) ## Prepara l'ambiente e installa le dipendenze
+setup: $(DEPS) ## Prepara l'ambiente e installa le dipendenze
+	@echo ""
+	@echo "Ambiente pronto"
+	@echo "  $$($(PY) --version) in $(VENV)/"
+	@echo "  $$($(PIP) list --format=freeze 2>/dev/null | wc -l | tr -d ' ') pacchetti installati"
 	@echo ""
 	@echo "Prossimi passi:"
-	@echo "  1. metti i due CSV esportati da oTree in input/"
-	@echo "  2. make keys     (solo se servono topic o rubrica di validazione)"
-	@echo "  3. make all"
+	@if [ -z "$$(ls input/*.csv 2>/dev/null)" ]; then \
+	    echo "  1. metti in input/ i due CSV esportati da oTree"; \
+	    echo "     (all_apps_wide_*.csv e ChatMessages_*.csv)"; \
+	    echo "  2. make keys   solo se ti servono i topic o la rubrica"; \
+	    echo "  3. make all"; \
+	else \
+	    echo "  i dati in input/ ci sono gia': puoi lanciare  make all"; \
+	    echo "  (make keys   solo se ti servono i topic o la rubrica)"; \
+	fi
 
-keys: $(PY) ## Configura le chiavi API (guidato, verifica che funzionino)
+keys: $(DEPS) ## Configura le chiavi API (guidato, verifica che funzionino)
 	@$(PY) run.py keys
 
-topicgpt: $(PY) ## Installa TopicGPT dal repository ufficiale
+topicgpt: $(DEPS) ## Installa TopicGPT dal repository ufficiale
 	@test -d "$(TOPICGPT_REPO)" \
 	  || git clone https://github.com/chtmp223/topicGPT.git "$(TOPICGPT_REPO)"
 	@$(PIP) install --quiet "$(TOPICGPT_REPO)"
@@ -63,10 +82,10 @@ topicgpt: $(PY) ## Installa TopicGPT dal repository ufficiale
 
 ## --- Diagnostica -----------------------------------------------------------
 
-status: $(PY) ## Mostra input, output e chiavi configurate
+status: $(DEPS) ## Mostra input, output e chiavi configurate
 	@$(PY) run.py status
 
-test: $(PY) ## Esegue i test (senza rete ne credenziali)
+test: $(DEPS) ## Esegue i test (senza rete ne credenziali)
 	@$(PY) tests/test_merge.py
 	@$(PY) tests/test_analysis.py
 
@@ -74,22 +93,22 @@ check: test status ## Test + stato dell'ambiente
 
 ## --- Analisi ---------------------------------------------------------------
 
-all: $(PY) ## Unisce i dati ed esegue l'analisi (il caso normale)
+all: $(DEPS) ## Unisce i dati ed esegue l'analisi (il caso normale)
 	@$(PY) run.py all $(ARGS)
 
-merge: $(PY) ## Solo unione di scelte e chat
+merge: $(DEPS) ## Solo unione di scelte e chat
 	@$(PY) run.py merge $(ARGS)
 
-analyze: $(PY) ## Solo analisi del testo
+analyze: $(DEPS) ## Solo analisi del testo
 	@$(PY) run.py analyze $(ARGS)
 
-llm: $(PY) ## Analisi + rubrica di validazione (richiede una chiave)
+llm: $(DEPS) ## Analisi + rubrica di validazione (richiede una chiave)
 	@$(PY) run.py analyze --llm --llm-replicates 2 $(ARGS)
 
-topics: $(PY) ## Analisi + topic con TopicGPT (richiede una chiave)
+topics: $(DEPS) ## Analisi + topic con TopicGPT (richiede una chiave)
 	@$(PY) run.py analyze --topics --topicgpt-repo "$(TOPICGPT_REPO)" $(ARGS)
 
-full: $(PY) ## Tutto: unione, misure, rubrica e topic
+full: $(DEPS) ## Tutto: unione, misure, rubrica e topic
 	@$(PY) run.py all --llm --llm-replicates 2 \
 	    --topics --topicgpt-repo "$(TOPICGPT_REPO)" $(ARGS)
 
