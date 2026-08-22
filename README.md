@@ -48,6 +48,7 @@ make all      # unisce i dati ed esegue l'analisi
 | `make dashboard` | apre la dashboard nel browser | — |
 | `make report` | rigenera il riassunto leggibile e lo apre | — |
 | `make runs` | elenca le esecuzioni archiviate | — |
+| `make prune` | conserva le ultime 2 ed elimina le altre (`KEEP=n`) | — |
 | `make status` | cosa c'è in input, in output e fra le chiavi | — |
 | `make test` / `make check` | verifica gli strumenti | — |
 | `make clean` | svuota l'ultimo risultato; archivio e cache restano | — |
@@ -344,10 +345,15 @@ riscrive i dataset **senza** le colonne della rubrica, e senza archivio quel
 lavoro sparirebbe dai file finali pur restando in cache.
 
 ```bash
-make runs      # elenca le esecuzioni, con gli stadi e i parametri di ciascuna
-make clean     # svuota l'ultimo risultato; archivio e cache restano
-make clean-runs  # cancella l'archivio
+make runs            # elenca le esecuzioni, con stadi e parametri di ciascuna
+make prune KEEP=2    # conserva le 2 piu recenti ed elimina le altre
+make clean           # svuota l'ultimo risultato; archivio e cache restano
+make clean-runs      # cancella l'intero archivio
 ```
+
+Una sessione di prove lascia una lunga coda di esecuzioni quasi identiche:
+`make prune` la accorcia conservando quelle che contano. Ogni esecuzione occupa
+circa 800 KB.
 
 Le misure intermedie non vengono archiviate: si rigenerano.
 

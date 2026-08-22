@@ -131,51 +131,12 @@ class ArchiveViewTests(unittest.TestCase):
         # E si può tornare all'ultimo risultato.
         self.assertIn('hx-get="/report"', detail)
 
-    def test_identical_consecutive_runs_collapse_into_one_row(self):
-        """Rilanciare per prova non deve moltiplicare le righe."""
-        base = dict(stages=['misure', 'rubrica'], n_messages=283,
-                    rubrica={'provider': 'openai', 'models': 'gpt-4o',
-                             'replicates': 1, 'levels': ['group']},
-                    topic=None, failed_stage=None)
-        runs = [dict(base, timestamp=f'2026-01-01T12:00:0{i}',
-                     path=Path(f'/tmp/r{i}')) for i in range(4)]
-        gruppi = views._group_runs(runs)
-        self.assertEqual(len(gruppi), 1)
-        self.assertEqual(len(gruppi[0]), 4)
-
-    def test_different_parameters_stay_separate(self):
-        base = dict(stages=['misure', 'rubrica'], n_messages=283,
-                    topic=None, failed_stage=None)
-        runs = [
-            dict(base, timestamp='2026-01-01T12:00:01', path=Path('/tmp/a'),
-                 rubrica={'replicates': 1}),
-            dict(base, timestamp='2026-01-01T12:00:02', path=Path('/tmp/b'),
-                 rubrica={'replicates': 2}),
-        ]
-        self.assertEqual(len(views._group_runs(runs)), 2)
-
-    def test_same_configuration_hours_apart_is_a_separate_session(self):
-        """Solo le consecutive si accorpano: in mezzo c'e' stato altro."""
-        base = dict(stages=['misure'], n_messages=283, rubrica=None,
-                    topic=None, failed_stage=None)
-        runs = [
-            dict(base, timestamp='2026-01-01T18:00:00', path=Path('/tmp/c')),
-            dict(base, stages=['misure', 'topic'],
-                 timestamp='2026-01-01T15:00:00', path=Path('/tmp/b')),
-            dict(base, timestamp='2026-01-01T12:00:00', path=Path('/tmp/a')),
-        ]
-        self.assertEqual(len(views._group_runs(runs)), 3)
-
-    def test_a_failed_run_is_not_merged_with_a_successful_one(self):
-        base = dict(stages=['misure', 'topic'], n_messages=283, rubrica=None,
-                    topic={'model': 'gpt-4o'})
-        runs = [
-            dict(base, timestamp='2026-01-01T12:00:02', path=Path('/tmp/b'),
-                 failed_stage=None),
-            dict(base, timestamp='2026-01-01T12:00:01', path=Path('/tmp/a'),
-                 failed_stage='TopicGPT'),
-        ]
-        self.assertEqual(len(views._group_runs(runs)), 2)
+    def test_time_includes_seconds(self):
+        """Esecuzioni a pochi istanti l'una dall'altra devono distinguersi."""
+        primo = views._run_time('2026-01-01T12:00:24')
+        secondo = views._run_time('2026-01-01T12:00:29')
+        self.assertNotEqual(primo, secondo)
+        self.assertTrue(primo.endswith('12:00:24'), msg=primo)
 
     def test_unknown_run_is_handled(self):
         self.assertIn('non trovato', views.run_detail('non-esiste'))

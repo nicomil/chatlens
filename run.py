@@ -106,7 +106,9 @@ def build_parser() -> argparse.ArgumentParser:
         'report', help='rigenera il riassunto leggibile dai file gia prodotti')
     add_input_options(sp_report)
 
-    sub.add_parser('runs', help='elenca le esecuzioni archiviate')
+    sp_runs = sub.add_parser('runs', help='elenca le esecuzioni archiviate')
+    sp_runs.add_argument('--prune', type=int, metavar='N',
+                         help='conserva le N piu recenti ed elimina le altre')
     sp_dash = sub.add_parser('dashboard', help='apre la dashboard nel browser')
     sp_dash.add_argument('--port', type=int, default=8765)
     sp_dash.add_argument('--no-browser', action='store_true')
@@ -167,8 +169,20 @@ def cmd_report(args) -> int:
     return 0
 
 
-def cmd_runs(_args) -> int:
+def cmd_runs(args) -> int:
     from src import archive
+
+    if args.prune is not None:
+        rimossi = archive.prune(config.OUTPUT_DIR, args.prune)
+        if not rimossi:
+            print(f'Nulla da rimuovere: le esecuzioni archiviate sono gia '
+                  f'al massimo {args.prune}.')
+        else:
+            print(f'Rimosse {len(rimossi)} esecuzioni, conservate le '
+                  f'{args.prune} piu recenti:')
+            for path in rimossi:
+                print(f'  {path.name}')
+        print()
 
     runs = archive.list_runs(config.OUTPUT_DIR)
     print(f'Esecuzioni archiviate in {config.OUTPUT_DIR / "runs"}:')

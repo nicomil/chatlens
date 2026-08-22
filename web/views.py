@@ -431,7 +431,63 @@ def _run_time(stamp: str) -> str:
         prefix = 'ieri'
     else:
         prefix = moment.strftime('%d/%m')
-    return f'{prefix} {moment.strftime("%H:%M")}'
+    # Con i secondi: esecuzioni a pochi istanti l'una dall'altra sono comuni,
+    # e senza non si distinguono.
+    return f'{prefix} {moment.strftime("%H:%M:%S")}'
+
+
+def _run_detail(run: dict) -> str:
+    """Cosa distingue questo run dagli altri.
+
+    Fra dodici righe quasi uguali serve il dettaglio che cambia: il modello, le
+    repliche, l'unita' su cui sono stati indotti i topic. Il conteggio dei
+    messaggi resta come ripiego quando non c'e' altro.
+    """
+    bits = []
+    topic = run.get('topic') or {}
+    if topic:
+        model = topic.get('model') or '?'
+        bits.append(f'{model} · {topic.get("unit")}→{topic.get("assign_unit")}')
+
+    rubrica = run.get('rubrica') or {}
+    if rubrica:
+        model = rubrica.get('models')
+        model = '' if model in (None, 'predefinito') else f'{model} · '
+        repliche = rubrica.get('replicates', 1)
+        etichetta = '1 replica' if repliche == 1 else f'{repliche} repliche'
+        bits.append(f'{model}{etichetta}')
+
+    if not bits and run.get('n_messages') is not None:
+        bits.append(f'{run["n_messages"]} messaggi')
+    return ' · '.join(bits)
+
+
+def _run_tooltip(run: dict) -> str:
+    """Parametri completi, per chi vuole sapere esattamente cosa girava."""
+    lines = [f'Messaggi analizzati: {run.get("n_messages", "?")}']
+    levels = run.get('levels') or {}
+    if levels:
+        lines.append('Unita: ' + ', '.join(f'{k} {v}' for k, v in levels.items()))
+    rubrica = run.get('rubrica') or {}
+    if rubrica:
+        n = rubrica.get('replicates', 1)
+        repliche = '1 replica' if n == 1 else f'{n} repliche'
+        lines.append(
+            f'Rubrica: {rubrica.get("provider")}, modello '
+            f'{rubrica.get("models")}, {repliche}, '
+            f'livelli {", ".join(rubrica.get("levels") or [])}'
+        )
+    topic = run.get('topic') or {}
+    if topic:
+        lines.append(
+            f'Topic: {topic.get("model")} via {topic.get("api")}, induzione su '
+            f'{topic.get("unit")}, assegnazione a {topic.get("assign_unit")}, '
+            f'seed {Path(topic.get("seed") or "").name}'
+        )
+    return ' — '.join(lines)
+
+
+STAGE_LABELS = {'misure': 'misure', 'rubrica': 'rubrica', 'topic': 'topic'}
 
 
 def _run_span(gruppo) -> str:
@@ -534,8 +590,7 @@ def runs_panel() -> str:
                 'salvata qui, cosi\' rilanciare non cancella la precedente.</p>')
 
     rows = []
-    for index, gruppo in enumerate(_group_runs(runs)[:12]):
-        run = gruppo[0]
+    for index, run in enumerate(runs[:12]):
         stages = ''.join(
             f'<span class="chip {name}">{_e(STAGE_LABELS.get(name, name))}</span>'
             for name in (run.get('stages') or [])
@@ -552,12 +607,6 @@ def runs_panel() -> str:
         current = ('<span class="current">in output/</span>'
                    if index == 0 else '')
 
-        # Piu' esecuzioni identiche diventano una riga sola, che dice quante.
-        ripetuto = (f'<span class="times" data-tip="Stessa configurazione '
-                    f'eseguita {len(gruppo)} volte di seguito: '
-                    f'{_e(_run_span(gruppo))}. Si apre la piu\' recente.">'
-                    f'×{len(gruppo)}</span>') if len(gruppo) > 1 else ''
-
         name = run['path'].name
         # La riga intera apre il run: e' l'indice di quello che si e' fatto,
         # non un elenco di collegamenti a un solo file.
@@ -565,7 +614,7 @@ def runs_panel() -> str:
             f'<li hx-get="/run/{_e(name)}" hx-target="#report" '
             f'hx-swap="innerHTML" tabindex="0" role="button">'
             f'<span class="when">{_e(_run_time(run.get("timestamp", "")))}</span>'
-            f'<span class="chips">{stages}{current}{ripetuto}</span>'
+            f'<span class="chips">{stages}{current}</span>'
             f'{note}<span class="go-arrow">›</span></li>'
         )
     return f'<ul class="runs">{"".join(rows)}</ul>'
@@ -637,17 +686,6 @@ def run_detail(name: str) -> str:
              f'non completato</span>' if run.get('failed_stage')
              else '<span class="badge ok">completato</span>')
 
-    # Se la stessa configurazione e' stata eseguita piu' volte di seguito, va
-    # detto: altrimenti sembra un'esecuzione isolata e non si capisce perche'
-    # nell'archivio compaia una sola riga per piu' cartelle.
-    gruppo = next((g for g in _group_runs(archive.list_runs(config.OUTPUT_DIR))
-                   if any(r['path'].name == name for r in g)), [run])
-    ripetizione = (
-        f'<p class="muted rip">Stessa configurazione eseguita '
-        f'{len(gruppo)} volte di seguito, {_e(_run_span(gruppo))}. '
-        f'Qui sotto la più recente.</p>' if len(gruppo) > 1 else ''
-    )
-
     report = run['path'] / 'report.html'
     if report.is_file():
         viewer = (f'<div class="reportbar">'
@@ -666,7 +704,6 @@ def run_detail(name: str) -> str:
         f'{stato}'
         f'<button class="back" hx-get="/report" hx-target="#report" '
         f'hx-swap="innerHTML">torna all\'ultimo</button></div>'
-        f'{ripetizione}'
         f'{_params_table(run)}'
         f'{_run_files(run["path"], name)}'
         f'{viewer}'

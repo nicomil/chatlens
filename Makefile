@@ -27,7 +27,7 @@ ARGS ?=
 
 .DEFAULT_GOAL := help
 .PHONY: help setup keys status check test all merge analyze llm topics full \
-        topicgpt report runs dashboard clean clean-runs clean-all
+        topicgpt report runs prune dashboard clean clean-runs clean-all
 
 ## --- Aiuto -----------------------------------------------------------------
 
@@ -145,7 +145,12 @@ clean: ## Cancella l'ultimo risultato (archivio, input e chiavi restano)
 	@find . -name '__pycache__' -type d -prune -exec rm -rf {} +
 	@echo "==> output/ svuotato (runs/ e cache/ conservati)"
 
-clean-runs: ## Cancella l'archivio delle esecuzioni
+KEEP ?= 2
+
+prune: $(DEPS) ## Conserva le ultime esecuzioni ed elimina le altre (KEEP=2)
+	@$(PY) run.py runs --prune $(KEEP)
+
+clean-runs: ## Cancella l'intero archivio delle esecuzioni
 	@rm -rf output/runs
 	@echo "==> archivio delle esecuzioni rimosso"
 

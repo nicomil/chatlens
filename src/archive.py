@@ -122,6 +122,26 @@ def list_runs(outdir: Path) -> list[dict]:
     return runs
 
 
+def prune(outdir: Path, keep: int) -> list[Path]:
+    """Rimuove le esecuzioni piu' vecchie, conservando le `keep` piu' recenti.
+
+    Restituisce i percorsi rimossi. L'archivio serve a non perdere il lavoro
+    fatto, non a conservare per sempre ogni prova: dopo una sessione di
+    tentativi resta una lunga coda di esecuzioni identiche che non dice nulla.
+    """
+    if keep < 0:
+        raise ValueError('keep non puo essere negativo')
+
+    runs = list_runs(outdir)
+    da_rimuovere = [run['path'] for run in runs[keep:]]
+    for path in da_rimuovere:
+        # Si cancella solo dentro output/runs: un percorso che ne esce
+        # significa che qualcosa e' andato storto, e ci si ferma.
+        path.resolve().relative_to((outdir / 'runs').resolve())
+        shutil.rmtree(path)
+    return da_rimuovere
+
+
 def render_list(runs) -> str:
     if not runs:
         return 'Nessuna esecuzione archiviata.'

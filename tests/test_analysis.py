@@ -1100,6 +1100,76 @@ class ArchiveTests(unittest.TestCase):
         self.assertIn('?', archive.render_list(runs))
 
 
+class PruneTests(unittest.TestCase):
+    """La potatura dell'archivio: irreversibile, quindi va delimitata bene."""
+
+    def _archive(self, tmpdir, quante):
+        import json as _json
+
+        outdir = Path(tmpdir)
+        for i in range(quante):
+            run = outdir / 'runs' / f'2026-01-01_1200{i:02d}'
+            (run / 'datasets').mkdir(parents=True)
+            (run / 'datasets' / 'x.csv').write_text('a', encoding='utf-8')
+            (run / 'run.json').write_text(
+                _json.dumps({'timestamp': f'2026-01-01T12:00:{i:02d}',
+                             'stages': ['misure']}), encoding='utf-8')
+        return outdir
+
+    def test_keeps_the_most_recent(self):
+        import tempfile
+        from src import archive
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = self._archive(tmpdir, 5)
+            rimossi = archive.prune(outdir, 2)
+            rimasti = [r['path'].name for r in archive.list_runs(outdir)]
+
+        self.assertEqual(len(rimossi), 3)
+        self.assertEqual(rimasti, ['2026-01-01_120004', '2026-01-01_120003'])
+
+    def test_is_idempotent(self):
+        import tempfile
+        from src import archive
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = self._archive(tmpdir, 3)
+            archive.prune(outdir, 2)
+            self.assertEqual(archive.prune(outdir, 2), [])
+
+    def test_keeping_more_than_there_are_removes_nothing(self):
+        import tempfile
+        from src import archive
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = self._archive(tmpdir, 2)
+            self.assertEqual(archive.prune(outdir, 10), [])
+            self.assertEqual(len(archive.list_runs(outdir)), 2)
+
+    def test_negative_is_refused(self):
+        import tempfile
+        from src import archive
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = self._archive(tmpdir, 2)
+            with self.assertRaises(ValueError):
+                archive.prune(outdir, -1)
+            self.assertEqual(len(archive.list_runs(outdir)), 2)
+
+    def test_only_touches_the_archive(self):
+        """Cancella dentro output/runs e da nessun'altra parte."""
+        import tempfile
+        from src import archive
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outdir = self._archive(tmpdir, 3)
+            altrove = outdir / 'datasets'
+            altrove.mkdir()
+            (altrove / 'importante.csv').write_text('dati', encoding='utf-8')
+            archive.prune(outdir, 1)
+            self.assertTrue((altrove / 'importante.csv').is_file())
+
+
 class ConfigTests(unittest.TestCase):
     """Chiavi API e percorsi: devono essere prevedibili e non sorprendere."""
 
