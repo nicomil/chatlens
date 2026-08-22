@@ -39,8 +39,11 @@ nel repository costruisce un client ``AnthropicVertex``, oppure il backend
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import re
+import sys
 from pathlib import Path
 
 # Il formato di risposta di TopicGPT per l'assegnazione: "[1] Nome: descrizione".
@@ -53,6 +56,81 @@ PROMPT_FILES = {
     'assignment': 'prompt/assignment.txt',
     'correction': 'prompt/correction.txt',
 }
+
+# TopicGPT commenta ogni documento con print() su stdout, mentre la barra di
+# avanzamento vive su stderr: ogni messaggio manda la barra a capo, e al posto
+# di una riga che avanza si ottengono centinaia di righe. I messaggi ripetitivi
+# vengono quindi raccolti e riassunti a fine fase; quelli non previsti passano
+# invariati, perche' nascondere un messaggio sconosciuto e' peggio del disordine.
+NOISY_LINES = [
+    ('Invalid topic format', 'documenti senza topic riconosciuto'),
+    ('Lower level topics are not allowed', 'topic di livello inferiore scartati'),
+    ('Error: Row', 'righe senza topic'),
+    ('Hallucinated:', 'topic inventati dal modello'),
+    ('Document is too long', 'documenti troncati'),
+    ('Too many topics', 'elenchi di topic potati'),
+]
+
+# Righe di intestazione che ripetono parametri gia' noti a chi ha lanciato.
+BANNER_LINES = (
+    '---', 'Initializing', 'Model:', 'Data file:', 'Prompt file:',
+    'Seed file:', 'Output file:', 'Topic file:', 'Generation file:',
+    'Refined file:', 'Updated file:', 'Mapping file:', 'Prompt token usage',
+    'Response token usage',
+)
+
+
+class _Digest(io.TextIOBase):
+    """Raccoglie stdout di TopicGPT contando i messaggi ripetitivi."""
+
+    def __init__(self):
+        self.counts = {}
+        self.passthrough = []
+        self._partial = ''
+
+    def write(self, text):
+        self._partial += text
+        while '\n' in self._partial:
+            line, self._partial = self._partial.split('\n', 1)
+            self._handle(line.strip())
+        return len(text)
+
+    def _handle(self, line):
+        if not line or line.startswith(BANNER_LINES):
+            return
+        for needle, label in NOISY_LINES:
+            if needle in line:
+                self.counts[label] = self.counts.get(label, 0) + 1
+                return
+        self.passthrough.append(line)
+
+    def flush(self):
+        if self._partial.strip():
+            self._handle(self._partial.strip())
+            self._partial = ''
+
+    def report(self, prefix='    '):
+        """Stampa il riassunto: prima i messaggi non previsti, poi i conteggi."""
+        self.flush()
+        for line in self.passthrough:
+            print(f'{prefix}{line}')
+        for label, count in sorted(self.counts.items(), key=lambda kv: -kv[1]):
+            print(f'{prefix}{count} {label}')
+
+
+@contextlib.contextmanager
+def _quiet(verbose: bool):
+    """Silenzia lo stdout di TopicGPT lasciando intatta la barra su stderr."""
+    if verbose:
+        yield None
+        return
+    digest = _Digest()
+    try:
+        with contextlib.redirect_stdout(digest):
+            yield digest
+    finally:
+        sys.stdout.flush()
+
 
 UNIT_KEYS = {
     'dyad_directed': ('group_uid', 'sender_id_in_group', 'receiver_id_in_group'),
@@ -179,16 +257,20 @@ def run_topicgpt(
     generation_out = outdir / 'generation_1.jsonl'
     topics_lvl1 = outdir / 'generation_1.md'
 
-    generate_topic_lvl1(
-        api=api,
-        model=model,
-        data=str(data_file),
-        prompt_file=str(repo_path / PROMPT_FILES['generation']),
-        seed_file=str(seed_path),
-        out_file=str(generation_out),
-        topic_file=str(topics_lvl1),
-        verbose=verbose,
-    )
+    print('  [1/4] generazione dei topic', flush=True)
+    with _quiet(verbose) as digest:
+        generate_topic_lvl1(
+            api=api,
+            model=model,
+            data=str(data_file),
+            prompt_file=str(repo_path / PROMPT_FILES['generation']),
+            seed_file=str(seed_path),
+            out_file=str(generation_out),
+            topic_file=str(topics_lvl1),
+            verbose=verbose,
+        )
+    if digest:
+        digest.report()
 
     topics_for_assignment = topics_lvl1
     # I topic si possono indurre su un'unita' ampia e assegnare a una piu' fine:
@@ -198,44 +280,58 @@ def run_topicgpt(
         write_jsonl(data_for_assignment, assignment_documents)
     else:
         data_for_assignment = data_file
+
     if refine:
         refined_topics = outdir / 'generation_1_refined.md'
         refined_generation = outdir / 'generation_1_updated.jsonl'
-        refine_topics(
-            api=api,
-            model=model,
-            prompt_file=str(repo_path / PROMPT_FILES['refinement']),
-            generation_file=str(generation_out),
-            topic_file=str(topics_lvl1),
-            out_file=str(refined_topics),
-            updated_file=str(refined_generation),
-            verbose=verbose,
-            remove=True,
-            mapping_file=str(outdir / 'refiner_mapping.json'),
-        )
+        print('  [2/4] raffinamento', flush=True)
+        with _quiet(verbose) as digest:
+            refine_topics(
+                api=api,
+                model=model,
+                prompt_file=str(repo_path / PROMPT_FILES['refinement']),
+                generation_file=str(generation_out),
+                topic_file=str(topics_lvl1),
+                out_file=str(refined_topics),
+                updated_file=str(refined_generation),
+                verbose=verbose,
+                remove=True,
+                mapping_file=str(outdir / 'refiner_mapping.json'),
+            )
+        if digest:
+            digest.report()
         topics_for_assignment = refined_topics
 
     assignment_out = outdir / 'assignment.jsonl'
-    assign_topics(
-        api=api,
-        model=model,
-        data=str(data_for_assignment),
-        prompt_file=str(repo_path / PROMPT_FILES['assignment']),
-        out_file=str(assignment_out),
-        topic_file=str(topics_for_assignment),
-        verbose=verbose,
-    )
+    print('  [3/4] assegnazione ai documenti', flush=True)
+    with _quiet(verbose) as digest:
+        assign_topics(
+            api=api,
+            model=model,
+            data=str(data_for_assignment),
+            prompt_file=str(repo_path / PROMPT_FILES['assignment']),
+            out_file=str(assignment_out),
+            topic_file=str(topics_for_assignment),
+            verbose=verbose,
+        )
+    if digest:
+        digest.report()
 
     corrected_out = outdir / 'assignment_corrected.jsonl'
-    correct_topics(
-        api=api,
-        model=model,
-        data_path=str(assignment_out),
-        prompt_path=str(repo_path / PROMPT_FILES['correction']),
-        topic_path=str(topics_for_assignment),
-        output_path=str(corrected_out),
-        verbose=verbose,
-    )
+    print('  [4/4] correzione delle assegnazioni', flush=True)
+    with _quiet(verbose) as digest:
+        correct_topics(
+            api=api,
+            model=model,
+            data_path=str(assignment_out),
+            prompt_path=str(repo_path / PROMPT_FILES['correction']),
+            topic_path=str(topics_for_assignment),
+            output_path=str(corrected_out),
+            verbose=verbose,
+        )
+    if digest:
+        digest.report()
+
     return corrected_out
 
 
