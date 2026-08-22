@@ -27,6 +27,13 @@ LEVELS = ['group', 'dyad_directed', 'dyad', 'sender_group']
 # Cosa significa ciascuna unità di analisi. Sono i termini che compaiono ovunque
 # nei dati, e senza una spiegazione a portata di mano non si scelgono a ragion
 # veduta.
+LEVEL_LABELS = {
+    'group': ('Gruppo', "l'intera conversazione della triade"),
+    'dyad_directed': ('Coppia orientata', 'chi scrive a chi, una direzione'),
+    'dyad': ('Coppia', 'due persone, entrambe le direzioni'),
+    'sender_group': ('Persona', 'tutto cio\' che uno ha scritto'),
+}
+
 LEVEL_HELP = {
     'group': 'La conversazione dell\'intera triade: tutti i messaggi scambiati '
              'fra i tre partecipanti. È l\'unità con più testo.',
@@ -54,6 +61,86 @@ OPTION_HELP = {
                     'più fine dell\'induzione: riconoscere è più facile che '
                     'scoprire.',
 }
+
+
+PRESETS = [
+    dict(id='base', nome='Solo misure',
+         descrizione='Volume, sentiment e indici del linguaggio. '
+                     'Nessuna chiave, pochi secondi.',
+         costo='gratis'),
+    dict(id='validazione', nome='Misure + validazione',
+         descrizione='Aggiunge la rubrica che convalida gli indici '
+                     'facendoli valutare a un modello.',
+         costo='a pagamento'),
+    dict(id='completa', nome='Analisi completa',
+         descrizione='Aggiunge anche i temi delle conversazioni con TopicGPT. '
+                     'È il run che produce tutto.',
+         costo='a pagamento'),
+]
+
+
+def presets_panel() -> str:
+    cards = ''.join(
+        f'<button type="button" class="preset" data-preset="{_e(p["id"])}">'
+        f'<span class="nome">{_e(p["nome"])}</span>'
+        f'<span class="desc">{_e(p["descrizione"])}</span>'
+        f'<span class="costo {"free" if p["costo"] == "gratis" else "paid"}">'
+        f'{_e(p["costo"])}</span></button>'
+        for p in PRESETS
+    )
+    return f'<div class="presets">{cards}</div>'
+
+
+def _unit_counts() -> dict:
+    """Quante unita' ci sono per livello, dall'ultimo run archiviato.
+
+    Serve a rendere concreta la scelta: "due repliche" non dice nulla, "circa
+    duecento chiamate" si.
+    """
+    for run in archive.list_runs(config.OUTPUT_DIR):
+        levels = run.get('levels')
+        if levels:
+            return levels
+    return {}
+
+
+def estimate_panel(form=None) -> str:
+    """Stima delle chiamate che la configurazione corrente comporta."""
+    form = form or {}
+    counts = _unit_counts()
+    if not counts:
+        return ('<div id="estimate" class="estimate muted">La stima compare '
+                'dopo il primo run.</div>')
+
+    calls = 0
+    parts = []
+
+    if form.get('llm'):
+        levels = [v for v in form.get('llm_level', []) if v in counts]
+        replicates = int((form.get('llm_replicates') or ['1'])[0] or 1)
+        n = sum(counts[lv] for lv in levels) * replicates
+        if n:
+            calls += n
+            parts.append(f'rubrica {n}')
+
+    if form.get('topics'):
+        unit = (form.get('topicgpt_unit') or ['group'])[0]
+        assign = (form.get('topicgpt_assign_unit') or ['dyad_directed'])[0]
+        n = counts.get(unit, 0) + counts.get(assign, 0)
+        if n:
+            calls += n
+            parts.append(f'topic ~{n}')
+
+    if not calls:
+        return ('<div id="estimate" class="estimate free">Nessuna chiamata a '
+                'pagamento · pochi secondi</div>')
+
+    # Circa un secondo e mezzo per chiamata, misurato sui run veri.
+    minuti = max(1, round(calls * 1.5 / 60))
+    dettaglio = ' + '.join(parts)
+    return (f'<div id="estimate" class="estimate paid">'
+            f'<strong>~{calls} chiamate</strong> ({dettaglio}) · '
+            f'circa {minuti} min</div>')
 
 
 def _help(text: str) -> str:
@@ -100,58 +187,93 @@ def _options(values, selected='') -> str:
     )
 
 
+def _level_checkbox(level: str, checked: bool) -> str:
+    nome, sotto = LEVEL_LABELS[level]
+    return (
+        f'<label class="lev" data-tip="{_e(LEVEL_HELP[level])}">'
+        f'<input type="checkbox" name="llm_level" value="{level}"'
+        f'{" checked" if checked else ""}>'
+        f'<span class="lev-t"><b>{_e(nome)}</b>'
+        f'<i>{_e(sotto)}</i></span></label>'
+    )
+
+
+def _level_options(selected: str) -> str:
+    return ''.join(
+        f'<option value="{lv}"{" selected" if lv == selected else ""}>'
+        f'{_e(LEVEL_LABELS[lv][0])} — {_e(LEVEL_LABELS[lv][1])}</option>'
+        for lv in LEVELS
+    )
+
+
 def form_panel() -> str:
     disabled = ' disabled' if runner.running else ''
-    return f'''
-<form id="launch" hx-post="/run" hx-target="#logwrap" hx-swap="innerHTML">
-  <fieldset{disabled}>
-    <div class="row">
-      <label class="grow">
-        <span>Comando</span>
-        <select name="command">
-          <option value="all">all — unione + analisi</option>
-          <option value="merge">merge — solo unione</option>
-          <option value="analyze">analyze — solo analisi</option>
-        </select>
-      </label>
-    </div>
+    # Ogni cambiamento nel modulo aggiorna la stima: e' cio' che rende
+    # concreta una scelta altrimenti astratta.
+    live = ('hx-post="/estimate" hx-trigger="change" '
+            'hx-target="#estimate" hx-swap="outerHTML"')
 
-    <details class="opt">
-      <summary><label class="inline">
-        <input type="checkbox" name="llm" value="1"> Rubrica di validazione
-      </label>{_help(OPTION_HELP['llm'])}<span class="tag">chiave</span></summary>
+    return f'''
+{presets_panel()}
+<form id="launch" hx-post="/run" hx-target="#logwrap" hx-swap="innerHTML" {live}>
+  <fieldset{disabled}>
+    <label class="field">
+      <span>Cosa eseguire</span>
+      <select name="command">
+        <option value="all">Tutto — unisce i dati e li analizza</option>
+        <option value="merge">Solo unione — prepara i dati, non li analizza</option>
+        <option value="analyze">Solo analisi — riusa i dati gia uniti</option>
+      </select>
+    </label>
+
+    <details class="opt" id="opt-llm">
+      <summary>
+        <label class="inline">
+          <input type="checkbox" name="llm" value="1"> Rubrica di validazione
+        </label>{_help(OPTION_HELP['llm'])}<span class="tag">a pagamento</span>
+      </summary>
+      <p class="why">Fa valutare le conversazioni a un modello, per verificare
+        che gli indici calcolati dai dizionari misurino davvero quello che
+        dicono.</p>
       <div class="row">
-        <label><span>Modello</span>
+        <label class="field"><span>Modello</span>
           <select name="llm_model">{_options(MODELS_RUBRICA)}</select></label>
-        <label><span>Repliche {_help(OPTION_HELP['replicates'])}</span>
+        <label class="field"><span>Repliche {_help(OPTION_HELP['replicates'])}</span>
           <select name="llm_replicates">
             <option>1</option><option>2</option><option>3</option>
           </select></label>
       </div>
-      <div class="row">
-        <label class="grow"><span>Livelli</span>
-          <span class="checks">{''.join(
-            f'<label class="inline" data-tip="{_e(LEVEL_HELP[lv])}">'
-            f'<input type="checkbox" name="llm_level" value="{lv}"'
-            f'{" checked" if lv == "group" else ""}> {lv}</label>'
-            for lv in LEVELS)}</span></label>
+      <div class="levels">
+        <span class="lbl">Su quali unità valutare</span>
+        {''.join(_level_checkbox(lv, lv == 'group') for lv in LEVELS)}
       </div>
     </details>
 
-    <details class="opt">
-      <summary><label class="inline">
-        <input type="checkbox" name="topics" value="1"> Topic con TopicGPT
-      </label>{_help(OPTION_HELP['topics'])}<span class="tag">chiave</span></summary>
+    <details class="opt" id="opt-topics">
+      <summary>
+        <label class="inline">
+          <input type="checkbox" name="topics" value="1"> Temi delle conversazioni
+        </label>{_help(OPTION_HELP['topics'])}<span class="tag">a pagamento</span>
+      </summary>
+      <p class="why">TopicGPT prima <b>scopre</b> quali temi esistono leggendo i
+        testi più lunghi, poi li <b>attribuisce</b> alle unità più fini.</p>
       <div class="row">
-        <label><span>Modello</span>
+        <label class="field"><span>Modello</span>
           <select name="topicgpt_model">{_options(MODELS_TOPIC, 'gpt-4o')}</select></label>
-        <label><span>Induzione su {_help(OPTION_HELP['induzione'])}</span>
-          <select name="topicgpt_unit">{_options(LEVELS, 'group')}</select></label>
-        <label><span>Assegna a {_help(OPTION_HELP['assegnazione'])}</span>
-          <select name="topicgpt_assign_unit">{_options(LEVELS, 'dyad_directed')}</select></label>
+      </div>
+      <div class="row">
+        <label class="field grow">
+          <span>Scopre i temi leggendo {_help(OPTION_HELP['induzione'])}</span>
+          <select name="topicgpt_unit">{_level_options('group')}</select></label>
+      </div>
+      <div class="row">
+        <label class="field grow">
+          <span>Li attribuisce a {_help(OPTION_HELP['assegnazione'])}</span>
+          <select name="topicgpt_assign_unit">{_level_options('dyad_directed')}</select></label>
       </div>
     </details>
 
+    {estimate_panel()}
     <button type="submit" class="go">{'In corso…' if runner.running else 'Lancia'}</button>
   </fieldset>
 </form>'''

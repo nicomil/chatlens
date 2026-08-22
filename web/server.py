@@ -98,12 +98,17 @@ class Handler(BaseHTTPRequestHandler):
             self._html('<h1>404</h1>', status=404)
 
     def do_POST(self):  # noqa: N802
-        if urlparse(self.path).path != '/run':
+        route = urlparse(self.path).path
+        if route not in ('/run', '/estimate'):
             self._html('<h1>404</h1>', status=404)
             return
 
         length = int(self.headers.get('Content-Length') or 0)
         form = parse_qs(self.rfile.read(length).decode('utf-8'))
+
+        if route == '/estimate':
+            self._html(views.estimate_panel(form))
+            return
 
         if not runner.start(build_command(form)):
             self._html('<div class="logbody empty">Un run e\' gia\' in corso: '

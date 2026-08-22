@@ -90,6 +90,54 @@ button.go {
 }
 button.go:disabled, fieldset[disabled] button.go { cursor: not-allowed; }
 
+/* preset */
+.presets { display: flex; flex-direction: column; gap: .4rem; margin-bottom: .9rem; }
+.preset {
+  display: grid; grid-template-columns: 1fr auto; gap: .1rem .6rem;
+  text-align: left; font: inherit; cursor: pointer;
+  padding: .55rem .7rem; border-radius: 6px;
+  border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
+}
+.preset:hover { border-color: var(--accent); }
+.preset.on { border-color: var(--accent); background: var(--accent-dim); }
+.preset .nome { font-weight: 600; font-size: .9rem; }
+.preset .desc { grid-column: 1; color: var(--muted); font-size: .76rem; line-height: 1.4; }
+.preset .costo {
+  grid-row: 1; grid-column: 2; font-size: .62rem; text-transform: uppercase;
+  letter-spacing: .06em; padding: .1rem .35rem; border-radius: 3px; height: fit-content;
+}
+.preset .costo.free { background: var(--ok); color: #fff; }
+.preset .costo.paid { background: var(--band); color: var(--run); border: 1px solid var(--run); }
+
+/* campi */
+label.field { display: flex; flex-direction: column; gap: .2rem; margin-bottom: .6rem; }
+label.field.grow { width: 100%; }
+p.why {
+  margin: 0 0 .7rem; font-size: .78rem; line-height: 1.5; color: var(--muted);
+}
+.levels { display: flex; flex-direction: column; gap: .25rem; }
+.levels .lbl {
+  font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin-bottom: .1rem;
+}
+label.lev {
+  display: flex; align-items: flex-start; gap: .45rem;
+  padding: .3rem .45rem; border-radius: 4px; cursor: pointer;
+}
+label.lev:hover { background: var(--band); }
+label.lev input { margin-top: .22rem; }
+.lev-t { display: flex; flex-direction: column; line-height: 1.3; }
+.lev-t b { font-size: .85rem; font-weight: 600; }
+.lev-t i { font-style: normal; font-size: .72rem; color: var(--muted); }
+
+/* stima */
+.estimate {
+  margin: .8rem 0; padding: .5rem .7rem; border-radius: 5px;
+  font-size: .8rem; border: 1px solid var(--rule); background: var(--band);
+}
+.estimate.free { color: var(--ok); border-color: var(--ok); }
+.estimate.paid { color: var(--run); border-color: var(--run); }
+
 /* log */
 .log {
   background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
