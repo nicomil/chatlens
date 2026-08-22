@@ -14,9 +14,13 @@ vaderSentiment>=3.3.2
 # Il fornitore della rubrica e' intercambiabile: basta una delle due librerie,
 # quella corrispondente alla chiave che si usa. `openai` serve comunque a
 # TopicGPT, ed e' anche il client dei modelli locali via Ollama.
-openai>=1.54
+# I limiti superiori non sono una scelta nostra: TopicGPT dichiara openai<2 e
+# anthropic<1, e installandolo declassa comunque queste librerie. Dichiararli
+# qui rende l'ambiente identico a prescindere dall'ordine in cui si installa,
+# invece di dipendere da chi arriva per ultimo.
+openai>=1.54,<2
 pydantic>=2.0
-anthropic>=0.40   # solo se si sceglie Claude come giudice della rubrica
+anthropic>=0.40,<1   # solo se si sceglie Claude come giudice della rubrica
 
 # TopicGPT (Pham et al., 2024) non si installa da qui: i file di prompt fanno
 # parte del metodo e stanno nel repository, non nel pacchetto pubblicato.

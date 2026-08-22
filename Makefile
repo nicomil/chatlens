@@ -85,8 +85,14 @@ keys: $(DEPS) ## Configura le chiavi API (guidato, verifica che funzionino)
 topicgpt: $(DEPS) ## Installa TopicGPT dal repository ufficiale
 	@test -d "$(TOPICGPT_REPO)" \
 	  || git clone https://github.com/chtmp223/topicGPT.git "$(TOPICGPT_REPO)"
-	@$(PIP) install --quiet "$(TOPICGPT_REPO)"
-	@echo "==> TopicGPT installato da $(TOPICGPT_REPO)"
+	@echo "==> Installo TopicGPT (dipendenze pesanti, puo' richiedere minuti)"
+	@echo "    L'avviso su google-cloud-aiplatform e l'extra 'all' e' innocuo."
+	$(PIP) install "$(TOPICGPT_REPO)"
+	@$(PY) -c "import topicgpt_python" \
+	  || { echo "ERRORE: installazione non riuscita, vedi i messaggi sopra"; exit 1; }
+	@test -f "$(TOPICGPT_REPO)/prompt/generation_1.txt" \
+	  || { echo "ERRORE: file di prompt mancanti in $(TOPICGPT_REPO)/prompt/"; exit 1; }
+	@echo "==> TopicGPT installato e verificato ($(TOPICGPT_REPO))"
 
 ## --- Diagnostica -----------------------------------------------------------
 

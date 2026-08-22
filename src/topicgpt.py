@@ -68,14 +68,17 @@ class TopicGPTUnavailable(RuntimeError):
 
 def check_installation(repo_path: Path) -> None:
     """Verifica pacchetto e file di prompt, con messaggi azionabili."""
-    try:
-        import topicgpt_python  # noqa: F401
-    except ImportError as exc:
+    # Si verifica che il pacchetto esista senza importarlo: l'import trascina
+    # torch e transformers e costa parecchi secondi, che in un controllo
+    # preliminare — eseguito a ogni avvio — non hanno senso di spendersi.
+    import importlib.util
+
+    if importlib.util.find_spec('topicgpt_python') is None:
         raise TopicGPTUnavailable(
             'Il pacchetto topicgpt_python non è installato.\n'
             '  git clone https://github.com/chtmp223/topicGPT.git\n'
             '  pip install ./topicGPT'
-        ) from exc
+        )
 
     missing = [name for name in PROMPT_FILES.values() if not (repo_path / name).is_file()]
     if missing:

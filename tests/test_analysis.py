@@ -355,7 +355,7 @@ class TopicGPTAdapterTests(unittest.TestCase):
     def test_missing_installation_gives_actionable_error(self):
         with self.assertRaises(topicgpt_runner.TopicGPTUnavailable) as ctx:
             topicgpt_runner.check_installation(Path('/percorso/inesistente'))
-        self.assertIn('topicGPT', str(ctx.exception))
+        self.assertIn('topicgpt', str(ctx.exception).lower())
 
 
 class LLMRubricPureTests(unittest.TestCase):
@@ -703,14 +703,16 @@ class PreflightTests(unittest.TestCase):
             self.pipeline.preflight(self._args(topics=True))
         message = str(ctx.exception)
         self.assertIn('Nessuna chiamata', message)
-        self.assertIn('topicgpt_python', message)
+        # Il ramo esatto dipende da cosa manca — pacchetto o file di prompt —
+        # e non e' quello che il test vuole fissare.
+        self.assertIn('topicgpt', message.lower())
 
     def test_all_problems_are_reported_together(self):
         """Meglio una lista sola che scoprirne uno per volta."""
         with self.assertRaises(SystemExit) as ctx:
             self.pipeline.preflight(self._args(llm=True, topics=True))
         message = str(ctx.exception)
-        self.assertIn('topicgpt_python', message)
+        self.assertIn('topicgpt', message.lower())
         self.assertIn('OPENAI_API_KEY', message)
 
     def test_dry_run_needs_no_prerequisites(self):
