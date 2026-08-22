@@ -107,6 +107,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_input_options(sp_report)
 
     sub.add_parser('runs', help='elenca le esecuzioni archiviate')
+    sp_dash = sub.add_parser('dashboard', help='apre la dashboard nel browser')
+    sp_dash.add_argument('--port', type=int, default=8765)
+    sp_dash.add_argument('--no-browser', action='store_true')
     sub.add_parser('keys', help='configura le chiavi API')
     sub.add_parser('status', help='cosa c\'è in input, in output e fra le chiavi')
 
@@ -177,6 +180,13 @@ def cmd_runs(_args) -> int:
     return 0
 
 
+def cmd_dashboard(args) -> int:
+    from web.server import serve
+
+    serve(port=args.port, open_browser=not args.no_browser)
+    return 0
+
+
 def cmd_keys(_args) -> int:
     from src import setup_keys
 
@@ -219,6 +229,7 @@ COMMANDS = {
     'analyze': cmd_analyze,
     'report': cmd_report,
     'runs': cmd_runs,
+    'dashboard': cmd_dashboard,
     'keys': cmd_keys,
     'status': cmd_status,
 }

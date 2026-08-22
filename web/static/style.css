@@ -1,0 +1,133 @@
+:root {
+  --paper: #fbfbfd; --panel: #ffffff; --ink: #16181d; --soft: #4a5060;
+  --muted: #6b7183; --rule: #e1e3ec; --accent: #2f4c8c; --band: #f3f4f8;
+  --ok: #1f6f4a; --ko: #a33a2a; --run: #8f5410;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0f1116; --panel: #151821; --ink: #e9ebf1; --soft: #c2c7d4;
+    --muted: #929aac; --rule: #262a35; --accent: #8aa8ec; --band: #1b1f28;
+    --ok: #58c48d; --ko: #e0705c; --run: #e3ac5c;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+header {
+  display: flex; align-items: baseline; gap: 1rem;
+  padding: 1rem 1.5rem; border-bottom: 1px solid var(--rule);
+  position: sticky; top: 0; background: var(--paper); z-index: 5;
+}
+h1 { font-size: 1.15rem; margin: 0; letter-spacing: -.01em; }
+h2 {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--muted); margin: 1.6rem 0 .6rem; font-weight: 600;
+}
+h2:first-child { margin-top: 0; }
+.muted { color: var(--muted); font-size: .86rem; }
+.right { text-align: right; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+
+main {
+  display: grid; grid-template-columns: minmax(19rem, 24rem) minmax(0, 1fr);
+  gap: 1.5rem; padding: 1.5rem; align-items: start;
+}
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+.col { min-width: 0; }
+
+/* stato */
+table.mini { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.mini td { padding: .3rem 0; border-bottom: 1px solid var(--rule); }
+.dot {
+  display: inline-block; width: .5rem; height: .5rem; border-radius: 50%;
+  margin-right: .5rem; vertical-align: middle; background: var(--muted);
+}
+.dot.ok { background: var(--ok); }
+.dot.ko { background: var(--ko); }
+.dot.off { background: var(--rule); border: 1px solid var(--muted); }
+
+/* modulo */
+form fieldset { border: 0; margin: 0; padding: 0; }
+form fieldset[disabled] { opacity: .55; }
+.row { display: flex; gap: .7rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.row > label { display: flex; flex-direction: column; gap: .2rem; }
+.row > label.grow { flex: 1 1 100%; }
+label > span {
+  font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted);
+}
+select {
+  font: inherit; font-size: .88rem; padding: .35rem .5rem;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 4px;
+}
+label.inline {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .9rem; text-transform: none; letter-spacing: 0; color: var(--ink);
+}
+.checks { display: flex; flex-wrap: wrap; gap: .1rem .9rem; }
+details.opt {
+  border: 1px solid var(--rule); border-radius: 5px;
+  padding: .5rem .7rem; margin-bottom: .6rem; background: var(--panel);
+}
+details.opt summary {
+  cursor: pointer; display: flex; align-items: center; gap: .5rem;
+  list-style: none;
+}
+details.opt summary::-webkit-details-marker { display: none; }
+details.opt[open] summary { margin-bottom: .6rem; }
+.tag {
+  margin-left: auto; font-size: .62rem; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--run); border: 1px solid var(--run);
+  border-radius: 3px; padding: 0 .3rem;
+}
+button.go {
+  font: inherit; font-weight: 600; width: 100%; padding: .55rem;
+  border: 0; border-radius: 5px; cursor: pointer;
+  background: var(--accent); color: #fff;
+}
+button.go:disabled, fieldset[disabled] button.go { cursor: not-allowed; }
+
+/* log */
+.log {
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+  padding: .7rem .9rem; max-height: 26rem; overflow: auto;
+}
+.log.empty { color: var(--muted); font-size: .88rem; }
+.loghead {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  padding-bottom: .5rem; margin-bottom: .5rem;
+  border-bottom: 1px solid var(--rule);
+}
+.log pre {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem;
+  line-height: 1.5; color: var(--soft);
+}
+.badge {
+  font-size: .65rem; text-transform: uppercase; letter-spacing: .08em;
+  padding: .1rem .4rem; border-radius: 3px; font-weight: 600;
+}
+.badge.run { background: var(--run); color: #fff; }
+.badge.ok  { background: var(--ok); color: #fff; }
+.badge.ko  { background: var(--ko); color: #fff; }
+
+/* archivio */
+ul.runs { list-style: none; margin: 0; padding: 0; font-size: .85rem; }
+ul.runs li {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  padding: .35rem 0; border-bottom: 1px solid var(--rule);
+}
+ul.runs a { margin-left: auto; color: var(--accent); }
+
+/* rapporto */
+.reportbar {
+  display: flex; align-items: center; gap: .8rem; margin-bottom: .5rem;
+}
+.reportbar a { color: var(--accent); font-size: .88rem; }
+iframe {
+  width: 100%; height: 40rem; border: 1px solid var(--rule);
+  border-radius: 6px; background: var(--panel);
+}

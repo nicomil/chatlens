@@ -27,7 +27,7 @@ ARGS ?=
 
 .DEFAULT_GOAL := help
 .PHONY: help setup keys status check test all merge analyze llm topics full \
-        topicgpt report runs clean clean-runs clean-all
+        topicgpt report runs dashboard clean clean-runs clean-all
 
 ## --- Aiuto -----------------------------------------------------------------
 
@@ -100,6 +100,9 @@ report: $(DEPS) ## Rigenera il riassunto leggibile (md + html) e lo apre
 	@$(PY) run.py report
 	@command -v open >/dev/null && open output/*_report.html || true
 
+dashboard: $(DEPS) ## Apre la dashboard per lanciare i run dal browser
+	@$(PY) run.py dashboard
+
 runs: $(DEPS) ## Elenca le esecuzioni archiviate
 	@$(PY) run.py runs
 
@@ -109,6 +112,7 @@ status: $(DEPS) ## Mostra input, output e chiavi configurate
 test: $(DEPS) ## Esegue i test (senza rete ne credenziali)
 	@$(PY) tests/test_merge.py
 	@$(PY) tests/test_analysis.py
+	@$(PY) tests/test_dashboard.py
 
 check: test status ## Test + stato dell'ambiente
 

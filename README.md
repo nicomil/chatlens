@@ -45,6 +45,7 @@ make all      # unisce i dati ed esegue l'analisi
 | `make llm` | misure + rubrica di validazione | sì |
 | `make topics` | misure + topic con TopicGPT | sì |
 | `make full` | come `all`, più rubrica e topic | sì |
+| `make dashboard` | apre la dashboard nel browser | — |
 | `make report` | rigenera il riassunto leggibile e lo apre | — |
 | `make runs` | elenca le esecuzioni archiviate | — |
 | `make status` | cosa c'è in input, in output e fra le chiavi | — |
@@ -304,6 +305,32 @@ python run.py analyze --topics --topicgpt-repo ~/src/topicGPT
 ## 5. I file prodotti
 
 Tutto sotto `output/`.
+
+### La dashboard
+
+```bash
+make dashboard
+```
+
+Apre `http://127.0.0.1:8765` nel browser: da lì si scelgono le opzioni, si
+lancia il run e si vede il log avanzare in diretta, con il rapporto incorporato
+nella pagina e l'elenco dei run archiviati.
+
+È lo stesso `run.py` che gira sotto: la dashboard non fa nulla che non si possa
+fare da riga di comando, e i due percorsi non possono divergere.
+
+Tre scelte che vale la pena conoscere:
+
+- **Ascolta solo su `127.0.0.1`.** È uno strumento da scrivania, non un
+  servizio: esegue processi, quindi non deve essere raggiungibile dalla rete.
+- **Gli argomenti vengono da un elenco chiuso.** Il modulo offre menu a tendina
+  e caselle, e il server confronta ogni valore con i valori ammessi prima di
+  costruire il comando. Nulla di ciò che arriva dal browser finisce in una riga
+  di comando così com'è.
+- **Nessuna dipendenza nuova**: server di sola libreria standard, htmx incluso
+  nel progetto. Funziona anche senza connessione.
+
+Un run alla volta: due esecuzioni concorrenti scriverebbero negli stessi file.
 
 ### Cosa succede rilanciando
 
