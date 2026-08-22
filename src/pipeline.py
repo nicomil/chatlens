@@ -136,7 +136,14 @@ def run_topics_stage(messages, args):
         config.require_key('OPENAI_API_KEY')
 
     documents = topicgpt.build_documents(messages, args.topicgpt_unit)
-    print(f'  documenti costruiti: {len(documents)} ({args.topicgpt_unit})')
+    print(f'  documenti per l induzione: {len(documents)} ({args.topicgpt_unit})')
+
+    assign_unit = args.topicgpt_assign_unit or args.topicgpt_unit
+    assignment_documents = None
+    if assign_unit != args.topicgpt_unit:
+        assignment_documents = topicgpt.build_documents(messages, assign_unit)
+        print(f'  documenti per l assegnazione: '
+              f'{len(assignment_documents)} ({assign_unit})')
 
     if args.topicgpt_dry_run:
         outdir = Path(args.outdir) / 'topicgpt'
@@ -155,6 +162,9 @@ def run_topics_stage(messages, args):
             model=args.topicgpt_model,
             refine=not args.topicgpt_no_refine,
             verbose=args.verbose,
+            seed_file=Path(args.topicgpt_seed).expanduser()
+            if args.topicgpt_seed else None,
+            assignment_documents=assignment_documents,
         )
     except topicgpt.TopicGPTUnavailable as exc:
         # Manca un prerequisito: è una cosa da sistemare, non un errore del
@@ -163,7 +173,7 @@ def run_topics_stage(messages, args):
     assignments = topicgpt.parse_assignments(corrected)
     print(f'  topic assegnati a {len(assignments)} documenti')
 
-    unit = args.topicgpt_unit
+    unit = assign_unit
     by_directed = (
         topicgpt.topics_by_key(assignments, unit)
         if unit == 'dyad_directed' else None

@@ -74,8 +74,18 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=['openai', 'azure', 'vertex', 'gemini',
                                  'ollama', 'vllm'])
         sp.add_argument('--topicgpt-model', default='gpt-4o')
-        sp.add_argument('--topicgpt-unit', default='dyad_directed',
-                        choices=['dyad_directed', 'dyad', 'sender_group', 'group'])
+        # I topic si inducono sull'intera conversazione della triade, che ha
+        # abbastanza testo, e si assegnano alle coppie ordinate, che sono
+        # l'unita' della persuasione.
+        sp.add_argument('--topicgpt-unit', default='group',
+                        choices=['dyad_directed', 'dyad', 'sender_group', 'group'],
+                        help='unita\' su cui indurre i topic')
+        sp.add_argument('--topicgpt-assign-unit', default='dyad_directed',
+                        choices=['dyad_directed', 'dyad', 'sender_group', 'group'],
+                        help='unita\' a cui assegnare i topic indotti')
+        sp.add_argument('--topicgpt-seed', default='prompts/seed_coalition_formation.md',
+                        help='file dei topic iniziali; il seed del repository '
+                             'riguarda un altro dominio')
         sp.add_argument('--topicgpt-no-refine', action='store_true',
                         help='salta il raffinamento dei topic')
         sp.add_argument('--topicgpt-dry-run', action='store_true',

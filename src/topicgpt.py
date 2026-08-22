@@ -146,6 +146,8 @@ def run_topicgpt(
     model: str = 'gpt-4o',
     refine: bool = True,
     verbose: bool = True,
+    seed_file: Path | None = None,
+    assignment_documents=None,
 ) -> Path:
     """Esegue la pipeline ufficiale e restituisce il file delle assegnazioni.
 
@@ -165,6 +167,15 @@ def run_topicgpt(
     data_file = outdir / 'topicgpt_input.jsonl'
     write_jsonl(data_file, documents)
 
+    # Il seed e' un parametro del metodo, non codice: il repository ne fornisce
+    # uno di esempio per il proprio corpus dimostrativo (legislazione USA), e il
+    # prompt del paper istruisce il modello a rispondere "None" quando il
+    # documento non contiene alcun topic riconoscibile. Con il seed sbagliato,
+    # su conversazioni di chat quella e' la risposta per ogni documento.
+    seed_path = Path(seed_file) if seed_file else (repo_path / PROMPT_FILES['seed'])
+    if not seed_path.is_file():
+        raise TopicGPTUnavailable(f'File seed non trovato: {seed_path}')
+
     generation_out = outdir / 'generation_1.jsonl'
     topics_lvl1 = outdir / 'generation_1.md'
 
@@ -173,14 +184,20 @@ def run_topicgpt(
         model=model,
         data=str(data_file),
         prompt_file=str(repo_path / PROMPT_FILES['generation']),
-        seed_file=str(repo_path / PROMPT_FILES['seed']),
+        seed_file=str(seed_path),
         out_file=str(generation_out),
         topic_file=str(topics_lvl1),
         verbose=verbose,
     )
 
     topics_for_assignment = topics_lvl1
-    data_for_assignment = data_file
+    # I topic si possono indurre su un'unita' ampia e assegnare a una piu' fine:
+    # l'induzione ha bisogno di documenti sostanziosi, l'assegnazione no.
+    if assignment_documents is not None:
+        data_for_assignment = outdir / 'topicgpt_assignment_input.jsonl'
+        write_jsonl(data_for_assignment, assignment_documents)
+    else:
+        data_for_assignment = data_file
     if refine:
         refined_topics = outdir / 'generation_1_refined.md'
         refined_generation = outdir / 'generation_1_updated.jsonl'

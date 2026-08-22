@@ -463,12 +463,33 @@ invoca le funzioni ufficiali nell'ordine previsto dal paper — generazione dei
 topic di primo livello, raffinamento, assegnazione, correzione — e ricompone
 l'output sulle chiavi dell'esperimento.
 
-**Unità di analisi.** Un turno di chat di poche parole non è un documento. Il
-default è la **coppia ordinata** — tutto ciò che i ha scritto a j — che è anche
-l'unità in cui si gioca la persuasione. I topic si aggregano poi a partecipante
-e a gruppo prendendo l'unione dei topic delle unità componenti, così la domanda
-«i topic differiscono fra trattamenti?» ha risposta a entrambi i livelli
-richiesti.
+**Unità di analisi: due, non una.** I topic si **inducono** sulla conversazione
+dell'intera triade (`--topicgpt-unit group`), che ha abbastanza testo perché il
+modello riconosca qualcosa, e si **assegnano** alle coppie ordinate
+(`--topicgpt-assign-unit dyad_directed`), che sono l'unità in cui si gioca la
+persuasione. Poi si aggregano a partecipante e a gruppo prendendo l'unione dei
+topic delle unità componenti.
+
+La separazione non è un dettaglio: inducendo direttamente sulle coppie ordinate
+il modello risponde «None» su ogni documento, perché il prompt del paper
+istruisce esplicitamente a farlo quando il documento non contiene un topic
+riconoscibile, e uno scambio di due righe non lo contiene.
+
+**Il seed è una scelta di ricerca.** TopicGPT parte da un elenco di topic
+iniziali, che nel repository ufficiale riguarda il corpus dimostrativo del paper
+— legislazione statunitense, con `[1] Trade` e esempi su dazi e politiche
+agricole. Con quel seed, su conversazioni di chat il modello non riconosce
+nulla. Il progetto usa quindi `prompts/seed_coalition_formation.md`, con tre
+topic pertinenti al gioco. Fornire il seed è un **parametro del metodo**, non
+una modifica al codice degli autori: `seed_file` è un argomento di
+`generate_topic_lvl1`.
+
+Attenzione però: il seed condiziona l'ontologia risultante. Sul pilota, con 18
+conversazioni, non sono emersi topic nuovi oltre ai tre di partenza — il che è
+il comportamento previsto dal prompt, che riusa i topic esistenti quando sono
+pertinenti. Su un corpus grande ci si aspetta che ne emergano altri. Il
+contenuto del seed va rivisto e approvato da chi conduce lo studio prima di
+usare i topic in un'analisi.
 
 **Backend.** TopicGPT parla con OpenAI, Azure, Vertex, Gemini, Ollama o vLLM. Il
 paper usa OpenAI ed è la scelta più fedele. Per usare Claude ci sono due strade
