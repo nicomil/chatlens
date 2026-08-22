@@ -1,13 +1,13 @@
 :root {
   --paper: #fbfbfd; --panel: #ffffff; --ink: #16181d; --soft: #4a5060;
   --muted: #6b7183; --rule: #e1e3ec; --accent: #2f4c8c; --band: #f3f4f8;
-  --ok: #1f6f4a; --ko: #a33a2a; --run: #8f5410;
+  --ok: #1f6f4a; --ko: #a33a2a; --run: #8f5410; --accent-dim: #e8ecf7;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --paper: #0f1116; --panel: #151821; --ink: #e9ebf1; --soft: #c2c7d4;
     --muted: #929aac; --rule: #262a35; --accent: #8aa8ec; --band: #1b1f28;
-    --ok: #58c48d; --ko: #e0705c; --run: #e3ac5c;
+    --ok: #58c48d; --ko: #e0705c; --run: #e3ac5c; --accent-dim: #1b2233;
   }
 }
 * { box-sizing: border-box; }
@@ -195,12 +195,42 @@ button.go:disabled, fieldset[disabled] button.go { cursor: not-allowed; }
 }
 
 /* archivio */
-ul.runs { list-style: none; margin: 0; padding: 0; font-size: .85rem; }
+ul.runs { list-style: none; margin: 0; padding: 0; }
 ul.runs li {
-  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
-  padding: .35rem 0; border-bottom: 1px solid var(--rule);
+  /* Colonne fisse: con righe quasi uguali, l'allineamento e' quello che
+     permette di confrontarle a colpo d'occhio invece di rileggerle. */
+  display: grid;
+  grid-template-columns: 5.2rem minmax(0, auto) minmax(0, 1fr) 4.2rem;
+  align-items: center; gap: .5rem;
+  padding: .4rem 0; border-bottom: 1px solid var(--rule);
+  font-size: .82rem;
 }
-ul.runs a { margin-left: auto; color: var(--accent); }
+ul.runs .when { color: var(--ink); font-variant-numeric: tabular-nums; }
+ul.runs .chips { display: flex; gap: .25rem; flex-wrap: wrap; }
+ul.runs .chip {
+  font-size: .64rem; padding: .05rem .35rem; border-radius: 3px;
+  background: var(--band); color: var(--muted); white-space: nowrap;
+}
+ul.runs .chip.rubrica, ul.runs .chip.topic {
+  background: var(--accent-dim); color: var(--accent);
+  border: 1px solid var(--accent);
+}
+ul.runs .current {
+  font-size: .6rem; letter-spacing: .05em; text-transform: uppercase;
+  padding: .05rem .35rem; border-radius: 3px;
+  background: var(--ok); color: #fff; white-space: nowrap;
+}
+ul.runs .detail {
+  color: var(--muted); font-size: .76rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+ul.runs .failed {
+  color: var(--ko); font-size: .76rem; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+ul.runs .failed::before { content: "⚠ "; }
+ul.runs a { color: var(--accent); text-align: right; }
+ul.runs li[data-tip]:hover::after { top: auto; margin-top: .2rem; }
 
 /* rapporto */
 .reportbar {

@@ -291,26 +291,115 @@ def log_panel() -> str:
     return log_head() + log_body()
 
 
+def _run_time(stamp: str) -> str:
+    """Istante leggibile: quello che serve e' quando, non il numero seriale."""
+    from datetime import date, datetime, timedelta
+
+    try:
+        moment = datetime.fromisoformat(stamp)
+    except (TypeError, ValueError):
+        return stamp or '—'
+
+    day = moment.date()
+    if day == date.today():
+        prefix = 'oggi'
+    elif day == date.today() - timedelta(days=1):
+        prefix = 'ieri'
+    else:
+        prefix = moment.strftime('%d/%m')
+    return f'{prefix} {moment.strftime("%H:%M")}'
+
+
+def _run_detail(run: dict) -> str:
+    """Cosa distingue questo run dagli altri.
+
+    Fra dodici righe quasi uguali serve il dettaglio che cambia: il modello, le
+    repliche, l'unita' su cui sono stati indotti i topic. Il conteggio dei
+    messaggi resta come ripiego quando non c'e' altro.
+    """
+    bits = []
+    topic = run.get('topic') or {}
+    if topic:
+        model = topic.get('model') or '?'
+        bits.append(f'{model} · {topic.get("unit")}→{topic.get("assign_unit")}')
+
+    rubrica = run.get('rubrica') or {}
+    if rubrica:
+        model = rubrica.get('models')
+        model = '' if model in (None, 'predefinito') else f'{model} · '
+        repliche = rubrica.get('replicates', 1)
+        etichetta = '1 replica' if repliche == 1 else f'{repliche} repliche'
+        bits.append(f'{model}{etichetta}')
+
+    if not bits and run.get('n_messages') is not None:
+        bits.append(f'{run["n_messages"]} messaggi')
+    return ' · '.join(bits)
+
+
+def _run_tooltip(run: dict) -> str:
+    """Parametri completi, per chi vuole sapere esattamente cosa girava."""
+    lines = [f'Messaggi analizzati: {run.get("n_messages", "?")}']
+    levels = run.get('levels') or {}
+    if levels:
+        lines.append('Unita: ' + ', '.join(f'{k} {v}' for k, v in levels.items()))
+    rubrica = run.get('rubrica') or {}
+    if rubrica:
+        n = rubrica.get('replicates', 1)
+        repliche = '1 replica' if n == 1 else f'{n} repliche'
+        lines.append(
+            f'Rubrica: {rubrica.get("provider")}, modello '
+            f'{rubrica.get("models")}, {repliche}, '
+            f'livelli {", ".join(rubrica.get("levels") or [])}'
+        )
+    topic = run.get('topic') or {}
+    if topic:
+        lines.append(
+            f'Topic: {topic.get("model")} via {topic.get("api")}, induzione su '
+            f'{topic.get("unit")}, assegnazione a {topic.get("assign_unit")}, '
+            f'seed {Path(topic.get("seed") or "").name}'
+        )
+    return ' — '.join(lines)
+
+
+STAGE_LABELS = {'misure': 'misure', 'rubrica': 'rubrica', 'topic': 'topic'}
+
+
 def runs_panel() -> str:
     runs = archive.list_runs(config.OUTPUT_DIR)
     if not runs:
-        return '<p class="muted">Nessun run archiviato.</p>'
+        return ('<p class="muted">Nessun run archiviato. Ogni esecuzione viene '
+                'salvata qui, cosi\' rilanciare non cancella la precedente.</p>')
 
-    items = []
-    for run in runs[:12]:
-        name = run['path'].name
-        stages = ', '.join(run.get('stages') or ['?'])
-        extra = ''
-        if run.get('failed_stage'):
-            extra = f'<span class="badge ko">{_e(run["failed_stage"])}</span>'
-        report = run['path'] / 'report.html'
-        link = (f'<a href="/runs/{_e(name)}/report.html" target="_blank">rapporto</a>'
-                if report.is_file() else '')
-        items.append(
-            f'<li><code>{_e(name)}</code>'
-            f'<span class="muted">{_e(stages)}</span>{extra}{link}</li>'
+    rows = []
+    for index, run in enumerate(runs[:12]):
+        stages = ''.join(
+            f'<span class="chip {name}">{_e(STAGE_LABELS.get(name, name))}</span>'
+            for name in (run.get('stages') or [])
         )
-    return f'<ul class="runs">{"".join(items)}</ul>'
+
+        if run.get('failed_stage'):
+            note = (f'<span class="failed">{_e(run["failed_stage"])} '
+                    f'non completato</span>')
+        else:
+            note = f'<span class="detail">{_e(_run_detail(run))}</span>'
+
+        # Il primo e' anche quello che si trova in output/: e' il rapporto che
+        # la dashboard mostra, e senza dirlo si cerca di capire quale sia.
+        current = ('<span class="current">in output/</span>'
+                   if index == 0 else '')
+
+        name = run['path'].name
+        link = ('<a href="/runs/{n}/report.html" target="_blank">rapporto</a>'
+                .format(n=_e(name))
+                if (run['path'] / 'report.html').is_file() else '<span></span>')
+
+        rows.append(
+            f'<li data-tip="{_e(_run_tooltip(run))}">'
+            f'<span class="when">{_e(_run_time(run.get("timestamp", "")))}</span>'
+            f'<span class="chips">{stages}{current}</span>'
+            f'{note}{link}</li>'
+        )
+    return f'<ul class="runs">{"".join(rows)}</ul>'
 
 
 def report_panel() -> str:
