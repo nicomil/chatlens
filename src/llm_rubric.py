@@ -449,23 +449,91 @@ def _score_openai_compatible(client, unit: RubricUnit, model: str,
     return _scores_from_parsed(parsed, model)
 
 
-def score_units(units, models=None, replicates=1, progress=None, provider=None):
+def unit_signature(unit: RubricUnit, models, replicates: int) -> str:
+    """Impronta di una valutazione: se cambia, il risultato non è riusabile.
+
+    Comprende il testo, il prompt e la configurazione dei giudici: modificare
+    la rubrica o il modello invalida la cache automaticamente, mentre rilanciare
+    la stessa analisi la riusa.
+    """
+    import hashlib
+
+    material = '\x00'.join([
+        unit.unit, unit.transcript, unit.treatment, unit.target,
+        ','.join(sorted(models)), str(replicates), SYSTEM_PROMPT,
+    ])
+    return hashlib.sha256(material.encode('utf-8')).hexdigest()[:32]
+
+
+def load_cache(path) -> dict:
+    """Valutazioni già pagate in esecuzioni precedenti, per impronta."""
+    if path is None or not path.is_file():
+        return {}
+    entries = {}
+    with path.open(encoding='utf-8') as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue  # riga troncata da un'interruzione: si ignora
+            if 'signature' in record and 'row' in record:
+                entries[record['signature']] = record['row']
+    return entries
+
+
+def _append_cache(path, signature: str, row: dict) -> None:
+    """Salva subito la singola valutazione.
+
+    Si scrive una riga per volta, non alla fine: se l'esecuzione si interrompe
+    a metà, quello che è già stato pagato resta disponibile.
+    """
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('a', encoding='utf-8') as handle:
+        handle.write(json.dumps({'signature': signature, 'row': row},
+                                ensure_ascii=False) + '\n')
+
+
+def score_units(units, models=None, replicates=1, progress=None, provider=None,
+                cache_path=None):
     """Valuta tutte le unità, con repliche e/o più giudici.
 
     Restituisce una riga per unità: media fra tutte le valutazioni, deviazione
     standard come stima dell'errore di misura, e i punteggi grezzi di ciascuna
     valutazione per gli usi di controllo.
+
+    Le valutazioni riuscite vengono messe in cache: un rilancio sugli stessi
+    dati non le ripaga. Quelle fallite non entrano in cache, così un problema
+    temporaneo viene ritentato invece di restare cristallizzato.
     """
     provider = resolve_provider(provider)
     models = list(models) if models else [default_model_for(provider)]
     check_models_available(provider, models)
 
-    client = make_client(provider)
+    cached = load_cache(cache_path)
+    client = None
     rows = []
     total = len(units) * len(models) * replicates
     done = 0
+    reused = 0
 
     for unit in units:
+        signature = unit_signature(unit, models, replicates)
+        if signature in cached:
+            rows.append(cached[signature])
+            done += len(models) * replicates
+            reused += 1
+            if progress:
+                progress(done, total)
+            continue
+
+        if client is None:
+            client = make_client(provider)
+
         judgements = []
         for model in models:
             for _ in range(replicates):
@@ -474,8 +542,14 @@ def score_units(units, models=None, replicates=1, progress=None, provider=None):
                 if progress:
                     progress(done, total)
 
-        rows.append(_summarize(unit, judgements))
-    return rows
+        row = _summarize(unit, judgements)
+        rows.append(row)
+        if not row.get('llm_n_errors'):
+            _append_cache(cache_path, signature, row)
+
+    if reused and progress:
+        progress(total, total)
+    return rows, reused
 
 
 def _summarize(unit: RubricUnit, judgements) -> dict:

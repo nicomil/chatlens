@@ -114,10 +114,13 @@ def run_llm_stage(features, transcripts_by_level, args) -> None:
                 if done % 25 == 0 or done == total:
                     print(f'    {level}: {done}/{total}', flush=True)
 
-            scored = llm_rubric.score_units(
+            cache_path = Path(args.outdir) / 'cache' / f'rubrica_{level}.jsonl'
+            scored, reused = llm_rubric.score_units(
                 units, models=models, replicates=args.llm_replicates,
-                progress=progress, provider=provider,
+                progress=progress, provider=provider, cache_path=cache_path,
             )
+            if reused:
+                print(f'    {reused} unità riprese dalla cache, non ripagate')
 
         _merge_llm(scored, features[level], level)
         errors = sum(int(r.get('llm_n_errors', 0) or 0) for r in scored)
@@ -173,6 +176,50 @@ def run_topics_stage(messages, args):
     return by_directed, by_sender, by_group
 
 
+def preflight(args) -> None:
+    """Verifica i prerequisiti di tutti gli stadi prima di eseguirne uno.
+
+    Gli stadi a pagamento costano soldi e tempo: scoprire dopo la rubrica che
+    TopicGPT non è installato significa aver speso per nulla. I controlli sono
+    tutti istantanei e vengono raccolti insieme, così si sistema una volta sola
+    invece di scoprire un problema per volta.
+    """
+    problems = []
+
+    if args.llm and not args.llm_dry_run:
+        try:
+            provider = llm_rubric.resolve_provider(args.llm_provider)
+            models = [m.strip() for m in (args.llm_models or '').split(',') if m.strip()]
+            llm_rubric.check_models_available(
+                provider, models or [llm_rubric.default_model_for(provider)]
+            )
+            if args.llm_batch and provider != 'anthropic':
+                problems.append(
+                    "--llm-batch è disponibile solo con il fornitore anthropic."
+                )
+        except SystemExit as exc:
+            problems.append(str(exc).strip())
+
+    if args.topics and not args.topicgpt_dry_run:
+        try:
+            topicgpt.check_installation(Path(args.topicgpt_repo).expanduser())
+        except topicgpt.TopicGPTUnavailable as exc:
+            problems.append(str(exc).strip())
+        if args.topicgpt_api == 'openai':
+            try:
+                config.require_key('OPENAI_API_KEY')
+            except SystemExit as exc:
+                problems.append(str(exc).strip())
+
+    if problems:
+        raise SystemExit(
+            '\nControllo preliminare: mancano dei prerequisiti.\n'
+            'Nessuna chiamata è stata effettuata.\n\n'
+            + '\n\n'.join(f'- {p}' for p in problems)
+            + '\n'
+        )
+
+
 def run(args) -> dict:
     """Passo 2: misure testuali, rubrica e topic sui file prodotti dal merge.
 
@@ -193,6 +240,8 @@ def run(args) -> dict:
                 f'  Esegui prima il passo di unione:  python run.py merge'
             )
 
+    preflight(args)
+
     messages = agg.read_messages(messages_path)
     print(f'Messaggi letti: {len(messages)}')
 
@@ -211,9 +260,18 @@ def run(args) -> dict:
         run_llm_stage(features, transcripts_by_level, args)
 
     topics_directed = topics_sender = topics_group = None
+    failed_stage = None
     if args.topics:
         print('TopicGPT...')
-        topics_directed, topics_sender, topics_group = run_topics_stage(messages, args)
+        try:
+            topics_directed, topics_sender, topics_group = run_topics_stage(
+                messages, args
+            )
+        except (topicgpt.TopicGPTUnavailable, SystemExit, RuntimeError, OSError) as exc:
+            # I risultati della rubrica sono già costati chiamate a pagamento:
+            # si scrive comunque quello che c'è, e il fallimento viene riportato
+            # alla fine invece di far perdere tutto il lavoro svolto.
+            failed_stage = ('TopicGPT', str(exc).strip())
 
     features_dir = outdir / 'features'
     features_dir.mkdir(parents=True, exist_ok=True)
@@ -238,12 +296,27 @@ def run(args) -> dict:
         levels={level: len(rows) for level, rows in features.items()},
         datasets=[out_partner, out_aggregated],
         features_dir=features_dir,
+        failed_stage=failed_stage,
     )
 
 
-def print_summary(summary: dict) -> None:
+def print_summary(summary: dict) -> int:
+    """Stampa l'esito. Restituisce il codice di uscita del programma."""
     print()
     print('Dataset da portare in Stata:')
     for path in summary['datasets']:
         print(f'  {path}')
     print(f"Misure intermedie: {summary['features_dir']}")
+
+    failed = summary.get('failed_stage')
+    if not failed:
+        return 0
+
+    stage, message = failed
+    print()
+    print(f'ATTENZIONE: lo stadio {stage} non e\' stato completato.')
+    print('I risultati degli stadi precedenti sono stati salvati comunque:')
+    print(f'  nei file qui sopra mancano solo le colonne di {stage}.')
+    print()
+    print(message)
+    return 1

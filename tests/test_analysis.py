@@ -286,6 +286,19 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(rows[0]['nlp_sent_wc'], '')
         self.assertEqual(rows[0]['nlp_dyad_analytic_z'], '')
 
+    def test_rubric_columns_reach_the_final_datasets(self):
+        """Le valutazioni sono a pagamento: non devono fermarsi ai file intermedi."""
+        group_row = next(
+            r for r in self.features['group'] if r['group_uid'] == 'g1'
+        )
+        group_row['llm_analytic'] = 42.0
+        group_row['llm_contains_support_commitment'] = 1
+
+        rows = [dict(group_uid='g1', focal_id_in_group='1')]
+        agg.merge_into_aggregated(rows, self.features)
+        self.assertEqual(rows[0]['nlp_group_llm_analytic'], 42.0)
+        self.assertEqual(rows[0]['nlp_group_llm_contains_support_commitment'], 1)
+
     def test_aggregated_gets_sender_and_group_blocks(self):
         rows = [dict(group_uid='g1', focal_id_in_group='1')]
         agg.merge_into_aggregated(rows, self.features)
@@ -483,6 +496,159 @@ class ProviderSelectionTests(unittest.TestCase):
         instruction = self.llm._json_instruction()
         for field in self.llm.SCALE_FIELDS + self.llm.FLAG_FIELDS:
             self.assertIn(field, instruction, msg=field)
+
+
+class RubricCacheTests(unittest.TestCase):
+    """Le valutazioni costano: una volta pagate non si ripagano."""
+
+    def _setup(self):
+        import os
+        from src import llm_rubric
+        self.llm = llm_rubric
+        self.os = os
+        os.environ['OPENAI_API_KEY'] = 'sk-finta'
+        self._real_score = llm_rubric.score_unit
+        self._real_client = llm_rubric.make_client
+        self.calls = []
+
+        def fake_score(client, unit, model, provider):
+            self.calls.append(unit.key)
+            return dict(
+                analytic=40, clout=50, authenticity=60, tone=55,
+                contains_support_commitment=1, contains_support_request=0,
+                insufficient_text=0, rationale='x', error='', model=model,
+            )
+
+        llm_rubric.score_unit = fake_score
+        llm_rubric.make_client = lambda provider: object()
+
+    def _teardown(self):
+        self.llm.score_unit = self._real_score
+        self.llm.make_client = self._real_client
+        self.os.environ.pop('OPENAI_API_KEY', None)
+
+    def _units(self):
+        return [
+            self.llm.RubricUnit(key=('g1',), unit='group', transcript='ciao a tutti',
+                                n_messages=2, treatment='private',
+                                target='all three participants'),
+            self.llm.RubricUnit(key=('g2',), unit='group', transcript='altro testo',
+                                n_messages=3, treatment='public',
+                                target='all three participants'),
+        ]
+
+    def test_second_run_reuses_and_does_not_pay_again(self):
+        import tempfile
+        from pathlib import Path as P
+
+        self._setup()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cache = P(tmpdir) / 'rubrica.jsonl'
+                units = self._units()
+
+                rows1, reused1 = self.llm.score_units(
+                    units, provider='openai', cache_path=cache)
+                self.assertEqual(len(rows1), 2)
+                self.assertEqual(reused1, 0)
+                self.assertEqual(len(self.calls), 2)
+
+                self.calls.clear()
+                rows2, reused2 = self.llm.score_units(
+                    units, provider='openai', cache_path=cache)
+                self.assertEqual(reused2, 2)
+                self.assertEqual(self.calls, [], 'ha richiamato l API a vuoto')
+                self.assertEqual(rows1, rows2)
+        finally:
+            self._teardown()
+
+    def test_changed_transcript_is_not_reused(self):
+        """Dati nuovi devono essere rivalutati, non ripescati."""
+        import tempfile
+        from pathlib import Path as P
+
+        self._setup()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cache = P(tmpdir) / 'rubrica.jsonl'
+                units = self._units()
+                self.llm.score_units(units, provider='openai', cache_path=cache)
+
+                self.calls.clear()
+                units[0].transcript = 'testo modificato'
+                _rows, reused = self.llm.score_units(
+                    units, provider='openai', cache_path=cache)
+                self.assertEqual(reused, 1)
+                self.assertEqual(self.calls, [('g1',)])
+        finally:
+            self._teardown()
+
+    def test_more_replicates_is_a_different_measurement(self):
+        import tempfile
+        from pathlib import Path as P
+
+        self._setup()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cache = P(tmpdir) / 'rubrica.jsonl'
+                units = self._units()
+                self.llm.score_units(units, provider='openai', replicates=1,
+                                     cache_path=cache)
+                self.calls.clear()
+                _rows, reused = self.llm.score_units(
+                    units, provider='openai', replicates=2, cache_path=cache)
+                self.assertEqual(reused, 0)
+                self.assertEqual(len(self.calls), 4)
+        finally:
+            self._teardown()
+
+    def test_failed_evaluations_are_not_cached(self):
+        """Un errore temporaneo non deve restare cristallizzato per sempre."""
+        import tempfile
+        from pathlib import Path as P
+
+        self._setup()
+        try:
+            def failing(client, unit, model, provider):
+                self.calls.append(unit.key)
+                return dict(
+                    analytic=None, clout=None, authenticity=None, tone=None,
+                    contains_support_commitment=None,
+                    contains_support_request=None, insufficient_text=None,
+                    rationale='', error='api_status_500',
+                )
+
+            self.llm.score_unit = failing
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cache = P(tmpdir) / 'rubrica.jsonl'
+                units = self._units()
+                self.llm.score_units(units, provider='openai', cache_path=cache)
+                self.calls.clear()
+                _rows, reused = self.llm.score_units(
+                    units, provider='openai', cache_path=cache)
+                self.assertEqual(reused, 0)
+                self.assertEqual(len(self.calls), 2)
+        finally:
+            self._teardown()
+
+    def test_truncated_cache_line_is_ignored(self):
+        """Un'interruzione a metà scrittura non deve rendere illeggibile tutto."""
+        import tempfile
+        from pathlib import Path as P
+
+        self._setup()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cache = P(tmpdir) / 'rubrica.jsonl'
+                units = self._units()
+                self.llm.score_units(units, provider='openai', cache_path=cache)
+                with cache.open('a', encoding='utf-8') as handle:
+                    handle.write('{"signature": "tronc')
+
+                entries = self.llm.load_cache(cache)
+                self.assertEqual(len(entries), 2)
+        finally:
+            self._teardown()
 
 
 class ConfigTests(unittest.TestCase):

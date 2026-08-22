@@ -123,8 +123,7 @@ def cmd_analyze(args) -> int:
     args.stem = stem
 
     summary = pipeline.run(args)
-    pipeline.print_summary(summary)
-    return 0
+    return pipeline.print_summary(summary)
 
 
 def cmd_all(args) -> int:

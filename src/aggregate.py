@@ -133,9 +133,16 @@ def _index(rows, keys):
 
 
 def _prefixed(row, prefix, columns=MERGE_COLUMNS):
+    """Colonne da innestare, con il prefisso del blocco.
+
+    Oltre all'elenco fisso vengono portate tutte le colonne `llm_`, che
+    esistono solo quando la rubrica è stata eseguita: elencarle a mano
+    significherebbe pagare le valutazioni e poi non ritrovarle nei dataset.
+    """
     if row is None:
         return {f'{prefix}{c}': '' for c in columns}
-    return {f'{prefix}{c}': row.get(c, '') for c in columns}
+    wanted = list(columns) + [c for c in row if c.startswith('llm_')]
+    return {f'{prefix}{c}': row.get(c, '') for c in wanted}
 
 
 def merge_into_by_partner(by_partner_rows, features, topics_by_directed=None):
