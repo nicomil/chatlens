@@ -94,7 +94,47 @@ regress A_ji nlp_sent_clout_100 nlp_sent_analytic_100 ///
 estimates store h_support
 
 *==============================================================================
-* 4. Tables
+* 4. Position effects, as a robustness check
+*==============================================================================
+* Which partner sits in the left column, and where the chosen option sat among
+* the three, are randomised per player. If either moves persuasion, it is a
+* screen effect and has to be controlled for rather than left in the residual.
+* If neither does, the check is worth one line in the paper and nothing more.
+
+capture confirm variable partner_shown_left
+if _rc {
+    display as text _n "No display-order columns: this export predates the "
+    display as text "randomisation, so the position checks are skipped."
+}
+else {
+    quietly count if !missing(partner_shown_left)
+    if r(N) == 0 {
+        display as text _n "Display-order columns are empty in this export."
+    }
+    else {
+        display _n as text "{hline 78}"
+        display as text "Position effects"
+        display as text "{hline 78}"
+
+        regress persuasion_ij i.partner_shown_left, vce(cluster triad)
+        estimates store pos_side
+
+        regress persuasion_ij i.focal_decision_position, vce(cluster triad)
+        estimates store pos_option
+
+        * The language estimates with both controls added: what matters is
+        * whether the coefficients move, not whether the controls are
+        * significant on their own.
+        regress persuasion_ij nlp_sent_clout_100 nlp_sent_analytic_100 ///
+                nlp_sent_authenticity_100 nlp_sent_tone_100 nlp_sent_wc ///
+                i.partner_shown_left i.focal_decision_position, ///
+                vce(cluster triad)
+        estimates store p_lang_pos
+    }
+}
+
+*==============================================================================
+* 5. Tables
 *==============================================================================
 
 etable, estimates(p_volume p_lang p_treat p_fe) column(estimates) ///
@@ -110,7 +150,7 @@ etable, estimates(h_signal h_support) column(estimates) ///
 collect export "tables/persuasion_halves.html", replace
 
 *==============================================================================
-* 5. A caution worth keeping in the log
+* 6. A caution worth keeping in the log
 *==============================================================================
 
 display _n as text "{hline 78}"

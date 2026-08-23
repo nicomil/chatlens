@@ -386,6 +386,54 @@ def player_facts(row):
     )
 
 
+def display_facts(row):
+    """The randomised display order, when the export carries it.
+
+    Two things were randomised per player and persisted, so that a refresh
+    could not reshuffle them: which partner is shown in the left column, and
+    the order of the three options on the Decision page. They are display
+    choices, not topology — the left partner in the payoff rule is still the
+    left partner — but they are exactly what a position effect would ride on,
+    so they belong in the datasets as controls.
+
+    Exports produced before this was added simply do not have the columns; the
+    fields then come out empty rather than breaking the merge.
+    """
+    left_code = (row.get(MAIN + 'player.id_player_visualized_on_the_left') or '').strip()
+    right_code = (row.get(MAIN + 'player.id_player_visualized_on_the_right') or '').strip()
+    order = [
+        (row.get(MAIN + f'player.decision_option_{i}') or '').strip()
+        for i in (1, 2, 3)
+    ]
+    if sorted(order) != sorted(VALID_DECISIONS):
+        order = []
+    return dict(
+        visual_left_code=left_code,
+        visual_right_code=right_code,
+        decision_option_order='|'.join(order),
+    )
+
+
+def _shown_left(focal_row, partner_row):
+    """1 if this partner was displayed in the focal player's left column.
+
+    Empty when the export predates the randomisation, so that "no information"
+    is never silently read as "was shown on the right".
+    """
+    display = display_facts(focal_row)
+    if not display['visual_left_code']:
+        return ''
+    return int(partner_row.get('participant.code', '') == display['visual_left_code'])
+
+
+def decision_option_position(order: str, decision: str):
+    """Where the chosen option sat on the screen: 1, 2 or 3."""
+    if not order or not decision:
+        return ''
+    options = order.split('|')
+    return options.index(decision) + 1 if decision in options else ''
+
+
 def signal_to(facts, target: int):
     """The signal the focal participant sent to ``target``."""
     side = _partner_side(facts['pid'], target)
@@ -527,6 +575,11 @@ def build_by_partner(wide_rows, wide_cols, groups, uid_by_code, messages):
                     partner_role=ID_TO_ROLE.get(target, ''),
                     partner_side=side,
                     partner_participant_code=members[target]['participant.code'],
+                    partner_shown_left=_shown_left(row, members[target]),
+                    decision_option_order=display_facts(row)['decision_option_order'],
+                    focal_decision_position=decision_option_position(
+                        display_facts(row)['decision_option_order'], me['decision']
+                    ),
                     third_id_in_group=third,
                     third_color=COLOR_MAPPING.get(third, ''),
                     dyad_key=f'{min(pid, target)}_{max(pid, target)}',
@@ -680,6 +733,13 @@ def build_aggregated(wide_rows, wide_cols, groups, uid_by_code, messages):
             right_partner_id=right_id,
             right_partner_color=COLOR_MAPPING.get(right_id, ''),
             right_partner_code=members[right_id]['participant.code'] if right_id in members else '',
+            left_partner_shown_left=(
+                _shown_left(row, members[left_id]) if left_id in members else ''
+            ),
+            decision_option_order=display_facts(row)['decision_option_order'],
+            focal_decision_position=decision_option_position(
+                display_facts(row)['decision_option_order'], me['decision']
+            ),
             focal_decision=me['decision'],
             focal_decision_target_id=me['decision_target'] or '',
             focal_decision_target_color=COLOR_MAPPING.get(me['decision_target'], ''),

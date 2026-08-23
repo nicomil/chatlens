@@ -116,6 +116,10 @@ WIDE_COLUMNS = [
     MAIN + 'player.decision_choice', MAIN + 'player.payoff',
     MAIN + 'player.part1_calculated_payoff',
     MAIN + 'player.decision_inactive', MAIN + 'player.signal_inactive',
+    MAIN + 'player.id_player_visualized_on_the_left',
+    MAIN + 'player.id_player_visualized_on_the_right',
+    MAIN + 'player.decision_option_1', MAIN + 'player.decision_option_2',
+    MAIN + 'player.decision_option_3',
     MAIN + 'group.id_in_subsession', MAIN + 'group.group_outcome',
     MAIN + 'group.grp_coordinate', MAIN + 'group.group_dropped',
 ]
@@ -563,6 +567,98 @@ class ParticipantFilterTests(unittest.TestCase):
         self.assertEqual(summary['n_messages_filtered'], 1)
         self.assertEqual(summary['n_messages_resolved'], 1)
         self.assertEqual(summary['warnings'], [])
+
+
+class DisplayOrderTests(unittest.TestCase):
+    """The randomised display order is a control, and must survive the merge.
+
+    Two things are randomised per player and persisted by the experiment: which
+    partner is shown in the left column, and the order of the three options on
+    the Decision page. Neither changes the topology or the payoffs, but both are
+    what a position effect would ride on.
+    """
+
+    def _triad(self, **extra):
+        rows = [
+            make_player('s1', f'a{pid}', pid, 'private', decision, 'split_you',
+                        'split_you', 3, group_db_id='7')
+            for pid, decision in ((1, 'Right'), (2, 'Left'), (3, 'NoOne'))
+        ]
+        for row in rows:
+            row.update(extra)
+        return rows
+
+    def test_columns_are_carried_through(self):
+        """Columns the export gains must reach the datasets on their own."""
+        wide = self._triad()
+        # P1 sees P2 on the left, P3 on the right; the options were shown in
+        # the order NoOne, Right, Left.
+        wide[0][MAIN + 'player.id_player_visualized_on_the_left'] = 'a2'
+        wide[0][MAIN + 'player.id_player_visualized_on_the_right'] = 'a3'
+        wide[0][MAIN + 'player.decision_option_1'] = 'NoOne'
+        wide[0][MAIN + 'player.decision_option_2'] = 'Right'
+        wide[0][MAIN + 'player.decision_option_3'] = 'Left'
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _long, by_partner, aggregated = run_merge(wide, [], tmpdir)
+
+        rows = {(int(r['focal_id_in_group']), int(r['partner_id_in_group'])): r
+                for r in by_partner if r['group_uid']}
+        self.assertEqual(int(rows[(1, 2)]['partner_shown_left']), 1)
+        self.assertEqual(int(rows[(1, 3)]['partner_shown_left']), 0)
+
+        # P1 chose Right, which was the second option on the screen.
+        self.assertEqual(rows[(1, 2)]['decision_option_order'], 'NoOne|Right|Left')
+        self.assertEqual(int(rows[(1, 2)]['focal_decision_position']), 2)
+
+        agg = {int(r['focal_id_in_group']): r for r in aggregated if r['group_uid']}
+        self.assertEqual(int(agg[1]['focal_decision_position']), 2)
+        # P1's topological left partner is P3, and P3 was shown on the right.
+        self.assertEqual(int(agg[1]['left_partner_shown_left']), 0)
+
+    def test_display_order_does_not_touch_the_topology(self):
+        """Seeing a partner on the left does not make them the left partner."""
+        wide = self._triad()
+        wide[0][MAIN + 'player.id_player_visualized_on_the_left'] = 'a2'
+        wide[0][MAIN + 'player.id_player_visualized_on_the_right'] = 'a3'
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _long, by_partner, _agg = run_merge(wide, [], tmpdir)
+
+        rows = {(int(r['focal_id_in_group']), int(r['partner_id_in_group'])): r
+                for r in by_partner if r['group_uid']}
+        # P1's topological sides are unchanged: right is P2, left is P3.
+        self.assertEqual(rows[(1, 2)]['partner_side'], 'right')
+        self.assertEqual(rows[(1, 3)]['partner_side'], 'left')
+        # And the payoff logic still reads the topology, not the screen.
+        self.assertEqual(int(rows[(1, 2)]['A_ji']), 1)
+
+    def test_older_exports_stay_empty_not_zero(self):
+        """No information must not be read as "was shown on the right"."""
+        wide = self._triad()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _long, by_partner, aggregated = run_merge(wide, [], tmpdir)
+
+        rows = [r for r in by_partner if r['group_uid']]
+        self.assertTrue(all(r['partner_shown_left'] == '' for r in rows))
+        self.assertTrue(all(r['decision_option_order'] == '' for r in rows))
+        self.assertTrue(all(r['focal_decision_position'] == '' for r in rows))
+        self.assertTrue(all(r['left_partner_shown_left'] == ''
+                            for r in aggregated if r['group_uid']))
+
+    def test_incomplete_option_order_is_discarded(self):
+        """Two options out of three is a broken record, not a shorter one."""
+        wide = self._triad()
+        wide[0][MAIN + 'player.decision_option_1'] = 'Left'
+        wide[0][MAIN + 'player.decision_option_2'] = 'Right'
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _long, by_partner, _agg = run_merge(wide, [], tmpdir)
+
+        rows = {(int(r['focal_id_in_group']), int(r['partner_id_in_group'])): r
+                for r in by_partner if r['group_uid']}
+        self.assertEqual(rows[(1, 2)]['decision_option_order'], '')
+        self.assertEqual(rows[(1, 2)]['focal_decision_position'], '')
 
 
 class OutputHygieneTests(unittest.TestCase):

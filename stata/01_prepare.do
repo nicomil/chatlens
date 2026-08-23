@@ -100,6 +100,25 @@ foreach block in sent recv dyad {
     label variable nlp_`block'_low_language_flag "Text is not language (`block')"
 }
 
+*--- Display order: controls for a position effect -----------------------------
+* The experiment randomises, per player and persistently, which partner appears
+* in the left column and the order of the three options on the Decision page.
+* Neither changes the topology or the payoffs — the left partner in the payoff
+* rule is still the left partner — but both are what a position effect would
+* ride on, so they belong here as controls.
+*
+* Exports produced before the randomisation was added have the columns empty,
+* which is why `shown_left` stays missing rather than becoming 0: no
+* information must not be read as "was shown on the right".
+
+capture confirm variable partner_shown_left
+if !_rc {
+    label variable partner_shown_left "Partner appeared in the focal's left column"
+    label variable focal_decision_position "Screen position of the chosen option (1-3)"
+    quietly count if !missing(partner_shown_left)
+    display as text "Display order recorded for " r(N) " directed pairs"
+}
+
 *--- Sample flags -------------------------------------------------------------
 * They are flags, not deletions: the excluded rows stay available for the
 * robustness checks, which is the whole point of not dropping them here.
@@ -154,6 +173,14 @@ foreach block in sent group {
     label variable nlp_`block'_tone_100         "Tone, 0-100 (`block')"
     label variable nlp_`block'_sentiment_compound_mean "Sentiment, VADER (`block')"
     label variable nlp_`block'_low_language_flag "Text is not language (`block')"
+}
+
+capture confirm variable left_partner_shown_left
+if !_rc {
+    label variable left_partner_shown_left ///
+        "The topological left partner appeared in the left column"
+    label variable focal_decision_position ///
+        "Screen position of the chosen option (1-3)"
 }
 
 generate byte in_sample = (group_valid == 1) & ///

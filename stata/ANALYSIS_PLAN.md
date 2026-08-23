@@ -195,6 +195,26 @@ should be approved before the topics enter any analysis (README §8).
 
 ---
 
+### Position effects — a control, not a hypothesis
+
+The experiment randomises two display choices per player, persistently, so a
+refresh cannot reshuffle them:
+
+| Column | What it records |
+|---|---|
+| `partner_shown_left` | this partner appeared in the focal player's left column |
+| `focal_decision_position` | where the chosen option sat among the three on the Decision page (1–3) |
+
+Neither changes the topology or the payoffs: the left partner in the payoff rule
+is still the left partner, and the merge reads the topology, not the screen.
+They are what a position effect would ride on, so `04` regresses persuasion on
+each of them and then re-estimates the language specification with both added.
+If the language coefficients do not move, the check is worth one line in the
+paper; if they do, the controls stay in the main specification.
+
+Exports produced before the randomisation was added leave both columns empty,
+and the section skips itself with a message. The pilot export is one of those.
+
 ## 5. Which test, and why
 
 **Non-parametric tests are the primary evidence for the treatment comparisons.**
