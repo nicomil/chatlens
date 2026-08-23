@@ -1,25 +1,25 @@
 """
-Dizionari per le misure testuali in stile LIWC.
+Dictionaries for the LIWC-style text measures.
 
-Le tre misure composite di LIWC-22 richieste dallo sperimentatore — Analytic,
-Clout, Authenticity — non dipendono da dizionari di contenuto proprietari: si
-reggono quasi interamente sulle *function words* (articoli, preposizioni,
-pronomi, ausiliari, congiunzioni, negazioni), che in inglese sono classi
-chiuse e di pubblico dominio. È questa la ragione per cui le misure si possono
-replicare in modo trasparente senza licenza.
+The three LIWC-22 composites the experimenter asked for — Analytic, Clout,
+Authenticity — do not depend on proprietary content dictionaries: they rest
+almost entirely on *function words* (articles, prepositions, pronouns,
+auxiliaries, conjunctions, negations), which in English are closed classes and
+in the public domain. That is why the measures can be replicated transparently
+without a licence.
 
-Le categorie di contenuto (emozioni, parolacce, verbi di movimento) sono invece
-classi aperte: qui sono liste di semi ad alta frequenza, sufficienti per il
-registro di una chat sperimentale ma dichiaratamente non esaustive. Per il
-sentiment la misura principale resta VADER, che è validato e open source.
+Content categories (emotion, swearing, motion verbs) are open classes: what
+follows are high-frequency seed lists, adequate for the register of an
+experimental chat but avowedly not exhaustive. For sentiment the primary
+measure remains VADER, which is validated and open source.
 
-Riferimenti delle formule che usano queste categorie:
+References for the formulas that use these categories:
 - Analytic / CDI: Pennebaker, Chung, Frazee, Lavergne & Beaver (2014), PLOS ONE.
 - Clout: Kacewicz, Pennebaker, Davis, Jeon & Graesser (2014), JLSP.
 - Authenticity: Newman, Pennebaker, Berry & Richards (2003), PSPB.
 """
 
-# --- Function words: classi chiuse ----------------------------------------
+# --- Function words: closed classes ----------------------------------------
 
 ARTICLES = {'a', 'an', 'the'}
 
@@ -34,8 +34,8 @@ PREPOSITIONS = {
     'without',
 }
 
-# Pronomi personali, suddivisi perché Clout e Authenticity ne usano i
-# sottoinsiemi separatamente.
+# Personal pronouns, split because Clout and Authenticity use the subsets
+# separately.
 PRONOUNS_I = {'i', 'me', 'my', 'mine', 'myself', "i'm", "i've", "i'll", "i'd"}
 PRONOUNS_WE = {'we', 'us', 'our', 'ours', 'ourselves', "we're", "we've", "we'll", "we'd"}
 PRONOUNS_YOU = {
@@ -89,8 +89,8 @@ NEGATIONS = {
     "weren't", "haven't", "hasn't", "hadn't", "ain't", 'nope', 'nah',
 }
 
-# Avverbi: classe aperta. Lista ad alta frequenza, integrata a runtime da una
-# euristica sui suffissi -ly con lista di eccezioni (vedi ADVERB_LY_EXCLUDE).
+# Adverbs: an open class. High-frequency list, extended at runtime by a suffix
+# heuristic on -ly with a list of exceptions (see ADVERB_LY_EXCLUDE).
 ADVERBS = {
     'very', 'really', 'just', 'so', 'too', 'quite', 'rather', 'almost',
     'always', 'never', 'often', 'sometimes', 'usually', 'rarely', 'seldom',
@@ -103,10 +103,10 @@ ADVERBS = {
     'ok', 'okay', 'yes', 'yeah', 'yep', 'hopefully', 'obviously',
 }
 
-# Parole che finiscono in -ly ma non sono avverbi. Nota: "only" non compare
-# qui perché in inglese funziona quasi sempre da avverbio ed è già nella lista
-# esplicita; "daily", "weekly" e "yearly" sono ambigui (aggettivo o avverbio) e
-# si preferisce non contarli.
+# Words ending in -ly that are not adverbs. Note: "only" is absent because in
+# English it almost always works as an adverb and is already in the explicit
+# list; "daily", "weekly" and "yearly" are ambiguous (adjective or adverb) and
+# we prefer not to count them.
 ADVERB_LY_EXCLUDE = {
     'ally', 'apply', 'assembly', 'belly', 'bully', 'comply', 'daily', 'early',
     'family', 'fly', 'holy', 'italy', 'jelly', 'jolly', 'lily', 'lonely',
@@ -114,9 +114,9 @@ ADVERB_LY_EXCLUDE = {
     'reply', 'silly', 'supply', 'ugly', 'weekly', 'yearly',
 }
 
-# --- Categorie di contenuto: classi aperte, liste di semi ------------------
+# --- Content categories: open classes, seed lists ---------------------------
 
-# Parole di differenziazione ("exclusive words" in Newman et al. 2003).
+# Differentiation words ("exclusive words" in Newman et al. 2003).
 EXCLUSIVE = {
     'but', 'except', 'without', 'exclude', 'excluding', 'unless', 'however',
     'although', 'though', 'rather', 'instead', 'whereas', 'than', 'besides',
@@ -164,8 +164,8 @@ NEGATIVE_EMOTION = {
     'nothing', 'never', 'no', 'sucks', 'ugh',
 } | SWEAR
 
-# Marcatori del linguaggio del gioco: non fanno parte di LIWC, ma sono utili
-# come controllo descrittivo del contenuto strategico della chat.
+# Markers of the game's own language: not part of LIWC, but a useful
+# descriptive check on the strategic content of the chat.
 GAME_COMMITMENT = {
     'support', 'supports', 'supporting', 'supported', 'back', 'backing',
     'choose', 'choosing', 'chose', 'pick', 'picking', 'picked', 'vote',
@@ -175,7 +175,7 @@ GAME_COMMITMENT = {
 
 
 def is_adverb(token: str) -> bool:
-    """Avverbio per lista esplicita oppure per suffisso -ly non escluso."""
+    """An adverb by explicit list, or by a non-excluded -ly suffix."""
     if token in ADVERBS:
         return True
     return (
@@ -185,8 +185,8 @@ def is_adverb(token: str) -> bool:
     )
 
 
-# Categorie esposte all'esterno: nome -> insieme di token.
-# `adverbs` non compare qui perché richiede l'euristica sul suffisso.
+# Categories exposed to the outside: name -> set of tokens.
+# `adverbs` is absent here because it needs the suffix heuristic.
 CATEGORIES = {
     'article': ARTICLES,
     'prep': PREPOSITIONS,

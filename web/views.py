@@ -1,13 +1,12 @@
 """
-Frammenti HTML della dashboard.
+HTML fragments of the dashboard.
 
-Nessun motore di template: le pagine sono poche e il contenuto e' quasi tutto
-generato da dati, quindi f-string e funzioni bastano e non aggiungono una
-dipendenza.
+No template engine: there are few pages and the content is almost all generated
+from data, so f-strings and functions suffice and add no dependency.
 
-Ogni frammento e' un pezzo che htmx sostituisce nella pagina: la pagina intera
-si costruisce componendoli, cosi' l'aggiornamento parziale e il caricamento
-iniziale usano lo stesso codice e non possono divergere.
+Every fragment is a piece htmx swaps into the page: the whole page is built by
+composing them, so the partial update and the initial load use the same code and
+cannot drift apart.
 """
 
 from __future__ import annotations
@@ -19,91 +18,92 @@ from pathlib import Path
 from src import archive, config
 from web.runner import runner
 
-MODELS_RUBRICA = ['', 'gpt-4o', 'gpt-4.1', 'gpt-5.6-terra', 'gpt-5.6-luna',
-                  'gpt-5.6-sol', 'claude-opus-5', 'llama3']
+MODELS_RUBRIC = ['', 'gpt-4o', 'gpt-4.1', 'gpt-5.6-terra', 'gpt-5.6-luna',
+                 'gpt-5.6-sol', 'claude-opus-5', 'llama3']
 MODELS_TOPIC = ['gpt-4o', 'gpt-4.1']
 LEVELS = ['group', 'dyad_directed', 'dyad', 'sender_group']
 
-# Cosa significa ciascuna unità di analisi. Sono i termini che compaiono ovunque
-# nei dati, e senza una spiegazione a portata di mano non si scelgono a ragion
-# veduta.
+# What each unit of analysis means. These are the terms that appear everywhere
+# in the data, and without an explanation at hand they cannot be chosen
+# knowingly.
 LEVEL_LABELS = {
-    'group': ('Gruppo', "l'intera conversazione della triade"),
-    'dyad_directed': ('Coppia orientata', 'chi scrive a chi, una direzione'),
-    'dyad': ('Coppia', 'due persone, entrambe le direzioni'),
-    'sender_group': ('Persona', 'tutto cio\' che uno ha scritto'),
+    'group': ('Group', "the triad's whole conversation"),
+    'dyad_directed': ('Directed pair', 'who writes to whom, one direction'),
+    'dyad': ('Pair', 'two people, both directions'),
+    'sender_group': ('Person', 'everything one person wrote'),
 }
 
 LEVEL_HELP = {
-    'group': 'La conversazione dell\'intera triade: tutti i messaggi scambiati '
-             'fra i tre partecipanti. È l\'unità con più testo.',
-    'dyad_directed': 'I messaggi che una persona manda a un\'altra, in una sola '
-                     'direzione. È l\'unità della persuasione: conta chi parla.',
-    'dyad': 'La conversazione fra due persone, in entrambe le direzioni.',
-    'sender_group': 'Tutto ciò che una persona ha scritto nel gruppo, a '
-                    'chiunque fosse rivolto.',
+    'group': "The whole triad's conversation: every message exchanged between "
+             'the three participants. It is the unit with the most text.',
+    'dyad_directed': 'The messages one person sends to another, in a single '
+                     'direction. It is the unit of persuasion: who speaks '
+                     'matters.',
+    'dyad': 'The conversation between two people, in both directions.',
+    'sender_group': 'Everything one person wrote in the group, whoever it was '
+                    'addressed to.',
 }
 
 OPTION_HELP = {
-    'llm': 'Fa valutare le stesse conversazioni a un modello linguistico con una '
-           'rubrica esplicita, per validare le misure calcolate dai dizionari. '
-           'Consuma chiamate a pagamento.',
-    'topics': 'Estrae i temi delle conversazioni con TopicGPT: prima li induce '
-              'dai testi, poi li assegna alle unità più fini. Consuma chiamate '
-              'a pagamento.',
-    'replicates': 'Quante volte valutare ogni testo. Con più di una si ottiene '
-                  'la dispersione fra valutazioni, cioè una stima dell\'errore '
-                  'di misura. Il costo cresce in proporzione.',
-    'induzione': 'Su quale unità scoprire quali temi esistono. Serve testo '
-                 'abbastanza lungo: su testi brevi il modello non riconosce '
-                 'nulla.',
-    'assegnazione': 'A quale unità attribuire i temi già scoperti. Può essere '
-                    'più fine dell\'induzione: riconoscere è più facile che '
-                    'scoprire.',
+    'llm': 'Has a language model score the same conversations against an '
+           'explicit rubric, to validate the measures computed from the '
+           'dictionaries. Consumes paid calls.',
+    'topics': "Extracts the conversations' themes with TopicGPT: it first "
+              'induces them from the texts, then assigns them to the finer '
+              'units. Consumes paid calls.',
+    'replicates': 'How many times each text is scored. With more than one you '
+                  'get the spread across ratings, that is an estimate of '
+                  'measurement error. The cost grows in proportion.',
+    'induction': 'The unit on which to discover which themes exist. It needs '
+                 'text of some length: on short texts the model recognises '
+                 'nothing.',
+    'assignment': 'The unit the already discovered themes are attributed to. It '
+                  'can be finer than the induction unit: recognising is easier '
+                  'than discovering.',
 }
 
 
 PRESETS = [
-    dict(id='base', nome='Solo misure',
-         descrizione='Volume, sentiment e indici del linguaggio. '
-                     'Nessuna chiave, pochi secondi.',
-         costo='gratis'),
-    dict(id='validazione', nome='Misure + validazione',
-         descrizione='Aggiunge la rubrica che convalida gli indici '
-                     'facendoli valutare a un modello.',
-         costo='a pagamento'),
-    dict(id='completa', nome='Analisi completa',
-         descrizione='Aggiunge anche i temi delle conversazioni con TopicGPT. '
-                     'È il run che produce tutto.',
-         costo='a pagamento'),
+    dict(id='base', name='Measures only',
+         description='Volume, sentiment and the language indices. '
+                     'No key, a few seconds.',
+         cost='free'),
+    dict(id='validation', name='Measures + validation',
+         description='Adds the rubric that validates the indices by having a '
+                     'model score them.',
+         cost='paid'),
+    dict(id='full', name='Full analysis',
+         description="Also adds the conversations' themes with TopicGPT. This "
+                     'is the run that produces everything.',
+         cost='paid'),
 ]
 
 
 def presets_panel(active='base') -> str:
-    """La scelta principale: cosa si vuole ottenere.
+    """The main choice: what you want to obtain.
 
-    Sono caselle di scelta vere, non pulsanti: una alla volta, raggiungibili da
-    tastiera, e con uno stato visibile. Le opzioni di dettaglio le riflettono e
-    restano modificabili per chi deve scostarsene.
+    These are real radio inputs, not buttons: one at a time, reachable from the
+    keyboard, with a visible state. The detail options mirror them and stay
+    editable for anyone who needs to depart from a preset.
     """
     cards = ''.join(
         f'<label class="preset{" on" if p["id"] == active else ""}">'
         f'<input type="radio" name="preset" value="{_e(p["id"])}"'
         f'{" checked" if p["id"] == active else ""}>'
-        f'<span class="nome">{_e(p["nome"])}</span>'
-        f'<span class="costo {"free" if p["costo"] == "gratis" else "paid"}">'
-        f'{_e(p["costo"])}</span>'
-        f'<span class="desc">{_e(p["descrizione"])}</span></label>'
+        f'<span class="nome">{_e(p["name"])}</span>'
+        f'<span class="costo {"free" if p["cost"] == "free" else "paid"}">'
+        f'{_e(p["cost"])}</span>'
+        f'<span class="desc">{_e(p["description"])}</span></label>'
         for p in PRESETS
     )
     return f'<div class="presets">{cards}</div>'
 
 
 def _unit_counts() -> dict:
-    """Quante unita' ci sono per livello, dall'ultimo run archiviato.
+    """How many units there are per level, from the last archived run.
 
-    Serve a rendere concreta la scelta: "due repliche" non dice nulla, "circa
-    duecento chiamate" si.
+    It makes the choice concrete: "two replicates" says nothing, "about two
+    hundred calls" does.
     """
     for run in archive.list_runs(config.OUTPUT_DIR):
         levels = run.get('levels')
@@ -113,14 +113,14 @@ def _unit_counts() -> dict:
 
 
 def estimate_panel(form=None) -> str:
-    """Stima delle chiamate che la configurazione corrente comporta."""
+    """Estimate of the calls the current configuration implies."""
     form = form or {}
     counts = _unit_counts()
     live = ('hx-post="/estimate" hx-trigger="change from:#launch" '
             'hx-include="#launch" hx-target="this" hx-swap="outerHTML"')
     if not counts:
-        return (f'<div id="estimate" class="estimate muted" {live}>La stima '
-                f'compare dopo il primo run.</div>')
+        return (f'<div id="estimate" class="estimate muted" {live}>The estimate '
+                f'appears after the first run.</div>')
 
     calls = 0
     parts = []
@@ -131,7 +131,7 @@ def estimate_panel(form=None) -> str:
         n = sum(counts[lv] for lv in levels) * replicates
         if n:
             calls += n
-            parts.append(f'rubrica {n}')
+            parts.append(f'rubric {n}')
 
     if form.get('topics'):
         unit = (form.get('topicgpt_unit') or ['group'])[0]
@@ -139,22 +139,22 @@ def estimate_panel(form=None) -> str:
         n = counts.get(unit, 0) + counts.get(assign, 0)
         if n:
             calls += n
-            parts.append(f'topic ~{n}')
+            parts.append(f'topics ~{n}')
 
     if not calls:
-        return (f'<div id="estimate" class="estimate free" {live}>Nessuna '
-                f'chiamata a pagamento · pochi secondi</div>')
+        return (f'<div id="estimate" class="estimate free" {live}>No paid '
+                f'calls · a few seconds</div>')
 
-    # Circa un secondo e mezzo per chiamata, misurato sui run veri.
-    minuti = max(1, round(calls * 1.5 / 60))
-    dettaglio = ' + '.join(parts)
+    # About a second and a half per call, measured on real runs.
+    minutes = max(1, round(calls * 1.5 / 60))
+    detail = ' + '.join(parts)
     return (f'<div id="estimate" class="estimate paid" {live}>'
-            f'<strong>~{calls} chiamate</strong> ({dettaglio}) · '
-            f'circa {minuti} min</div>')
+            f'<strong>~{calls} calls</strong> ({detail}) · '
+            f'about {minutes} min</div>')
 
 
 def _help(text: str) -> str:
-    """Punto interrogativo con la spiegazione al passaggio del mouse."""
+    """A question mark carrying the explanation on hover."""
     return f'<span class="help" data-tip="{_e(text)}">?</span>' 
 
 
@@ -162,7 +162,7 @@ def _e(text) -> str:
     return html.escape(str(text))
 
 
-# --- frammenti -------------------------------------------------------------
+# --- fragments -------------------------------------------------------------
 
 
 def status_panel() -> str:
@@ -174,13 +174,13 @@ def status_panel() -> str:
                 rows.append(('ok', f'{match.name}',
                              f'{match.stat().st_size // 1024} KB'))
         else:
-            rows.append(('ko', pattern, 'mancante'))
+            rows.append(('ko', pattern, 'missing'))
 
     for name, purpose, present in config.key_status():
         if name == 'OPENAI_BASE_URL':
             continue
         rows.append(('ok' if present else 'off', name,
-                     'configurata' if present else 'assente'))
+                     'configured' if present else 'absent'))
 
     body = ''.join(
         f'<tr><td><span class="dot {cls}"></span>{_e(label)}</td>'
@@ -193,18 +193,18 @@ def status_panel() -> str:
 def _options(values, selected='') -> str:
     return ''.join(
         f'<option value="{_e(v)}"{" selected" if v == selected else ""}>'
-        f'{_e(v or "automatico")}</option>' for v in values
+        f'{_e(v or "automatic")}</option>' for v in values
     )
 
 
 def _level_checkbox(level: str, checked: bool) -> str:
-    nome, sotto = LEVEL_LABELS[level]
+    name, subtitle = LEVEL_LABELS[level]
     return (
         f'<label class="lev" data-tip="{_e(LEVEL_HELP[level])}">'
         f'<input type="checkbox" name="llm_level" value="{level}"'
         f'{" checked" if checked else ""}>'
-        f'<span class="lev-t"><b>{_e(nome)}</b>'
-        f'<i>{_e(sotto)}</i></span></label>'
+        f'<span class="lev-t"><b>{_e(name)}</b>'
+        f'<i>{_e(subtitle)}</i></span></label>'
     )
 
 
@@ -224,56 +224,57 @@ def form_panel() -> str:
   <fieldset{disabled}>
     {presets_panel()}
     {estimate_panel()}
-    <button type="submit" class="go">{'In corso…' if runner.running else 'Lancia'}</button>
+    <button type="submit" class="go">{'Running…' if runner.running else 'Start run'}</button>
 
     <details class="advanced">
-      <summary>Regola i dettagli</summary>
+      <summary>Adjust the details</summary>
 
       <label class="field">
-        <span>Cosa eseguire</span>
+        <span>What to run</span>
         <select name="command">
-          <option value="all">Tutto — unisce i dati e li analizza</option>
-          <option value="merge">Solo unione — prepara i dati, non li analizza</option>
-          <option value="analyze">Solo analisi — riusa i dati gia uniti</option>
+          <option value="all">Everything — merges the data and analyses it</option>
+          <option value="merge">Merge only — prepares the data, does not analyse it</option>
+          <option value="analyze">Analysis only — reuses the data already merged</option>
         </select>
       </label>
 
       <div class="block">
         <label class="inline head">
-          <input type="checkbox" name="llm" value="1"> Rubrica di validazione
+          <input type="checkbox" name="llm" value="1"> Validation rubric
         </label>
-        <p class="why">Fa valutare le conversazioni a un modello, per verificare
-          che gli indici calcolati dai dizionari misurino davvero quello che
-          dicono.</p>
+        <p class="why">Has a model score the conversations, to check that the
+          indices computed from the dictionaries really measure what they claim
+          to.</p>
         <div class="row">
-          <label class="field"><span>Modello</span>
-            <select name="llm_model">{_options(MODELS_RUBRICA)}</select></label>
-          <label class="field"><span>Repliche {_help(OPTION_HELP['replicates'])}</span>
+          <label class="field"><span>Model</span>
+            <select name="llm_model">{_options(MODELS_RUBRIC)}</select></label>
+          <label class="field"><span>Replicates {_help(OPTION_HELP['replicates'])}</span>
             <select name="llm_replicates">
               <option>1</option><option>2</option><option>3</option>
             </select></label>
         </div>
         <div class="levels">
-          <span class="lbl">Su quali unità valutare</span>
+          <span class="lbl">Which units to score</span>
           {''.join(_level_checkbox(lv, lv == 'group') for lv in LEVELS)}
         </div>
       </div>
 
       <div class="block">
         <label class="inline head">
-          <input type="checkbox" name="topics" value="1"> Temi delle conversazioni
+          <input type="checkbox" name="topics" value="1"> Conversation themes
         </label>
-        <p class="why">TopicGPT prima <b>scopre</b> quali temi esistono leggendo
-          i testi più lunghi, poi li <b>attribuisce</b> alle unità più fini.</p>
+        <p class="why">TopicGPT first <b>discovers</b> which themes exist by
+          reading the longest texts, then <b>attributes</b> them to the finer
+          units.</p>
         <div class="row">
-          <label class="field"><span>Modello</span>
+          <label class="field"><span>Model</span>
             <select name="topicgpt_model">{_options(MODELS_TOPIC, 'gpt-4o')}</select></label>
         </div>
         <label class="field">
-          <span>Scopre i temi leggendo {_help(OPTION_HELP['induzione'])}</span>
+          <span>Discovers the themes by reading {_help(OPTION_HELP['induction'])}</span>
           <select name="topicgpt_unit">{_level_options('group')}</select></label>
         <label class="field">
-          <span>Li attribuisce a {_help(OPTION_HELP['assegnazione'])}</span>
+          <span>Attributes them to {_help(OPTION_HELP['assignment'])}</span>
           <select name="topicgpt_assign_unit">{_level_options('dyad_directed')}</select></label>
       </div>
     </details>
@@ -281,14 +282,14 @@ def form_panel() -> str:
 </form>'''
 
 
-# Fasi di un run, nell'ordine in cui compaiono, con il testo che le annuncia
-# nel log. Serve a mostrare a che punto siamo senza dover leggere il log.
+# A run's phases, in the order they appear, with the text that announces them
+# in the log. It shows how far along we are without having to read the log.
 PHASES = [
-    ('Unione', 'Input:'),
-    ('Misure', 'Misure testuali'),
-    ('Rubrica', 'Rubrica di validazione'),
-    ('Topic', 'TopicGPT'),
-    ('Rapporto', 'Riassunto leggibile'),
+    ('Merge', 'Input:'),
+    ('Measures', 'Text measures'),
+    ('Rubric', 'Validation rubric'),
+    ('Topics', 'TopicGPT'),
+    ('Report', 'Readable summary'),
 ]
 
 BAR_RE = re.compile(r'(\d+)%\|')
@@ -297,7 +298,7 @@ PHASE_RE = re.compile(r'^\s*\[(\d)/(\d)\]\s*(.+)$')
 
 
 def _phases(lines) -> str:
-    """Barra delle fasi: quelle gia' viste sono fatte, l'ultima e' in corso."""
+    """Phase bar: the ones already seen are done, the last is in progress."""
     text = '\n'.join(lines)
     seen = [name for name, marker in PHASES if marker in text]
     if not seen:
@@ -316,11 +317,11 @@ def _phases(lines) -> str:
 
 
 def _render_line(line: str) -> str:
-    """Una riga di log diventa un elemento con la sua forma.
+    """A log line becomes an element with a shape of its own.
 
-    Le righe hanno strutture ricorrenti — barre, coppie chiave/valore, percorsi,
-    avvisi — e renderle tutte come testo grezzo costringe a rileggerle ogni
-    volta per capire cosa siano.
+    Lines have recurring structures — bars, key/value pairs, paths, warnings —
+    and rendering them all as raw text forces the reader to parse each one
+    again to work out what it is.
     """
     stripped = line.strip()
 
@@ -339,12 +340,12 @@ def _render_line(line: str) -> str:
                 f'{_e(phase.group(2))}</span>{_e(phase.group(3))}</div>')
 
     low = stripped.lower()
-    if low.startswith(('attenzione', 'errore', 'error')):
+    if low.startswith(('warning', 'error')):
         return f'<div class="l warn">{_e(stripped)}</div>'
 
     if stripped.startswith('/'):
-        # I percorsi assoluti occupano tutta la riga e la parte utile e' in
-        # fondo: si mostra il nome del file, con il percorso intero a richiesta.
+        # Absolute paths fill the whole line and the useful part is at the
+        # end: show the file name, with the full path available on demand.
         return (f'<div class="l path" title="{_e(stripped)}">'
                 f'<span class="file">{_e(Path(stripped).name)}</span></div>')
 
@@ -359,18 +360,18 @@ def _render_line(line: str) -> str:
 
 
 def log_body() -> str:
-    """Contenuto del log. Vive dentro un contenitore che non viene sostituito."""
+    """The log's content. It lives inside a container that is never swapped."""
     state = runner.snapshot()
     lines = state['lines']
 
     if not lines and not state['running']:
         return ('<div id="logbody" class="logbody empty">'
-                'Nessun run in questa sessione. Scegli le opzioni e premi '
-                'Lancia.</div>')
+                'No run in this session. Choose the options and press '
+                'Start run.</div>')
 
     if state['running']:
-        # Il contenuto si richiede da solo: il contenitore che scorre resta al
-        # suo posto, quindi la posizione dello scroll non viene persa.
+        # The content requests itself: the scrolling container stays put, so
+        # the scroll position is not lost.
         attrs = ('hx-get="/log" hx-trigger="load delay:1s" '
                  'hx-target="#logbody" hx-swap="outerHTML"')
     else:
@@ -385,20 +386,20 @@ def log_body() -> str:
 def log_head() -> str:
     state = runner.snapshot()
     if state['running']:
-        badge = '<span class="badge run">in corso</span>'
+        badge = '<span class="badge run">running</span>'
     elif state['command']:
         code = state['returncode']
         ok = code == 0
         badge = (f'<span class="badge {"ok" if ok else "ko"}">'
-                 f'{"completato" if ok else f"uscita {code}"}</span>')
+                 f'{"completed" if ok else f"exit {code}"}</span>')
     else:
         return '<div id="loghead" class="loghead"></div>'
 
     finished = state['finished']
     when = _e(state['started'] or '') + (f' → {_e(finished)}' if finished else '')
     command = state['command']
-    # Il comando intero e' lungo e ripete opzioni gia' scelte nel modulo: si
-    # mostra compatto, per intero al passaggio del mouse.
+    # The whole command is long and repeats options already chosen in the
+    # form: show it compact, in full on hover.
     short = command.replace('python run.py ', '').split(' --topicgpt-repo')[0]
     return (f'<div id="loghead" class="loghead">{badge}'
             f'<code title="{_e(command)}">{_e(short)}</code>'
@@ -406,17 +407,16 @@ def log_head() -> str:
 
 
 def log_panel() -> str:
-    """Contenuto di #logwrap: intestazione e corpo.
+    """The content of #logwrap: head and body.
 
-    Il contenitore che scorre non fa parte di quello che viene sostituito:
-    e' l'unico modo perche' la posizione dello scroll sopravviva agli
-    aggiornamenti automatici.
+    The scrolling container is not part of what gets swapped: that is the only
+    way for the scroll position to survive the automatic updates.
     """
     return log_head() + log_body()
 
 
 def _run_time(stamp: str) -> str:
-    """Istante leggibile: quello che serve e' quando, non il numero seriale."""
+    """A readable instant: what matters is when, not the serial number."""
     from datetime import date, datetime, timedelta
 
     try:
@@ -426,168 +426,76 @@ def _run_time(stamp: str) -> str:
 
     day = moment.date()
     if day == date.today():
-        prefix = 'oggi'
+        prefix = 'today'
     elif day == date.today() - timedelta(days=1):
-        prefix = 'ieri'
+        prefix = 'yesterday'
     else:
         prefix = moment.strftime('%d/%m')
-    # Con i secondi: esecuzioni a pochi istanti l'una dall'altra sono comuni,
-    # e senza non si distinguono.
+    # With seconds: runs a few moments apart are common, and without them
+    # they cannot be told apart.
     return f'{prefix} {moment.strftime("%H:%M:%S")}'
 
 
 def _run_detail(run: dict) -> str:
-    """Cosa distingue questo run dagli altri.
+    """What sets this run apart from the others.
 
-    Fra dodici righe quasi uguali serve il dettaglio che cambia: il modello, le
-    repliche, l'unita' su cui sono stati indotti i topic. Il conteggio dei
-    messaggi resta come ripiego quando non c'e' altro.
+    Among a dozen near-identical rows what is needed is the detail that
+    changes: the model, the replicates, the unit the topics were induced on.
+    The message count remains as a fallback when there is nothing else.
     """
     bits = []
-    topic = run.get('topic') or {}
-    if topic:
-        model = topic.get('model') or '?'
-        bits.append(f'{model} · {topic.get("unit")}→{topic.get("assign_unit")}')
+    topics = run.get('topics') or {}
+    if topics:
+        model = topics.get('model') or '?'
+        bits.append(f'{model} · {topics.get("unit")}→{topics.get("assign_unit")}')
 
-    rubrica = run.get('rubrica') or {}
-    if rubrica:
-        model = rubrica.get('models')
-        model = '' if model in (None, 'predefinito') else f'{model} · '
-        repliche = rubrica.get('replicates', 1)
-        etichetta = '1 replica' if repliche == 1 else f'{repliche} repliche'
-        bits.append(f'{model}{etichetta}')
+    rubric = run.get('rubric') or {}
+    if rubric:
+        model = rubric.get('models')
+        model = '' if model in (None, 'default') else f'{model} · '
+        replicates = rubric.get('replicates', 1)
+        label = '1 replicate' if replicates == 1 else f'{replicates} replicates'
+        bits.append(f'{model}{label}')
 
     if not bits and run.get('n_messages') is not None:
-        bits.append(f'{run["n_messages"]} messaggi')
+        bits.append(f'{run["n_messages"]} messages')
     return ' · '.join(bits)
 
 
 def _run_tooltip(run: dict) -> str:
-    """Parametri completi, per chi vuole sapere esattamente cosa girava."""
-    lines = [f'Messaggi analizzati: {run.get("n_messages", "?")}']
+    """The full parameters, for whoever wants to know exactly what ran."""
+    lines = [f'Messages analysed: {run.get("n_messages", "?")}']
     levels = run.get('levels') or {}
     if levels:
-        lines.append('Unita: ' + ', '.join(f'{k} {v}' for k, v in levels.items()))
-    rubrica = run.get('rubrica') or {}
-    if rubrica:
-        n = rubrica.get('replicates', 1)
-        repliche = '1 replica' if n == 1 else f'{n} repliche'
+        lines.append('Units: ' + ', '.join(f'{k} {v}' for k, v in levels.items()))
+    rubric = run.get('rubric') or {}
+    if rubric:
+        n = rubric.get('replicates', 1)
+        replicates = '1 replicate' if n == 1 else f'{n} replicates'
         lines.append(
-            f'Rubrica: {rubrica.get("provider")}, modello '
-            f'{rubrica.get("models")}, {repliche}, '
-            f'livelli {", ".join(rubrica.get("levels") or [])}'
+            f'Rubric: {rubric.get("provider")}, model '
+            f'{rubric.get("models")}, {replicates}, '
+            f'levels {", ".join(rubric.get("levels") or [])}'
         )
-    topic = run.get('topic') or {}
-    if topic:
+    topics = run.get('topics') or {}
+    if topics:
         lines.append(
-            f'Topic: {topic.get("model")} via {topic.get("api")}, induzione su '
-            f'{topic.get("unit")}, assegnazione a {topic.get("assign_unit")}, '
-            f'seed {Path(topic.get("seed") or "").name}'
+            f'Topics: {topics.get("model")} via {topics.get("api")}, induction '
+            f'on {topics.get("unit")}, assignment to '
+            f'{topics.get("assign_unit")}, '
+            f'seed {Path(topics.get("seed") or "").name}'
         )
     return ' — '.join(lines)
 
 
-STAGE_LABELS = {'misure': 'misure', 'rubrica': 'rubrica', 'topic': 'topic'}
-
-
-def _run_span(gruppo) -> str:
-    """Da quando a quando e' durata una serie di esecuzioni identiche."""
-    def orario(run):
-        stamp = run.get('timestamp') or ''
-        return stamp[11:19] or '?'
-
-    return f'dalle {orario(gruppo[-1])} alle {orario(gruppo[0])}'
-
-
-def _run_detail(run: dict) -> str:
-    """Cosa distingue questo run dagli altri.
-
-    Fra dodici righe quasi uguali serve il dettaglio che cambia: il modello, le
-    repliche, l'unita' su cui sono stati indotti i topic. Il conteggio dei
-    messaggi resta come ripiego quando non c'e' altro.
-    """
-    bits = []
-    topic = run.get('topic') or {}
-    if topic:
-        model = topic.get('model') or '?'
-        bits.append(f'{model} · {topic.get("unit")}→{topic.get("assign_unit")}')
-
-    rubrica = run.get('rubrica') or {}
-    if rubrica:
-        model = rubrica.get('models')
-        model = '' if model in (None, 'predefinito') else f'{model} · '
-        repliche = rubrica.get('replicates', 1)
-        etichetta = '1 replica' if repliche == 1 else f'{repliche} repliche'
-        bits.append(f'{model}{etichetta}')
-
-    if not bits and run.get('n_messages') is not None:
-        bits.append(f'{run["n_messages"]} messaggi')
-    return ' · '.join(bits)
-
-
-def _run_tooltip(run: dict) -> str:
-    """Parametri completi, per chi vuole sapere esattamente cosa girava."""
-    lines = [f'Messaggi analizzati: {run.get("n_messages", "?")}']
-    levels = run.get('levels') or {}
-    if levels:
-        lines.append('Unita: ' + ', '.join(f'{k} {v}' for k, v in levels.items()))
-    rubrica = run.get('rubrica') or {}
-    if rubrica:
-        n = rubrica.get('replicates', 1)
-        repliche = '1 replica' if n == 1 else f'{n} repliche'
-        lines.append(
-            f'Rubrica: {rubrica.get("provider")}, modello '
-            f'{rubrica.get("models")}, {repliche}, '
-            f'livelli {", ".join(rubrica.get("levels") or [])}'
-        )
-    topic = run.get('topic') or {}
-    if topic:
-        lines.append(
-            f'Topic: {topic.get("model")} via {topic.get("api")}, induzione su '
-            f'{topic.get("unit")}, assegnazione a {topic.get("assign_unit")}, '
-            f'seed {Path(topic.get("seed") or "").name}'
-        )
-    return ' — '.join(lines)
-
-
-STAGE_LABELS = {'misure': 'misure', 'rubrica': 'rubrica', 'topic': 'topic'}
-
-
-def _signature(run: dict):
-    """Cosa rende due esecuzioni la stessa cosa: gli stessi parametri.
-
-    Rilanciare per prova produce piu' cartelle identiche nel contenuto. Mostrarle
-    come righe distinte fa credere che siano successe cose diverse, quando
-    l'unica differenza sono pochi secondi.
-    """
-    import json as _json
-
-    return _json.dumps([
-        run.get('stages'), run.get('rubrica'), run.get('topic'),
-        run.get('n_messages'), run.get('failed_stage'),
-    ], sort_keys=True)
-
-
-def _group_runs(runs):
-    """Accorpa esecuzioni consecutive con gli stessi parametri.
-
-    Solo consecutive: la stessa configurazione rilanciata a distanza di ore e'
-    un'altra sessione di lavoro, e va tenuta separata.
-    """
-    grouped = []
-    for run in runs:
-        if grouped and _signature(grouped[-1][0]) == _signature(run):
-            grouped[-1].append(run)
-        else:
-            grouped.append([run])
-    return grouped
+STAGE_LABELS = {'measures': 'measures', 'rubric': 'rubric', 'topics': 'topics'}
 
 
 def runs_panel() -> str:
     runs = archive.list_runs(config.OUTPUT_DIR)
     if not runs:
-        return ('<p class="muted">Nessun run archiviato. Ogni esecuzione viene '
-                'salvata qui, cosi\' rilanciare non cancella la precedente.</p>')
+        return ('<p class="muted">No archived run yet. Every run is saved '
+                'here, so launching again does not erase the previous one.</p>')
 
     rows = []
     for index, run in enumerate(runs[:12]):
@@ -598,18 +506,18 @@ def runs_panel() -> str:
 
         if run.get('failed_stage'):
             note = (f'<span class="failed">{_e(run["failed_stage"])} '
-                    f'non completato</span>')
+                    f'not completed</span>')
         else:
             note = f'<span class="detail">{_e(_run_detail(run))}</span>'
 
-        # Il primo e' anche quello che si trova in output/: e' il rapporto che
-        # la dashboard mostra, e senza dirlo si cerca di capire quale sia.
+        # The first one is also the one sitting in output/: it is the report
+        # the dashboard shows, and unsaid it is hard to tell which.
         current = ('<span class="current">in output/</span>'
                    if index == 0 else '')
 
         name = run['path'].name
-        # La riga intera apre il run: e' l'indice di quello che si e' fatto,
-        # non un elenco di collegamenti a un solo file.
+        # The whole row opens the run: it is the index of what was done, not
+        # a list of links to a single file.
         rows.append(
             f'<li hx-get="/run/{_e(name)}" hx-target="#report" '
             f'hx-swap="innerHTML" tabindex="0" role="button">'
@@ -625,7 +533,7 @@ def _human_size(n: int) -> str:
 
 
 def _run_files(run_dir: Path, name: str) -> str:
-    """Cosa ha prodotto quel run, scaricabile."""
+    """What that run produced, downloadable."""
     items = []
     for path in sorted(run_dir.rglob('*')):
         if not path.is_file() or path.name == archive.RUN_INFO:
@@ -648,62 +556,62 @@ def _params_table(run: dict) -> str:
         rows.append(f'<tr><td>{_e(label)}</td>'
                     f'<td class="num">{_e(value)}</td></tr>')
 
-    add('Messaggi analizzati', run.get('n_messages', '—'))
+    add('Messages analysed', run.get('n_messages', '—'))
     for level, count in (run.get('levels') or {}).items():
-        nome = LEVEL_LABELS.get(level, (level, ''))[0]
-        add(f'Unità · {nome}', count)
+        name = LEVEL_LABELS.get(level, (level, ''))[0]
+        add(f'Units · {name}', count)
 
-    rubrica = run.get('rubrica') or {}
-    if rubrica:
-        n = rubrica.get('replicates', 1)
-        add('Rubrica · fornitore', rubrica.get('provider', '—'))
-        add('Rubrica · modello', rubrica.get('models', '—'))
-        add('Rubrica · repliche', '1 replica' if n == 1 else f'{n} repliche')
-        add('Rubrica · livelli', ', '.join(rubrica.get('levels') or []))
+    rubric = run.get('rubric') or {}
+    if rubric:
+        n = rubric.get('replicates', 1)
+        add('Rubric · provider', rubric.get('provider', '—'))
+        add('Rubric · model', rubric.get('models', '—'))
+        add('Rubric · replicates', '1 replicate' if n == 1 else f'{n} replicates')
+        add('Rubric · levels', ', '.join(rubric.get('levels') or []))
 
-    topic = run.get('topic') or {}
-    if topic:
-        add('Topic · modello', topic.get('model', '—'))
-        add('Topic · scopre leggendo',
-            LEVEL_LABELS.get(topic.get('unit'), (topic.get('unit'), ''))[0])
-        add('Topic · attribuisce a',
-            LEVEL_LABELS.get(topic.get('assign_unit'),
-                             (topic.get('assign_unit'), ''))[0])
-        add('Topic · seed', Path(topic.get('seed') or '—').name)
+    topics = run.get('topics') or {}
+    if topics:
+        add('Topics · model', topics.get('model', '—'))
+        add('Topics · discovers by reading',
+            LEVEL_LABELS.get(topics.get('unit'), (topics.get('unit'), ''))[0])
+        add('Topics · attributes to',
+            LEVEL_LABELS.get(topics.get('assign_unit'),
+                             (topics.get('assign_unit'), ''))[0])
+        add('Topics · seed', Path(topics.get('seed') or '—').name)
 
     return f'<table class="mini params"><tbody>{"".join(rows)}</tbody></table>'
 
 
 def run_detail(name: str) -> str:
-    """Tutto quello che riguarda un run archiviato."""
+    """Everything about an archived run."""
     run = next((r for r in archive.list_runs(config.OUTPUT_DIR)
                 if r['path'].name == name), None)
     if run is None:
-        return '<p class="muted">Run non trovato.</p>'
+        return '<p class="muted">Run not found.</p>'
 
     stages = ' · '.join(run.get('stages') or ['?'])
-    stato = (f'<span class="badge ko">{_e(run["failed_stage"])} '
-             f'non completato</span>' if run.get('failed_stage')
-             else '<span class="badge ok">completato</span>')
+    status = (f'<span class="badge ko">{_e(run["failed_stage"])} '
+              f'not completed</span>' if run.get('failed_stage')
+              else '<span class="badge ok">completed</span>')
 
     report = run['path'] / 'report.html'
     if report.is_file():
         viewer = (f'<div class="reportbar">'
                   f'<a href="/runs/{_e(name)}/report.html" target="_blank">'
-                  f'apri a tutta pagina</a></div>'
+                  f'open full page</a></div>'
                   f'<iframe src="/runs/{_e(name)}/report.html" '
-                  f'title="Rapporto"></iframe>')
+                  f'title="Report"></iframe>')
     else:
-        viewer = ('<p class="muted">Questo run non ha prodotto un rapporto: '
-                  'era una sola unione dei dati.</p>')
+        viewer = ('<p class="muted">This run produced no report: it was a data '
+                  'merge only.</p>')
 
     return (
         f'<div class="detailhead">'
         f'<div><b>{_e(_run_time(run.get("timestamp", "")))}</b> '
         f'<span class="muted">{_e(stages)}</span></div>'
-        f'{stato}'
+        f'{status}'
         f'<button class="back" hx-get="/report" hx-target="#report" '
-        f'hx-swap="innerHTML">torna all\'ultimo</button></div>'
+        f'hx-swap="innerHTML">back to the latest</button></div>'
         f'{_params_table(run)}'
         f'{_run_files(run["path"], name)}'
         f'{viewer}'
@@ -711,21 +619,21 @@ def run_detail(name: str) -> str:
 
 
 def report_panel() -> str:
-    """L'ultimo risultato: quello che sta nei percorsi fissi di output/."""
+    """The latest result: the one sitting at the fixed paths in output/."""
     reports = sorted(config.OUTPUT_DIR.glob('*_report.html'))
     if not reports:
-        return ('<p class="muted">Il rapporto compare qui dopo il primo run '
-                'con analisi.</p>')
+        return ('<p class="muted">The report appears here after the first '
+                'run with analysis.</p>')
     latest = reports[-1]
     return (f'<div class="reportbar">'
             f'<span class="badge ok">in output/</span>'
-            f'<a href="/report.html" target="_blank">apri a tutta pagina</a>'
+            f'<a href="/report.html" target="_blank">open full page</a>'
             f'<span class="muted">{_e(latest.name)}</span></div>'
-            f'<iframe src="/report.html" title="Rapporto"></iframe>')
+            f'<iframe src="/report.html" title="Report"></iframe>')
 
 
 def after_run() -> str:
-    """Cosa si aggiorna quando un run finisce."""
+    """What gets refreshed when a run ends."""
     return (f'<div hx-swap-oob="innerHTML:#loghead">{log_head()}</div>'
             f'<div hx-swap-oob="innerHTML:#status">{status_panel()}</div>'
             f'<div hx-swap-oob="innerHTML:#formbox">{form_panel()}</div>'
@@ -733,7 +641,7 @@ def after_run() -> str:
             f'<div hx-swap-oob="innerHTML:#report">{report_panel()}</div>')
 
 
-# --- pagina ----------------------------------------------------------------
+# --- page ------------------------------------------------------------------
 
 
 def page() -> str:
@@ -744,31 +652,31 @@ def page() -> str:
         pass
 
     return f'''<!doctype html>
-<html lang="it"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Analisi del testo</title>
+<title>Text Analysis</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
 </head><body>
 <header>
-  <h1>Analisi del testo</h1>
+  <h1>Text analysis</h1>
   <span class="muted">{_e(dataset)}</span>
 </header>
 
 <main>
   <section class="col col-side">
-    <h2>Stato</h2>
+    <h2>Status</h2>
     <div id="status">{status_panel()}</div>
-    <h2>Lancia un run</h2>
+    <h2>Start a run</h2>
     <div id="formbox">{form_panel()}</div>
-    <h2>Archivio</h2>
+    <h2>Archive</h2>
     <div id="runs">{runs_panel()}</div>
   </section>
 
   <section class="col col-main">
-    <h2>Esecuzione</h2>
+    <h2>Execution</h2>
     <div id="logwrap" class="log">{log_panel()}</div>
-    <h2>Rapporto</h2>
+    <h2>Report</h2>
     <div id="report">{report_panel()}</div>
   </section>
 </main>

@@ -1,14 +1,14 @@
-# Chiavi API: mai sotto controllo di versione.
+# API keys: never under version control.
 .env
 
-# Dati: gli input sono export di oTree con ID Prolific e testi di chat,
-# gli output ne derivano. Restano in locale.
+# Data: the inputs are oTree exports with Prolific IDs and chat texts, the
+# outputs derive from them. They stay local.
 input/*
 !input/.gitkeep
 output/*
 !output/.gitkeep
 
-# Ambiente virtuale del progetto.
+# The project's virtual environment.
 .venv/
 
 __pycache__/

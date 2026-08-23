@@ -1,37 +1,36 @@
 """
-Misure testuali deterministiche in stile LIWC-22, più volume e sentiment.
+Deterministic LIWC-style text measures, plus volume and sentiment.
 
-Copre le grandezze chieste dallo sperimentatore — volume, tono emotivo,
-sentiment, pensiero analitico, Clout, Authenticity — senza dipendere dal
-software LIWC, che è a licenza commerciale.
+Covers the quantities the experimenter asked for — volume, emotional tone,
+sentiment, analytical thinking, Clout, Authenticity — without depending on the
+LIWC software, which is commercially licensed.
 
-Cosa è replica e cosa è approssimazione
----------------------------------------
-- **Analytic** si basa sul Categorical-Dynamic Index, la cui formula è
-  *pubblicata* per esteso in Pennebaker et al. (2014):
+What is a replication and what is an approximation
+--------------------------------------------------
+- **Analytic** is based on the Categorical-Dynamic Index, whose formula is
+  *published* in full in Pennebaker et al. (2014):
 
-      CDI = 30 + article + prep − ppron − ipron − auxverb − conj − adverb − negate
+      CDI = 30 + article + prep - ppron - ipron - auxverb - conj - adverb - negate
 
-  con ogni termine espresso in percentuale sul totale delle parole. Qui è
-  riprodotta alla lettera: `analytic_cdi` è quindi una replica, non un
-  surrogato. `analytic_pct` è la stessa quantità riscalata sul campione.
+  with every term expressed as a percentage of total words. It is reproduced
+  here to the letter: `analytic_cdi` is therefore a replication, not a proxy.
 
-- **Clout** e **Authenticity** poggiano su costrutti pubblicati (rispettivamente
-  Kacewicz et al. 2014 e Newman et al. 2003), ma i pesi esatti usati da LIWC-22
-  non sono di dominio pubblico. Qui sono composti standardizzati a pesi uguali,
-  con i segni presi dalla letteratura, e vanno letti come **indici in stile
-  LIWC**, non come punteggi LIWC. Il modulo `llm_rubric` fornisce una seconda
-  misura indipendente degli stessi costrutti, così da poterne verificare la
-  convergenza.
+- **Clout** and **Authenticity** rest on published constructs (Kacewicz et al.
+  2014 and Newman et al. 2003 respectively), but the exact weights LIWC-22 uses
+  are not public. Here they are equally weighted standardised composites, with
+  the signs taken from the literature, and should be read as **LIWC-style
+  indices**, not as LIWC scores. The `llm_rubric` module provides a second,
+  independent measurement of the same constructs, so that convergence can be
+  checked.
 
-Perché i conteggi si aggregano prima di calcolare gli indici
-------------------------------------------------------------
-I messaggi di chat sono cortissimi: sul pilota la mediana è di poche parole. Una
-percentuale calcolata su cinque parole assume pochi valori distinti ed è
-dominata dal rumore, e la media di tali percentuali non è la percentuale del
-testo complessivo. Per questo `score_counts` lavora su conteggi *sommati*: al
-livello di messaggio si estraggono conteggi, e gli indici si calcolano
-sull'unità di analisi vera (coppia ordinata, coppia, gruppo).
+Why counts are aggregated before the indices are computed
+---------------------------------------------------------
+Chat messages are very short: on the pilot the median is a handful of words. A
+percentage computed over five words takes few distinct values and is dominated
+by noise, and the mean of such percentages is not the percentage of the
+combined text. That is why `score_counts` works on *summed* counts: counts are
+extracted at message level, and the indices are computed on the real unit of
+analysis (directed dyad, dyad, group).
 """
 
 from __future__ import annotations
@@ -42,8 +41,8 @@ from collections import Counter
 
 from .lexicons import CATEGORIES, is_adverb
 
-# Tokenizzazione: parole con apostrofi interni (don't, i'm) tenute intere,
-# così le forme contratte restano riconoscibili dai dizionari.
+# Tokenisation keeps words with internal apostrophes (don't, i'm) whole, so
+# contracted forms stay recognisable to the dictionaries.
 TOKEN_RE = re.compile(r"[a-z]+(?:'[a-z]+)*", re.IGNORECASE)
 
 COUNT_KEYS = sorted(set(CATEGORIES) | {'adverb'})
@@ -54,12 +53,11 @@ def tokenize(text: str) -> list[str]:
 
 
 def count_categories(text: str) -> dict:
-    """Conteggi grezzi per un singolo testo.
+    """Raw counts for a single text.
 
-    Restituisce il numero di parole e, per ogni categoria, quante ne cadono
-    dentro. Le categorie non sono mutuamente esclusive: una negazione come
-    "don't" conta sia fra gli ausiliari sia fra le negazioni, esattamente come
-    in LIWC.
+    Returns the word count and, for every category, how many words fall into
+    it. Categories are not mutually exclusive: a negation such as "don't"
+    counts both as an auxiliary and as a negation, exactly as in LIWC.
     """
     tokens = tokenize(text)
     counts = {key: 0 for key in COUNT_KEYS}
@@ -73,7 +71,7 @@ def count_categories(text: str) -> dict:
     counts['wc'] = len(tokens)
     counts['unique_wc'] = len(set(tokens))
     counts['char_count'] = len(text or '')
-    # Parole lunghe: proxy di densità lessicale usato da LIWC come "sixltr".
+    # Long words: the lexical-density proxy LIWC calls "sixltr".
     counts['sixltr'] = sum(1 for t in tokens if len(t) > 6)
     counts['qmark'] = (text or '').count('?')
     counts['exclam'] = (text or '').count('!')
@@ -81,7 +79,7 @@ def count_categories(text: str) -> dict:
 
 
 def sum_counts(count_dicts) -> dict:
-    """Somma conteggi di più messaggi: è il passo che precede gli indici."""
+    """Sum counts across messages: the step that precedes the indices."""
     total = Counter()
     for counts in count_dicts:
         total.update(counts)
@@ -96,17 +94,17 @@ def _pct(count: int, total: int) -> float:
 
 
 def score_counts(counts: dict) -> dict:
-    """Calcola gli indici a partire da conteggi già sommati.
+    """Compute the indices from counts that have already been summed.
 
-    Restituisce le percentuali di categoria, il CDI e le componenti grezze di
-    Clout e Authenticity. Gli indici standardizzati veri e propri richiedono il
-    campione intero e si ottengono con `standardize`.
+    Returns the category percentages, the CDI and the raw components of Clout
+    and Authenticity. The standardised indices proper need the whole sample and
+    come from `standardize`.
     """
     wc = counts.get('wc', 0)
     pct = {f'pct_{key}': _pct(counts.get(key, 0), wc) for key in COUNT_KEYS}
     pct['pct_sixltr'] = _pct(counts.get('sixltr', 0), wc)
 
-    # Categorical-Dynamic Index, formula pubblicata.
+    # Categorical-Dynamic Index, the published formula.
     cdi = (
         30.0
         + pct['pct_article']
@@ -119,36 +117,37 @@ def score_counts(counts: dict) -> dict:
         - pct['pct_negate']
     )
 
-    # Componenti dei due compositi: segni dalla letteratura, pesi uguali.
-    # Clout alto = molti riferimenti agli altri, pochi a sé, poche negazioni.
+    # Components of the two composites: signs from the literature, equal
+    # weights. High Clout = many references to others, few to the self, few
+    # negations.
     clout_raw = (
         pct['pct_we'] + pct['pct_you'] + pct['pct_social']
         - pct['pct_i'] - pct['pct_negate'] - pct['pct_swear']
     )
-    # Authenticity alto = molti "io", molta differenziazione, poca emozione
-    # negativa, pochi verbi di movimento (Newman et al. 2003).
+    # High Authenticity = many I-words, much differentiation, little negative
+    # emotion, few motion verbs (Newman et al. 2003).
     authenticity_raw = (
         pct['pct_i'] + pct['pct_exclusive']
         - pct['pct_negemo'] - pct['pct_motion']
     )
-    # Tono emotivo. Si usa la differenza fra le percentuali sul totale delle
-    # parole, non il rapporto interno alle sole parole emotive: quest'ultimo
-    # satura a +/-100 non appena il testo contiene una sola parola emotiva, e su
-    # messaggi di chat lo farebbe quasi sempre. Il rapporto resta disponibile
-    # come `tone_balance`, da leggere solo dove `has_emotion_words` vale 1.
+    # Emotional tone. We use the difference between percentages of total
+    # words, not the ratio internal to emotion words alone: the latter
+    # saturates at +/-100 as soon as the text contains a single emotion word,
+    # which on chat messages it almost always does. The ratio remains available
+    # as `tone_balance`, to be read only where `has_emotion_words` is 1.
     emo_total = counts.get('posemo', 0) + counts.get('negemo', 0)
     tone_raw = pct['pct_posemo'] - pct['pct_negemo']
     tone_balance = (
         100.0 * (counts['posemo'] - counts['negemo']) / emo_total if emo_total else ''
     )
 
-    # Densità di function words. Serve a riconoscere il testo che *non* è
-    # lingua: una stringa di tastiera non contiene articoli, pronomi né
-    # ausiliari, quindi il CDI non subisce alcuna sottrazione e il testo risulta
-    # paradossalmente "massimamente analitico". Sul pilota i gruppi con sole
-    # stringhe di prova avevano analytic_100 mediano 93, contro 37 dei gruppi
-    # con conversazione reale: senza questo indicatore l'artefatto passerebbe
-    # per segnale.
+    # Function-word density. This is how text that is *not* language gets
+    # recognised: a keyboard string contains no articles, pronouns or
+    # auxiliaries, so the CDI suffers no subtraction and the text comes out
+    # paradoxically "maximally analytical". On the pilot, groups made only of
+    # test strings had a median analytic_100 of 93 against 37 for groups with
+    # real conversation: without this indicator the artefact would pass for
+    # signal.
     funcword_pct = (
         pct['pct_article'] + pct['pct_prep'] + pct['pct_ppron']
         + pct['pct_ipron'] + pct['pct_auxverb'] + pct['pct_conj']
@@ -158,9 +157,9 @@ def score_counts(counts: dict) -> dict:
     scores = dict(pct)
     scores.update(
         pct_funcwords=funcword_pct,
-        # Soglia prudenziale: sotto il 15% di function words su almeno cinque
-        # parole, il testo quasi certamente non è inglese conversazionale.
-        # Da usare come filtro, non come esclusione automatica.
+        # Conservative threshold: below 15% function words over at least five
+        # words, the text is almost certainly not conversational English. Use
+        # it as a filter, not as an automatic exclusion.
         low_language_flag=int(wc >= 5 and funcword_pct < 15.0),
         wc=wc,
         unique_wc=counts.get('unique_wc', 0),
@@ -178,7 +177,7 @@ def score_counts(counts: dict) -> dict:
     return scores
 
 
-# Indici che vengono standardizzati sul campione.
+# Indices standardised over the sample.
 STANDARDIZED = ('analytic_cdi', 'clout_raw', 'authenticity_raw', 'tone_raw')
 
 STANDARDIZED_NAMES = {
@@ -194,16 +193,16 @@ def _normal_cdf(z: float) -> float:
 
 
 def standardize(rows, keys=STANDARDIZED):
-    """Aggiunge z-score e scala 0-100 calcolati sul campione fornito.
+    """Add z-scores and a 0-100 scale computed over the sample provided.
 
-    LIWC restituisce le tre misure composite su scala 0-100 perché le
-    standardizza rispetto a un corpus di riferimento proprietario. Qui la
-    standardizzazione avviene sul campione in analisi: i valori sono quindi
-    confrontabili *fra* unità dello stesso studio, non con i punteggi LIWC
-    pubblicati altrove. È la scelta corretta per un confronto fra trattamenti,
-    che è esattamente l'uso previsto.
+    LIWC reports the three composites on a 0-100 scale because it standardises
+    them against a proprietary reference corpus. Here standardisation happens
+    over the sample under analysis: values are therefore comparable *between*
+    units of the same study, not against LIWC scores published elsewhere. That
+    is the right choice for a comparison between treatments, which is exactly
+    the intended use.
 
-    Modifica `rows` sul posto e restituisce le medie e deviazioni usate.
+    Modifies `rows` in place and returns the means and deviations used.
     """
     stats = {}
     for key in keys:
@@ -241,7 +240,7 @@ _VADER_TRIED = False
 
 
 def _vader():
-    """Analizzatore VADER, se la libreria è installata."""
+    """The VADER analyser, if the library is installed."""
     global _VADER, _VADER_TRIED
     if not _VADER_TRIED:
         _VADER_TRIED = True
@@ -254,10 +253,10 @@ def _vader():
 
 
 def sentiment(text: str) -> dict:
-    """Sentiment con VADER; senza la libreria, ripiega sui dizionari di semi.
+    """Sentiment via VADER; without the library, falls back to the seed lists.
 
-    Il campo `sentiment_backend` dice quale dei due ha prodotto il valore, così
-    la provenienza resta tracciata nel dataset finale.
+    The `sentiment_backend` field records which of the two produced the value,
+    so provenance stays traceable in the final dataset.
     """
     analyzer = _vader()
     if analyzer is not None:
@@ -284,10 +283,10 @@ def sentiment(text: str) -> dict:
 
 
 def analyze_message(text: str) -> dict:
-    """Conteggi e sentiment di un singolo messaggio.
+    """Counts and sentiment for a single message.
 
-    Gli indici compositi NON vengono calcolati qui: su testi di poche parole
-    sarebbero rumore. Si ottengono aggregando i conteggi e passandoli a
+    The composite indices are NOT computed here: on texts of a few words they
+    would be noise. They come from aggregating the counts and passing them to
     `score_counts`.
     """
     counts = count_categories(text)

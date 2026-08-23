@@ -1,8 +1,8 @@
-"""Test della dashboard.
+"""Dashboard tests.
 
-Non avviano il server: verificano le due parti dove si annidano i problemi
-veri — la costruzione del comando, che esegue processi, e la lettura del log,
-che deve rendere leggibili le barre di avanzamento.
+They do not start the server: they check the two parts where the real problems
+nest — building the command, which executes processes, and reading the log,
+which has to make progress bars legible.
 
     python tests/test_dashboard.py
 """
@@ -20,14 +20,14 @@ from web.runner import Runner, build_command  # noqa: E402
 
 
 class FormWiringTests(unittest.TestCase):
-    """Il run deve partire solo dall'invio del modulo."""
+    """A run must start only from the form submission."""
 
     def test_form_tag_has_exactly_one_destination(self):
-        """Due hx-post sullo stesso elemento: ogni cambiamento lanciava un run.
+        """Two hx-post on the same element: every change launched a run.
 
-        E' successo davvero: la richiesta della stima era stata messa sul form,
-        che gia' aveva quella del run, e spuntare una casella faceva partire
-        l'esecuzione.
+        It really happened: the estimate request had been put on the form,
+        which already carried the run's, and ticking a box started the
+        execution.
         """
         import re
 
@@ -42,12 +42,13 @@ class FormWiringTests(unittest.TestCase):
         panel = views.estimate_panel({})
         opening = re.search(r'<div\b[^>]*>', panel).group(0)
         self.assertIn('/estimate', opening)
-        # Si aggiorna ascoltando il modulo, senza esserne parte attiva.
+        # It refreshes by listening to the form, without being an active part
+        # of it.
         self.assertIn('hx-trigger="change from:#launch"', opening)
         self.assertIn('hx-include="#launch"', opening)
 
     def test_no_element_triggers_run_on_change(self):
-        """Nessun elemento deve chiamare /run se non per invio esplicito."""
+        """No element may call /run except on an explicit submission."""
         import re
 
         form = views.form_panel()
@@ -61,7 +62,7 @@ class FormWiringTests(unittest.TestCase):
 
 
 class CommandBuildingTests(unittest.TestCase):
-    """Il comando si costruisce da valori noti: mai da testo del browser."""
+    """The command is built from known values: never from browser text."""
 
     def test_minimal_command(self):
         argv = build_command({'command': ['all']})
@@ -82,11 +83,11 @@ class CommandBuildingTests(unittest.TestCase):
         self.assertNotIn('rm -rf', joined)
         self.assertNotIn('passwd', joined)
         self.assertNotIn('99', joined)
-        # Il valore valido nello stesso campo sopravvive.
+        # The valid value in the same field survives.
         self.assertIn('group', argv)
 
     def test_options_are_separate_arguments(self):
-        """Niente shell: ogni opzione e' un elemento della lista."""
+        """No shell: every option is an element of the list."""
         argv = build_command({'command': ['all'], 'llm': ['1'],
                               'llm_model': ['gpt-4o']})
         self.assertIn('--llm-models', argv)
@@ -99,14 +100,14 @@ class CommandBuildingTests(unittest.TestCase):
 
 
 class ArchiveViewTests(unittest.TestCase):
-    """L'archivio e' un indice: da una riga si arriva a tutto quel run."""
+    """The archive is an index: from one row you reach all of that run."""
 
     def _a_run(self):
         from src import archive, config
 
         runs = archive.list_runs(config.OUTPUT_DIR)
         if not runs:
-            self.skipTest('nessun run archiviato in questo ambiente')
+            self.skipTest('no archived run in this environment')
         return runs[0]
 
     def test_every_row_opens_its_own_run(self):
@@ -116,41 +117,41 @@ class ArchiveViewTests(unittest.TestCase):
 
         panel = views.runs_panel()
         if not archive.list_runs(config.OUTPUT_DIR):
-            self.skipTest('nessun run archiviato in questo ambiente')
+            self.skipTest('no archived run in this environment')
         targets = re.findall(r'hx-get="/run/([^"]+)"', panel)
         self.assertTrue(targets)
-        # Ogni riga porta al proprio run, non tutte allo stesso.
+        # Every row leads to its own run, not all to the same one.
         self.assertEqual(len(targets), len(set(targets)))
 
     def test_detail_shows_parameters_and_files(self):
         run = self._a_run()
         detail = views.run_detail(run['path'].name)
-        self.assertIn('Messaggi analizzati', detail)
-        # I file prodotti sono raggiungibili da lì.
+        self.assertIn('Messages analysed', detail)
+        # The files produced are reachable from there.
         self.assertIn(f'/runs/{run["path"].name}/', detail)
-        # E si può tornare all'ultimo risultato.
+        # And you can go back to the latest result.
         self.assertIn('hx-get="/report"', detail)
 
     def test_time_includes_seconds(self):
-        """Esecuzioni a pochi istanti l'una dall'altra devono distinguersi."""
-        primo = views._run_time('2026-01-01T12:00:24')
-        secondo = views._run_time('2026-01-01T12:00:29')
-        self.assertNotEqual(primo, secondo)
-        self.assertTrue(primo.endswith('12:00:24'), msg=primo)
+        """Runs a few moments apart must be told apart."""
+        first = views._run_time('2026-01-01T12:00:24')
+        second = views._run_time('2026-01-01T12:00:29')
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.endswith('12:00:24'), msg=first)
 
     def test_unknown_run_is_handled(self):
-        self.assertIn('non trovato', views.run_detail('non-esiste'))
+        self.assertIn('not found', views.run_detail('does-not-exist'))
 
     def test_failure_is_stated_not_implied(self):
-        """Un run incompleto deve dirlo a parole, non solo con un colore."""
+        """An incomplete run must say so in words, not only with a colour."""
         from src import archive, config
 
         failed = [r for r in archive.list_runs(config.OUTPUT_DIR)
                   if r.get('failed_stage')]
         if not failed:
-            self.skipTest('nessun run incompleto in questo ambiente')
+            self.skipTest('no incomplete run in this environment')
         detail = views.run_detail(failed[0]['path'].name)
-        self.assertIn('non completato', detail)
+        self.assertIn('not completed', detail)
 
 
 class LogReadingTests(unittest.TestCase):
@@ -164,19 +165,19 @@ class LogReadingTests(unittest.TestCase):
         return runner.snapshot()
 
     def test_progress_bar_collapses_to_one_line(self):
-        """Cento riscritture non devono lasciare cento righe."""
+        """A hundred rewrites must not leave a hundred lines."""
         state = self._run(
             "import sys\n"
             "for i in range(100): sys.stdout.write(f'{i}%|## | {i}/100\\r')\n"
-            "sys.stdout.write('\\nfinito\\n')"
+            "sys.stdout.write('\\ndone\\n')"
         )
-        self.assertEqual(state['lines'], ['99%|## | 99/100', 'finito'])
+        self.assertEqual(state['lines'], ['99%|## | 99/100', 'done'])
 
     def test_plain_lines_are_all_kept(self):
         state = self._run(
-            "print('uno'); print('due'); print('tre')"
+            "print('one'); print('two'); print('three')"
         )
-        self.assertEqual(state['lines'], ['uno', 'due', 'tre'])
+        self.assertEqual(state['lines'], ['one', 'two', 'three'])
 
     def test_exit_code_is_reported(self):
         state = self._run("import sys; print('ko'); sys.exit(3)")
@@ -192,7 +193,7 @@ class LogReadingTests(unittest.TestCase):
     def test_log_does_not_grow_without_limit(self):
         state = self._run("[print(i) for i in range(900)]")
         self.assertLessEqual(len(state['lines']), 500)
-        # Si tiene la coda, che e' la parte che interessa.
+        # The tail is kept, which is the part that matters.
         self.assertEqual(state['lines'][-1], '899')
 
 

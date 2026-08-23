@@ -1,25 +1,25 @@
 """
-Esegue la pipeline NLP sui messaggi dell'esperimento e arricchisce i dataset.
+Runs the text-analysis pipeline over the experiment's messages and enriches the
+datasets.
 
-Tre stadi indipendenti, attivabili separatamente:
+Three independent stages, each switchable on its own:
 
-1. **Misure testuali** (sempre attivo, nessuna credenziale richiesta) —
-   volume, sentiment e gli indici in stile LIWC-22 (analytic, clout,
-   authenticity, tone), calcolati a livello di coppia ordinata, coppia,
-   partecipante e gruppo.
-2. **Rubrica LLM** (``--llm``) — seconda misura degli stessi costrutti
-   valutata da Claude, per validazione convergente. Richiede una credenziale
-   Anthropic.
-3. **TopicGPT** (``--topics``) — codice ufficiale di Pham et al. (2024).
-   Richiede il repository clonato e la credenziale del backend scelto.
+1. **Text measures** (always on, no credential required) — volume, sentiment
+   and the LIWC-style indices (analytic, clout, authenticity, tone), computed
+   at directed-dyad, dyad, participant and group level.
+2. **Validation rubric** (``--llm``) — a second measurement of the same
+   constructs, scored by a language model, for convergent validation. Needs a
+   credential from any one supported provider.
+3. **TopicGPT** (``--topics``) — the official code of Pham et al. (2024). Needs
+   the cloned repository and the credential of the chosen backend.
 
-L'output finale sono i due dataset dell'esperimento arricchiti, pronti per
-Stata, più i file di feature intermedi per i controlli.
+The final output is the experiment's two datasets, enriched and ready for
+Stata, plus the intermediate feature files for checking.
 
-Esempi (dal punto di ingresso del progetto)
-------------------------------------------
-    python run.py analyze                          misure automatiche
-    python run.py analyze --llm --llm-replicates 2 + rubrica di validazione
+Examples (from the project entry point)
+---------------------------------------
+    python run.py analyze                          automatic measures
+    python run.py analyze --llm --llm-replicates 2 + validation rubric
     python run.py analyze --topics --topicgpt-repo ~/src/topicGPT
 """
 
@@ -39,7 +39,7 @@ def read_csv(path: Path) -> list[dict]:
 
 
 def build_transcripts(messages, level: str) -> dict:
-    """Trascrizioni leggibili per livello, usate dalla rubrica LLM."""
+    """Readable transcripts per level, used by the rubric."""
     from collections import defaultdict
 
     keys = agg.LEVEL_KEYS[level]
@@ -59,7 +59,7 @@ def build_transcripts(messages, level: str) -> dict:
 
 
 def _merge_llm(rows, level_rows, level):
-    """Innesta le colonne della rubrica nelle righe aggregate del livello."""
+    """Graft the rubric columns onto the level's aggregated rows."""
     keys = agg.LEVEL_KEYS[level]
     index = {tuple(str(r.get(k, '')) for k in keys): r for r in level_rows}
     for row in rows:
@@ -76,7 +76,7 @@ def run_llm_stage(features, transcripts_by_level, args) -> None:
         provider = args.llm_provider or 'anthropic'
     else:
         provider = llm_rubric.resolve_provider(args.llm_provider)
-        print(f'  fornitore: {llm_rubric.PROVIDERS[provider]["label"]}')
+        print(f'  provider: {llm_rubric.PROVIDERS[provider]["label"]}')
 
     models = [m.strip() for m in (args.llm_models or '').split(',') if m.strip()]
     if not models:
@@ -86,28 +86,28 @@ def run_llm_stage(features, transcripts_by_level, args) -> None:
             features[level], level, transcripts_by_level[level]
         )
         if not units:
-            print(f'  {level}: nessuna trascrizione da valutare')
+            print(f'  {level}: no transcript to score')
             continue
 
         if args.llm_dry_run:
-            print(f'  {level}: {len(units)} unità; anteprima della prima richiesta')
+            print(f'  {level}: {len(units)} units; preview of the first request')
             print(llm_rubric.dry_run_payload(units, models[0]))
             continue
 
         total_calls = len(units) * len(models) * args.llm_replicates
-        print(f'  {level}: {len(units)} unità, {total_calls} chiamate')
+        print(f'  {level}: {len(units)} units, {total_calls} calls')
 
         if args.llm_batch and provider != 'anthropic':
             raise SystemExit(
-                "--llm-batch e' disponibile solo con il fornitore anthropic; "
-                'con gli altri backend usa la modalita\' sincrona.'
+                '--llm-batch is available with the anthropic provider only; '
+                'with the other backends use the synchronous mode.'
             )
 
         if args.llm_batch:
             batch_id = llm_rubric.submit_batch(
                 units, models[0], args.llm_replicates
             )
-            print(f'    batch inviato: {batch_id}')
+            print(f'    batch submitted: {batch_id}')
             scored = llm_rubric.collect_batch(batch_id, units)
         else:
             def progress(done, total, level=level):
@@ -120,29 +120,29 @@ def run_llm_stage(features, transcripts_by_level, args) -> None:
                 progress=progress, provider=provider, cache_path=cache_path,
             )
             if reused:
-                print(f'    {reused} unità riprese dalla cache, non ripagate')
+                print(f'    {reused} units reused from cache, not paid again')
 
         _merge_llm(scored, features[level], level)
         errors = sum(int(r.get('llm_n_errors', 0) or 0) for r in scored)
         if errors:
-            print(f'    ATTENZIONE: {errors} valutazioni fallite', file=sys.stderr)
+            print(f'    WARNING: {errors} ratings failed', file=sys.stderr)
 
 
 def run_topics_stage(messages, args):
-    """Esegue TopicGPT e restituisce le assegnazioni ai vari livelli."""
+    """Run TopicGPT and return the assignments at the various levels."""
     repo = Path(args.topicgpt_repo).expanduser()
-    # I backend locali (ollama, vllm) non usano chiavi: si controlla solo dove serve.
+    # Local backends (ollama, vllm) use no key: check only where it matters.
     if not args.topicgpt_dry_run and args.topicgpt_api == 'openai':
         config.require_key('OPENAI_API_KEY')
 
     documents = topicgpt.build_documents(messages, args.topicgpt_unit)
-    print(f'  documenti per l induzione: {len(documents)} ({args.topicgpt_unit})')
+    print(f'  documents for induction: {len(documents)} ({args.topicgpt_unit})')
 
     assign_unit = args.topicgpt_assign_unit or args.topicgpt_unit
     assignment_documents = None
     if assign_unit != args.topicgpt_unit:
         assignment_documents = topicgpt.build_documents(messages, assign_unit)
-        print(f'  documenti per l assegnazione: '
+        print(f'  documents for assignment: '
               f'{len(assignment_documents)} ({assign_unit})')
 
     if args.topicgpt_dry_run:
@@ -150,7 +150,7 @@ def run_topics_stage(messages, args):
         outdir.mkdir(parents=True, exist_ok=True)
         path = outdir / 'topicgpt_input.jsonl'
         topicgpt.write_jsonl(path, documents)
-        print(f'  input scritto in {path} (nessuna chiamata effettuata)')
+        print(f'  input written to {path} (no call made)')
         return None, None, None
 
     try:
@@ -167,11 +167,11 @@ def run_topics_stage(messages, args):
             assignment_documents=assignment_documents,
         )
     except topicgpt.TopicGPTUnavailable as exc:
-        # Manca un prerequisito: è una cosa da sistemare, non un errore del
-        # programma. Si mostra l'istruzione, non la traccia dello stack.
+        # A prerequisite is missing: something to fix, not a program error.
+        # Show the instruction, not the stack trace.
         raise SystemExit(f'\n{exc}\n') from None
     assignments = topicgpt.parse_assignments(corrected)
-    print(f'  topic assegnati a {len(assignments)} documenti')
+    print(f'  topics assigned to {len(assignments)} documents')
 
     unit = assign_unit
     by_directed = (
@@ -187,12 +187,12 @@ def run_topics_stage(messages, args):
 
 
 def preflight(args) -> None:
-    """Verifica i prerequisiti di tutti gli stadi prima di eseguirne uno.
+    """Check every stage's prerequisites before running any of them.
 
-    Gli stadi a pagamento costano soldi e tempo: scoprire dopo la rubrica che
-    TopicGPT non è installato significa aver speso per nulla. I controlli sono
-    tutti istantanei e vengono raccolti insieme, così si sistema una volta sola
-    invece di scoprire un problema per volta.
+    The paid stages cost money and time: discovering after the rubric that
+    TopicGPT is not installed means having spent for nothing. The checks are all
+    instant and are collected together, so everything is fixed in one go instead
+    of one problem at a time.
     """
     problems = []
 
@@ -205,7 +205,7 @@ def preflight(args) -> None:
             )
             if args.llm_batch and provider != 'anthropic':
                 problems.append(
-                    "--llm-batch è disponibile solo con il fornitore anthropic."
+                    '--llm-batch is available with the anthropic provider only.'
                 )
         except SystemExit as exc:
             problems.append(str(exc).strip())
@@ -227,18 +227,18 @@ def preflight(args) -> None:
 
     if problems:
         raise SystemExit(
-            '\nControllo preliminare: mancano dei prerequisiti.\n'
-            'Nessuna chiamata è stata effettuata.\n\n'
+            '\nPreflight check: prerequisites are missing.\n'
+            'No call has been made.\n\n'
             + '\n\n'.join(f'- {p}' for p in problems)
             + '\n'
         )
 
 
 def run(args) -> dict:
-    """Passo 2: misure testuali, rubrica e topic sui file prodotti dal merge.
+    """Step 2: text measures, rubric and topics over the merged files.
 
-    `args` è lo spazio dei nomi costruito da run.py: si passa così com'è, per
-    non duplicare l'elenco delle opzioni in due punti.
+    `args` is the namespace built by run.py, passed through as it is so the
+    option list is not duplicated in two places.
     """
     merged_dir = Path(args.merged_dir)
     outdir = Path(args.outdir)
@@ -250,27 +250,27 @@ def run(args) -> dict:
     for path in (messages_path, by_partner_path, aggregated_path):
         if not path.is_file():
             raise SystemExit(
-                f'File mancante: {path}\n'
-                f'  Esegui prima il passo di unione:  python run.py merge'
+                f'Missing file: {path}\n'
+                f'  Run the merge step first:  python run.py merge'
             )
 
     preflight(args)
 
     messages = agg.read_messages(messages_path)
-    print(f'Messaggi letti: {len(messages)}')
+    print(f'Messages read: {len(messages)}')
 
-    print('Misure testuali...')
+    print('Text measures...')
     enriched = agg.analyze_messages(messages)
     features = agg.aggregate_all(enriched)
     for level, rows in features.items():
-        print(f'  {level}: {len(rows)} unità')
+        print(f'  {level}: {len(rows)} units')
 
     transcripts_by_level = {
         level: build_transcripts(messages, level) for level in agg.LEVELS
     }
 
     if args.llm:
-        print('Rubrica di validazione...')
+        print('Validation rubric...')
         run_llm_stage(features, transcripts_by_level, args)
 
     topics_directed = topics_sender = topics_group = None
@@ -282,9 +282,9 @@ def run(args) -> dict:
                 messages, args
             )
         except (topicgpt.TopicGPTUnavailable, SystemExit, RuntimeError, OSError) as exc:
-            # I risultati della rubrica sono già costati chiamate a pagamento:
-            # si scrive comunque quello che c'è, e il fallimento viene riportato
-            # alla fine invece di far perdere tutto il lavoro svolto.
+            # The rubric results have already cost paid calls: write what we
+            # have anyway, and report the failure at the end instead of losing
+            # all the work done.
             failed_stage = ('TopicGPT', str(exc).strip())
 
     features_dir = outdir / 'features'
@@ -325,19 +325,19 @@ def run(args) -> dict:
 
 
 def print_summary(summary: dict) -> int:
-    """Stampa l'esito. Restituisce il codice di uscita del programma."""
+    """Print the outcome. Returns the program's exit code."""
     print()
-    print('Dataset da portare in Stata:')
+    print('Datasets to take into Stata:')
     for path in summary['datasets']:
         print(f'  {path}')
-    print(f"Misure intermedie: {summary['features_dir']}")
+    print(f"Intermediate measures: {summary['features_dir']}")
     if summary.get('report'):
         print()
-        print('Riassunto leggibile:')
+        print('Readable summary:')
         for path in summary['report']:
             print(f'  {path}')
     if summary.get('run_dir'):
-        print(f"Copia archiviata: {summary['run_dir']}")
+        print(f"Archived copy: {summary['run_dir']}")
 
     failed = summary.get('failed_stage')
     if not failed:
@@ -345,9 +345,9 @@ def print_summary(summary: dict) -> int:
 
     stage, message = failed
     print()
-    print(f'ATTENZIONE: lo stadio {stage} non e\' stato completato.')
-    print('I risultati degli stadi precedenti sono stati salvati comunque:')
-    print(f'  nei file qui sopra mancano solo le colonne di {stage}.')
+    print(f'WARNING: stage {stage} was not completed.')
+    print('The results of the earlier stages were saved anyway:')
+    print(f'  the files above are missing only the {stage} columns.')
     print()
     print(message)
     return 1

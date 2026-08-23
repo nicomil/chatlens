@@ -1,42 +1,41 @@
 """
-Unisce l'export delle scelte (``all_apps_wide``) con quello della chat
-(``ChatMessages``) e costruisce le variabili di analisi dell'esperimento.
+Merges the choices export (``all_apps_wide``) with the chat export
+(``ChatMessages``) and builds the experiment's analysis variables.
 
-Chi entra nell'analisi
-----------------------
-Vengono tenuti i partecipanti che soddisfano due condizioni: hanno un
-identificativo Prolific valido in ``participant.label``, il che scarta le
-sessioni di collaudo interne, e hanno fatto parte di una triade, il che tiene
-solo chi ha potuto comunicare. Chi e' stato poi escluso per inattivita' resta
-nel dataset: la sua esclusione dalle analisi principali si governa con
-``group_valid``. Con ``keep_all`` non si filtra nulla, per ispezionare i dati
-grezzi.
+Who enters the analysis
+-----------------------
+Participants are kept when they satisfy two conditions: they have a valid
+Prolific identifier in ``participant.label``, which discards internal test
+sessions, and they were part of a triad, which keeps only those who could
+communicate. Anyone later excluded for inactivity stays in the dataset: their
+exclusion from the main analyses is governed by ``group_valid``. With
+``keep_all`` nothing is filtered, for inspecting the raw data.
 
-Produce tre file:
+Produces three files:
 
 ``<stem>_messages_long.csv``
-    Una riga per messaggio, con mittente e destinatario risolti in modo
-    esatto. È l'input della pipeline NLP (TopicGPT e misure testuali).
+    One row per message, with sender and receiver resolved exactly. This is the
+    input of the NLP pipeline (TopicGPT and the text measures).
 
 ``<stem>_chat_by_partner.csv``
-    Una riga per coppia ordinata i -> j (sei per triade). Porta le variabili
-    diadiche: segnale inviato, persuasione, coerenza segnale-scelta e le
-    misure di conversazione della coppia.
+    One row per directed pair i -> j (six per triad). Carries the dyadic
+    variables: signal sent, persuasion, choice-signal consistency and the
+    pair's conversation measures.
 
 ``<stem>_chat_aggregated.csv``
-    Una riga per partecipante, con la conversazione dell'intero gruppo e le
-    variabili individuali (inganno strategico, coerenza media, validità).
+    One row per participant, with the whole group's conversation and the
+    individual variables (strategic deception, mean consistency, validity).
 
-Chiave di join
---------------
-L'unica chiave affidabile è ``participant.code``: ``group.id_in_subsession``
-non identifica la triade, perché chi non viene mai raggruppato resta
-parcheggiato in un gruppo residuale insieme ad altri non raggruppati. La
-triade viene quindi ricostruita da ``participant.part1_group_id`` quando
-presente (export recenti) e, in subordine, dal prefisso del canale di chat,
-che contiene lo stesso identificativo.
+Join key
+--------
+The only reliable key is ``participant.code``: ``group.id_in_subsession`` does
+not identify the triad, because whoever is never grouped stays parked in a
+residual group together with other ungrouped participants. The triad is
+therefore reconstructed from ``participant.part1_group_id`` when present
+(recent exports) and, failing that, from the chat channel prefix, which carries
+the same identifier.
 
-Uso (dal punto di ingresso del progetto):
+Usage (from the project entry point):
     python run.py merge
 """
 
@@ -50,7 +49,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-# --- Costanti del gioco, allineate a bargaining_tdl_common/utils.py ---------
+# --- Game constants, aligned with bargaining_tdl_common/utils.py -----------
 
 TOPOLOGY = {
     1: {'left': 3, 'right': 2},
@@ -65,7 +64,7 @@ VALID_DECISIONS = ('Left', 'Right', 'NoOne')
 
 MAIN = 'bargaining_tdl_main.1.'
 
-# Colonne MTurk: lo studio non gira su MTurk, vanno via dai dataset di analisi.
+# MTurk columns: the study does not run on MTurk, so they leave the datasets.
 MTURK_COLS = {
     'participant.mturk_worker_id',
     'participant.mturk_assignment_id',
@@ -76,7 +75,7 @@ MTURK_COLS = {
 CHANNEL_RE = re.compile(r'^(?P<prefix>.*)-(?P<group>\d+)_(?P<a>\d)_(?P<b>\d)$')
 
 
-# --- Utilità ---------------------------------------------------------------
+# --- Utilities -------------------------------------------------------------
 
 
 def _int(value, default=None):
@@ -94,12 +93,12 @@ def _float(value, default=None):
 
 
 def _third_player(i: int, j: int) -> int:
-    """Il terzo membro della triade, dati due id_in_group."""
+    """The third member of the triad, given two id_in_group values."""
     return ({1, 2, 3} - {i, j}).pop()
 
 
 def _partner_side(focal: int, target: int):
-    """'left' / 'right' secondo la topologia circolare, altrimenti None."""
+    """'left' / 'right' per the circular topology, otherwise None."""
     partners = TOPOLOGY.get(focal, {})
     if partners.get('left') == target:
         return 'left'
@@ -109,7 +108,7 @@ def _partner_side(focal: int, target: int):
 
 
 def _decision_target(focal: int, decision: str):
-    """id_in_group del giocatore effettivamente sostenuto, o None per NoOne."""
+    """id_in_group of the player actually supported, or None for NoOne."""
     if decision == 'Left':
         return TOPOLOGY[focal]['left']
     if decision == 'Right':
@@ -118,11 +117,11 @@ def _decision_target(focal: int, decision: str):
 
 
 def _signal_declared_target(focal: int, target: int, signal: str):
-    """Chi il segnale *dichiara* di voler sostenere.
+    """Who the signal *declares* an intention to support.
 
-    ``split_you``  -> il destinatario del segnale;
-    ``split_other``-> il terzo giocatore;
-    ``support_none``-> nessuno (None).
+    ``split_you``   -> the signal's recipient;
+    ``split_other`` -> the third player;
+    ``support_none``-> nobody (None).
     """
     if signal == 'split_you':
         return target
@@ -135,7 +134,7 @@ def _word_count(text: str) -> int:
     return len([t for t in re.split(r'\s+', text.strip()) if t])
 
 
-# --- Lettura e ricostruzione delle triadi ----------------------------------
+# --- Reading and reconstructing the triads ---------------------------------
 
 
 def load_wide(path: Path):
@@ -150,72 +149,72 @@ def load_chat(path: Path):
 
 
 def is_grouped(row) -> bool:
-    """True se il partecipante è entrato in una triade.
+    """True if the participant entered a triad.
 
-    ``main.player.treatment`` viene scritto solo in
-    ``GroupingAfterControlQuestions.after_all_players_arrive``: è quindi il
-    marcatore esatto della formazione del gruppo, e resta valorizzato anche
-    per le triadi che si interrompono a metà.
+    ``main.player.treatment`` is written only in
+    ``GroupingAfterControlQuestions.after_all_players_arrive``: it is therefore
+    the exact marker of group formation, and stays set even for triads that
+    break off halfway.
     """
     return bool((row.get(MAIN + 'player.treatment') or '').strip()) and _int(
         row.get(MAIN + 'player.id_in_group')
     ) in (1, 2, 3)
 
 
-# Un PROLIFIC_PID e' una stringa di 24 caratteri esadecimali. Il formato separa
-# in modo netto i partecipanti reali da chi ha digitato un identificativo a mano
-# durante i collaudi interni.
+# A PROLIFIC_PID is a 24-character hexadecimal string. The format cleanly
+# separates real participants from anyone who typed an identifier by hand during
+# internal testing.
 PROLIFIC_PID_RE = re.compile(r'^[0-9a-f]{24}$')
 
 
 def has_prolific_label(row) -> bool:
-    """True se il partecipante arriva davvero da Prolific.
+    """True if the participant really came from Prolific.
 
-    Si legge ``participant.label``, che oTree scrive dall'URL e il partecipante
-    non puo' modificare, e non ``prolific_id``, che e' un campo di modulo e
-    accetta anche testo digitato a mano.
+    We read ``participant.label``, which oTree writes from the URL and the
+    participant cannot change, rather than ``prolific_id``, which is a form
+    field and also accepts hand-typed text.
     """
     return bool(PROLIFIC_PID_RE.match((row.get('participant.label') or '').strip()))
 
 
 def select_participants(wide_rows):
-    """Tiene i partecipanti reali che hanno fatto parte di una triade.
+    """Keep the real participants who were part of a triad.
 
-    Sono le due condizioni volute per l'analisi: identificativo Prolific valido,
-    che scarta le sessioni di collaudo interne, ed effettiva appartenenza a un
-    gruppo, che tiene solo chi ha potuto comunicare.
+    These are the two conditions the analysis calls for: a valid Prolific
+    identifier, which discards internal test sessions, and actual membership of
+    a group, which keeps only those who could communicate.
 
-    Chi e' stato poi escluso per inattivita' resta dentro: ha comunicato, e la
-    sua esclusione dalle analisi principali si governa con ``group_valid``, non
-    togliendolo dal dataset.
+    Anyone later excluded for inactivity stays in: they did communicate, and
+    their exclusion from the main analyses is governed by ``group_valid``, not
+    by removing them from the dataset.
 
-    Restituisce le righe tenute e il conteggio degli scarti per motivo.
+    Returns the rows kept and the count of discards by reason.
     """
-    kept, dropped = [], {'mai_raggruppati': 0, 'senza_pid_prolific': 0}
+    kept, dropped = [], {'never_grouped': 0, 'no_prolific_id': 0}
     for row in wide_rows:
         if not is_grouped(row):
-            dropped['mai_raggruppati'] += 1
+            dropped['never_grouped'] += 1
         elif not has_prolific_label(row):
-            dropped['senza_pid_prolific'] += 1
+            dropped['no_prolific_id'] += 1
         else:
             kept.append(row)
     return kept, dropped
 
 
 def build_groups(wide_rows, chat_rows):
-    """Assegna a ogni partecipante raggruppato un ``group_uid`` stabile.
+    """Give every grouped participant a stable ``group_uid``.
 
-    Ordine di preferenza per l'identificativo:
-      1. ``participant.part1_group_id`` (colonna nativa, export recenti);
-      2. prefisso numerico del canale di chat del partecipante;
-      3. chiave sintetica ``<session>-g<id_in_subsession>``, che resta corretta
-         perché applicata ai soli partecipanti raggruppati.
+    Order of preference for the identifier:
+      1. ``participant.part1_group_id`` (native column, recent exports);
+      2. the numeric prefix of the participant's chat channel;
+      3. the synthetic key ``<session>-g<id_in_subsession>``, which stays
+         correct because it is applied only to grouped participants.
 
-    Restituisce ``(group_uid_per_code, groups, warnings)``.
+    Returns ``(group_uid_per_code, groups, warnings)``.
     """
     warnings = []
 
-    # Group id ricavato dai canali di chat, per participant.code.
+    # Group id taken from the chat channels, keyed by participant.code.
     chat_group_by_code = {}
     for message in chat_rows:
         match = CHANNEL_RE.match(message.get('channel', ''))
@@ -226,14 +225,14 @@ def build_groups(wide_rows, chat_rows):
         previous = chat_group_by_code.get(code)
         if previous is not None and previous != gid:
             warnings.append(
-                f'participant {code}: canali di chat con group id diversi '
-                f'({previous} e {gid})'
+                f'participant {code}: chat channels with differing group ids '
+                f'({previous} and {gid})'
             )
         chat_group_by_code[code] = gid
 
-    # Passo 1: raggruppa i soli partecipanti raggruppati per (sessione,
-    # id_in_subsession). Escludendo i non raggruppati, questa coppia torna a
-    # essere una chiave valida: il gruppo residuale che li conteneva sparisce.
+    # Step 1: bucket only the grouped participants by (session,
+    # id_in_subsession). Once the ungrouped are excluded, that pair is a valid
+    # key again: the residual group that held them disappears.
     clusters = defaultdict(list)
     for row in wide_rows:
         if not is_grouped(row):
@@ -241,9 +240,9 @@ def build_groups(wide_rows, chat_rows):
         key = (row['session.code'], row.get(MAIN + 'group.id_in_subsession'))
         clusters[key].append(row)
 
-    # Passo 2: assegna a ogni cluster un identificativo unico, preferendo
-    # quello nativo del database (uguale al prefisso dei canali di chat), che
-    # e' stabile fra sessioni diverse.
+    # Step 2: give every cluster a unique identifier, preferring the native
+    # database one (the same as the chat channel prefix), which is stable across
+    # sessions.
     uid_by_code = {}
     groups = {}
     for (session, id_in_subsession), members in clusters.items():
@@ -258,18 +257,19 @@ def build_groups(wide_rows, chat_rows):
 
         if len(native_ids) > 1:
             warnings.append(
-                f'{session}/g{id_in_subsession}: part1_group_id discordanti '
+                f'{session}/g{id_in_subsession}: conflicting part1_group_id '
                 f'{sorted(native_ids)}'
             )
         if len(chat_ids) > 1:
             warnings.append(
-                f'{session}/g{id_in_subsession}: canali di chat con group id '
-                f'discordanti {sorted(chat_ids)}'
+                f'{session}/g{id_in_subsession}: chat channels with '
+                f'conflicting group ids {sorted(chat_ids)}'
             )
         if native_ids and chat_ids and native_ids != chat_ids:
             warnings.append(
-                f'{session}/g{id_in_subsession}: part1_group_id {sorted(native_ids)} '
-                f'diverso dal group id dei canali {sorted(chat_ids)}'
+                f'{session}/g{id_in_subsession}: part1_group_id '
+                f'{sorted(native_ids)} differs from the channels\' group id '
+                f'{sorted(chat_ids)}'
             )
 
         resolved = sorted(native_ids or chat_ids)
@@ -283,29 +283,29 @@ def build_groups(wide_rows, chat_rows):
             pid = _int(row.get(MAIN + 'player.id_in_group'))
             if pid in by_pid:
                 warnings.append(
-                    f'gruppo {uid}: id_in_group {pid} assegnato a piu partecipanti'
+                    f'group {uid}: id_in_group {pid} assigned to several participants'
                 )
             by_pid[pid] = row
             uid_by_code[row['participant.code']] = uid
 
         if set(by_pid) != {1, 2, 3}:
             warnings.append(
-                f'gruppo {uid}: composizione anomala, id presenti {sorted(by_pid)}'
+                f'group {uid}: unexpected composition, ids present {sorted(by_pid)}'
             )
         groups[uid] = by_pid
 
     return uid_by_code, groups, warnings
 
 
-# --- Messaggi --------------------------------------------------------------
+# --- Messages --------------------------------------------------------------
 
 
 def build_messages(chat_rows, wide_by_code, uid_by_code):
-    """Risolve mittente e destinatario di ogni messaggio.
+    """Resolve the sender and receiver of every message.
 
-    Il mittente è ``participant_code`` (dato esatto). Il destinatario è
-    l'altro id della coppia contenuta nel canale. Il campo ``nickname`` NON
-    viene usato: è relativo a chi legge, non a chi scrive.
+    The sender is ``participant_code`` (an exact datum). The receiver is the
+    other id of the pair contained in the channel. The ``nickname`` field is
+    NOT used: it is relative to the reader, not to the writer.
     """
     messages = []
     anomalies = []
@@ -316,7 +316,7 @@ def build_messages(chat_rows, wide_by_code, uid_by_code):
         match = CHANNEL_RE.match(raw.get('channel', ''))
         if row is None or match is None:
             anomalies.append(
-                f'messaggio non risolvibile: participant={code} '
+                f'unresolvable message: participant={code} '
                 f'channel={raw.get("channel")!r}'
             )
             continue
@@ -325,8 +325,8 @@ def build_messages(chat_rows, wide_by_code, uid_by_code):
         pair = (_int(match.group('a')), _int(match.group('b')))
         if sender not in pair:
             anomalies.append(
-                f'messaggio di {code}: mittente id {sender} non presente nel '
-                f'canale {raw.get("channel")!r}'
+                f'message from {code}: sender id {sender} is not present in '
+                f'channel {raw.get("channel")!r}'
             )
             continue
         receiver = pair[0] if pair[1] == sender else pair[1]
@@ -354,7 +354,7 @@ def build_messages(chat_rows, wide_by_code, uid_by_code):
 
     messages.sort(key=lambda m: (m['group_uid'], m['timestamp']))
 
-    # Indici progressivi: nel gruppo e nella coppia.
+    # Running indices: within the group and within the pair.
     seq_group = defaultdict(int)
     seq_dyad = defaultdict(int)
     for message in messages:
@@ -368,11 +368,11 @@ def build_messages(chat_rows, wide_by_code, uid_by_code):
     return messages, anomalies
 
 
-# --- Variabili derivate ----------------------------------------------------
+# --- Derived variables -----------------------------------------------------
 
 
 def player_facts(row):
-    """Estrae dalla riga wide i campi comportamentali usati nelle formule."""
+    """Pull from the wide row the behavioural fields used in the formulas."""
     pid = _int(row.get(MAIN + 'player.id_in_group'))
     decision = (row.get(MAIN + 'player.decision_choice') or '').strip()
     return dict(
@@ -387,7 +387,7 @@ def player_facts(row):
 
 
 def signal_to(facts, target: int):
-    """Segnale che il focale ha inviato a ``target``."""
+    """The signal the focal participant sent to ``target``."""
     side = _partner_side(facts['pid'], target)
     if side == 'left':
         return facts['signal_left']
@@ -397,7 +397,7 @@ def signal_to(facts, target: int):
 
 
 def timeout_flag(row) -> int:
-    """1 se il partecipante ha fatto scadere un timer o è stato escluso."""
+    """1 if the participant let a timer expire or was excluded."""
     hits = (
         row.get(MAIN + 'player.decision_inactive') == '99',
         row.get(MAIN + 'player.signal_inactive') == '99',
@@ -407,7 +407,7 @@ def timeout_flag(row) -> int:
 
 
 def group_validity(members):
-    """Validità della triade: basta un membro compromesso per invalidarla."""
+    """Triad validity: one compromised member is enough to invalidate it."""
     dropped = any(
         (row.get(MAIN + 'group.group_dropped') or '').strip() in ('1', 'True')
         for row in members.values()
@@ -423,7 +423,7 @@ def group_validity(members):
 
 
 def dyad_measures(messages):
-    """Aggregati di conversazione per una lista di messaggi già filtrata."""
+    """Conversation aggregates for an already filtered list of messages."""
     if not messages:
         return dict(
             n_messages=0, n_words=0, n_chars=0,
@@ -441,7 +441,7 @@ def dyad_measures(messages):
 
 
 def transcript_text(messages) -> str:
-    """Trascrizione leggibile, un turno per riga, in ordine cronologico."""
+    """Readable transcript, one turn per line, in chronological order."""
     return '\n'.join(
         f"{m['sender_color']}->{m['receiver_color']}: {m['body']}" for m in messages
     )
@@ -464,16 +464,16 @@ def transcript_json(messages) -> str:
     )
 
 
-# --- Costruzione degli output ----------------------------------------------
+# --- Building the outputs --------------------------------------------------
 
 
 def clean_columns(fieldnames):
-    """Colonne wide da riportare in output, senza quelle MTurk."""
+    """Wide columns to carry into the output, minus the MTurk ones."""
     return [c for c in fieldnames if c not in MTURK_COLS]
 
 
 def build_by_partner(wide_rows, wide_cols, groups, uid_by_code, messages):
-    """Una riga per coppia ordinata i -> j, più i mai raggruppati."""
+    """One row per directed pair i -> j, plus the never-grouped."""
     by_group_dyad = defaultdict(list)
     for message in messages:
         by_group_dyad[(message['group_uid'], message['dyad_key'])].append(message)
@@ -503,9 +503,9 @@ def build_by_partner(wide_rows, wide_cols, groups, uid_by_code, messages):
                     other['decision_target'] is not None
                     and other['decision_target'] == pid
                 )
-                # Coerenza segnale-scelta: l'azione dichiarata coincide con
-                # quella effettivamente compiuta. Vale anche per il segnale
-                # "non sostengo nessuno" seguito dalla scelta NoOne.
+                # Choice-signal consistency: the declared action matches the
+                # one actually taken. This holds for the "I support no one"
+                # signal followed by the NoOne choice too.
                 if signal in VALID_SIGNALS and me['decision']:
                     consistent = int(declared == me['decision_target'])
                 else:
@@ -563,7 +563,7 @@ def build_by_partner(wide_rows, wide_cols, groups, uid_by_code, messages):
                 record['sent_transcript_text'] = transcript_text(sent)
                 rows.append(record)
 
-    # Mai raggruppati: una riga ciascuno, così nessun partecipante sparisce.
+    # Never grouped: one row each, so no participant disappears.
     for row in wide_rows:
         if row['participant.code'] in uid_by_code:
             continue
@@ -584,7 +584,7 @@ def build_by_partner(wide_rows, wide_cols, groups, uid_by_code, messages):
 
 
 def build_aggregated(wide_rows, wide_cols, groups, uid_by_code, messages):
-    """Una riga per partecipante, con la conversazione dell'intero gruppo."""
+    """One row per participant, with the whole group's conversation."""
     by_group = defaultdict(list)
     for message in messages:
         by_group[message['group_uid']].append(message)
@@ -637,8 +637,8 @@ def build_aggregated(wide_rows, wide_cols, groups, uid_by_code, messages):
                 consistencies.append(int(declared == me['decision_target']))
         cc = sum(consistencies) / len(consistencies) if len(consistencies) == 2 else ''
 
-        # Inganno strategico: promette sostegno a entrambi e poi non sostiene
-        # nessuno dei due.
+        # Strategic deception: promises support to both, then supports
+        # neither.
         if signal_left in VALID_SIGNALS and signal_right in VALID_SIGNALS and me['decision']:
             deception = int(
                 signal_left == 'split_you'
@@ -733,13 +733,13 @@ def write_csv(path: Path, rows):
 
 def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
         keep_all: bool = False) -> dict:
-    """Passo 1: unisce scelte e chat e costruisce le variabili dell'esperimento.
+    """Step 1: merge choices and chat, and build the experiment's variables.
 
-    Per impostazione predefinita tiene i soli partecipanti reali che hanno fatto
-    parte di una triade (vedi `select_participants`). Con ``keep_all`` non
-    filtra nulla: serve a ispezionare i dati grezzi, non ad analizzarli.
+    By default only real participants who were part of a triad are kept (see
+    `select_participants`). With ``keep_all`` nothing is filtered: that is for
+    inspecting the raw data, not for analysing it.
 
-    Restituisce un riepilogo con i percorsi prodotti e i numeri da controllare.
+    Returns a summary with the paths produced and the figures to check.
     """
     wide_cols, all_rows = load_wide(wide_path)
     chat_rows = load_chat(chat_path)
@@ -751,8 +751,9 @@ def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
 
     wide_by_code = {r['participant.code']: r for r in wide_rows}
 
-    # I messaggi di chi e' stato filtrato via non sono anomalie: si contano a
-    # parte, cosi' il totale torna e non si confondono con quelli irrisolvibili.
+    # Messages from filtered-out participants are not anomalies: they are
+    # counted separately, so the total adds up and they are not confused with
+    # the unresolvable ones.
     kept_codes = set(wide_by_code)
     all_codes = {r['participant.code'] for r in all_rows}
     chat_kept, chat_filtered = [], 0
@@ -763,7 +764,7 @@ def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
         elif code in all_codes:
             chat_filtered += 1
         else:
-            chat_kept.append(message)  # mittente ignoto: lo tratta build_messages
+            chat_kept.append(message)  # unknown sender: build_messages handles it
 
     uid_by_code, groups, warnings = build_groups(wide_rows, chat_rows=chat_kept)
     messages, anomalies = build_messages(chat_kept, wide_by_code, uid_by_code)
@@ -801,7 +802,8 @@ def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
         warnings=warnings + anomalies,
     )
 
-    # Su file, cosi' il rapporto puo' essere rigenerato senza rifare il merge.
+    # Written to file, so the report can be regenerated without redoing the
+    # merge.
     serialisable = {k: v for k, v in summary.items() if k != 'paths'}
     (outdir / f'{stem}_summary.json').write_text(
         json.dumps(serialisable, indent=2, ensure_ascii=False), encoding='utf-8'
@@ -811,26 +813,26 @@ def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
 
 def print_summary(summary: dict) -> None:
     dropped = summary.get('dropped') or {}
-    print(f"Partecipanti nell'export  : {summary['n_input']}")
+    print(f"Participants in export : {summary['n_input']}")
     if dropped:
-        print(f"  esclusi, mai raggruppati       : {dropped['mai_raggruppati']}")
-        print(f"  esclusi, senza PID Prolific    : {dropped['senza_pid_prolific']}")
-    print(f"Partecipanti analizzati   : {summary['n_participants']}")
-    print(f"Triadi ricostruite        : {summary['n_groups']}")
-    print(f"Triadi valide             : {summary['n_valid_groups']}"
-          f"   (le altre hanno un membro escluso per inattivita', "
-          f"ma restano nel dataset)")
-    print(f"Messaggi nell'export      : {summary['n_messages_in']}")
+        print(f"  excluded, never grouped      : {dropped['never_grouped']}")
+        print(f"  excluded, no Prolific ID     : {dropped['no_prolific_id']}")
+    print(f"Participants analysed  : {summary['n_participants']}")
+    print(f"Triads reconstructed   : {summary['n_groups']}")
+    print(f"Valid triads           : {summary['n_valid_groups']}"
+          f"   (the others have a member excluded for inactivity, "
+          f"but stay in the dataset)")
+    print(f"Messages in export     : {summary['n_messages_in']}")
     if summary.get('n_messages_filtered'):
-        print(f"  di partecipanti esclusi : {summary['n_messages_filtered']}")
-    print(f"Messaggi analizzati       : {summary['n_messages_resolved']}")
+        print(f"  from excluded participants : {summary['n_messages_filtered']}")
+    print(f"Messages analysed      : {summary['n_messages_resolved']}")
 
-    atteso = summary['n_messages_in'] - summary.get('n_messages_filtered', 0)
-    if summary['n_messages_resolved'] != atteso:
-        print('  ATTENZIONE: non tutti i messaggi sono stati ricondotti a un '
-              'partecipante; vedi gli avvisi qui sotto.')
+    expected = summary['n_messages_in'] - summary.get('n_messages_filtered', 0)
+    if summary['n_messages_resolved'] != expected:
+        print('  WARNING: not every message could be traced back to a '
+              'participant; see the warnings below.')
     print()
     for path in summary['paths'].values():
         print(f'  {path}')
     for warning in summary['warnings']:
-        print(f'ATTENZIONE: {warning}', file=sys.stderr)
+        print(f'WARNING: {warning}', file=sys.stderr)

@@ -1,17 +1,17 @@
 """
-Percorsi del progetto, chiavi API e riconoscimento dei file di input.
+Project paths, API keys and input file discovery.
 
-Il progetto è autonomo: tutto quello che gli serve sta nella sua cartella.
+The project is self-contained: everything it needs lives in its own folder.
 
     text_analysis/
-        input/    i CSV esportati da oTree
-        output/   quello che la pipeline produce
-        src/      il codice
-        .env      le chiavi API (mai sotto controllo di versione)
+        input/    the CSVs exported from oTree
+        output/   whatever the pipeline produces
+        src/      the code
+        .env      the API keys (never under version control)
 
-I file di input non si passano da riga di comando: si mettono in `input/` e
-vengono riconosciuti dal nome. È il motivo per cui la procedura si riduce a un
-comando solo, ed è anche il motivo per cui `input/` non deve contenere altro.
+Input files are not passed on the command line: you drop them in `input/` and
+they are recognised by name. That is why the procedure comes down to a single
+command, and also why `input/` must contain nothing else.
 """
 
 from __future__ import annotations
@@ -22,30 +22,30 @@ import subprocess
 import sys
 from pathlib import Path
 
-# La radice è la cartella del progetto, non quella dell'esperimento: se questa
-# cartella viene spostata o separata, continua a funzionare.
+# The root is the project folder, not the experiment's: if this folder is moved
+# or split off, everything keeps working.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 INPUT_DIR = PROJECT_ROOT / 'input'
 OUTPUT_DIR = PROJECT_ROOT / 'output'
 ENV_FILE = PROJECT_ROOT / '.env'
 
-# Sottocartelle di output, create quando servono.
+# Output subfolders, created when needed.
 MERGED_DIR = OUTPUT_DIR / 'merged'
 FEATURES_DIR = OUTPUT_DIR / 'features'
 TOPICS_DIR = OUTPUT_DIR / 'topicgpt'
 DATASETS_DIR = OUTPUT_DIR / 'datasets'
 
-# Come si riconoscono i due export di oTree fra i file in input/.
+# How the two oTree exports are recognised among the files in input/.
 INPUT_PATTERNS = {
     'wide': 'all_apps_wide*.csv',
     'chat': 'ChatMessages*.csv',
 }
 
 KNOWN_KEYS = {
-    'OPENAI_API_KEY': 'TopicGPT e, volendo, la rubrica di validazione',
-    'ANTHROPIC_API_KEY': 'rubrica di validazione (alternativa a OpenAI, facoltativa)',
-    'OPENAI_BASE_URL': 'endpoint alternativo compatibile OpenAI (facoltativo)',
+    'OPENAI_API_KEY': 'TopicGPT and, optionally, the validation rubric',
+    'ANTHROPIC_API_KEY': 'validation rubric (alternative to OpenAI, optional)',
+    'OPENAI_BASE_URL': 'alternative OpenAI-compatible endpoint (optional)',
 }
 
 
@@ -54,56 +54,56 @@ def ensure_dirs() -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
-# --- File di input ---------------------------------------------------------
+# --- Input files -----------------------------------------------------------
 
 
 class InputError(RuntimeError):
-    """Problema con i file in input/, con l'istruzione per risolverlo."""
+    """A problem with the files in input/, along with how to fix it."""
 
 
 def find_input(kind: str, override: Path | None = None) -> Path:
-    """Individua un export in `input/`, o usa il percorso indicato.
+    """Locate an export in `input/`, or use the path given.
 
-    Con più file dello stesso tipo non si sceglie a caso: si chiede quale,
-    perché prendere il più recente porterebbe ad analizzare in silenzio un
-    dataset diverso da quello inteso.
+    With more than one file of the same kind we do not pick at random: we ask
+    which one, because taking the most recent would silently analyse a dataset
+    other than the one intended.
     """
     if override is not None:
         path = Path(override).expanduser()
         if not path.is_file():
-            raise InputError(f'File non trovato: {path}')
+            raise InputError(f'File not found: {path}')
         return path
 
     pattern = INPUT_PATTERNS[kind]
     matches = sorted(INPUT_DIR.glob(pattern))
     if not matches:
         raise InputError(
-            f'Nessun file "{pattern}" in {INPUT_DIR}.\n'
-            f'  Scarica da oTree l\'export corrispondente e mettilo in input/.'
+            f'No "{pattern}" file in {INPUT_DIR}.\n'
+            f'  Download the matching export from oTree and put it in input/.'
         )
     if len(matches) > 1:
-        elenco = '\n'.join(f'    {m.name}' for m in matches)
+        listing = '\n'.join(f'    {m.name}' for m in matches)
         raise InputError(
-            f'Più file "{pattern}" in input/:\n{elenco}\n'
-            f'  Lascia solo quello da analizzare, oppure indicalo con '
-            f'--{kind} <percorso>.'
+            f'More than one "{pattern}" file in input/:\n{listing}\n'
+            f'  Keep only the one to analyse, or point at it with '
+            f'--{kind} <path>.'
         )
     return matches[0]
 
 
 def dataset_stem(wide_path: Path) -> str:
-    """Prefisso dei file prodotti: il nome dell'export senza estensione."""
+    """Prefix of the files produced: the export name without its extension."""
     return wide_path.stem
 
 
-# --- Chiavi API ------------------------------------------------------------
+# --- API keys --------------------------------------------------------------
 
 
 def parse_env(text: str) -> dict:
-    """Legge un file ``CHIAVE=valore``.
+    """Read a ``KEY=value`` file.
 
-    Tollera il prefisso ``export``, le virgolette e i commenti, così un file
-    copiato da istruzioni trovate altrove funziona comunque.
+    Tolerates the ``export`` prefix, quotes and comments, so a file copied from
+    instructions found elsewhere still works.
     """
     values = {}
     for line in text.splitlines():
@@ -123,7 +123,7 @@ def parse_env(text: str) -> dict:
 
 
 def is_git_ignored(path: Path) -> bool | None:
-    """True se git ignora il file, None se git non è utilizzabile qui."""
+    """True if git ignores the file, None if git cannot be used here."""
     try:
         result = subprocess.run(
             ['git', 'check-ignore', '-q', str(path)],
@@ -141,24 +141,24 @@ def is_git_ignored(path: Path) -> bool | None:
 def _warn_if_exposed(path: Path) -> None:
     if is_git_ignored(path) is False:
         print(
-            f'\nATTENZIONE: {path.name} NON è ignorato da git.\n'
-            f'  Aggiungi ".env" al .gitignore prima di fare qualunque commit.\n',
+            f'\nWARNING: {path.name} is NOT ignored by git.\n'
+            f'  Add ".env" to .gitignore before making any commit.\n',
             file=sys.stderr,
         )
     if os.name == 'posix' and path.exists():
         if path.stat().st_mode & (stat.S_IRGRP | stat.S_IROTH):
             print(
-                f'ATTENZIONE: {path.name} è leggibile da altri utenti. '
-                f'Correggi con: chmod 600 {path}',
+                f'WARNING: {path.name} is readable by other users. '
+                f'Fix with: chmod 600 {path}',
                 file=sys.stderr,
             )
 
 
 def load_env(path: Path | None = None) -> list[str]:
-    """Carica le chiavi nell'ambiente. Restituisce i nomi presi dal file.
+    """Load the keys into the environment. Returns the names taken from file.
 
-    Una variabile d'ambiente già impostata ha la precedenza: chi gestisce le
-    chiavi a modo proprio non viene scavalcato.
+    An environment variable already set takes precedence: whoever manages their
+    keys their own way is not overridden.
     """
     path = path or ENV_FILE
     if not path.is_file():
@@ -179,16 +179,16 @@ def has_key(name: str) -> bool:
 
 
 def require_key(name: str) -> str:
-    """Restituisce la chiave o esce con istruzioni utilizzabili."""
+    """Return the key, or exit with instructions you can act on."""
     value = os.environ.get(name, '').strip()
     if value:
         return value
-    purpose = KNOWN_KEYS.get(name, 'questo stadio della pipeline')
+    purpose = KNOWN_KEYS.get(name, 'this stage of the pipeline')
     raise SystemExit(
-        f'\nManca la chiave {name}, necessaria per {purpose}.\n\n'
-        f'Per configurarla:\n'
+        f'\nMissing {name}, required for {purpose}.\n\n'
+        f'To configure it:\n'
         f'    python run.py keys\n\n'
-        f'Viene salvata in {ENV_FILE.name}, che git ignora.\n'
+        f'It is saved in {ENV_FILE.name}, which git ignores.\n'
     )
 
 

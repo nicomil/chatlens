@@ -1,12 +1,12 @@
 """
-Esecuzione dei run in background, con log leggibile in diretta.
+Running jobs in the background, with a readable live log.
 
-Un run alla volta: due esecuzioni concorrenti scriverebbero negli stessi file
-di output e si sovrascriverebbero a vicenda.
+One run at a time: two concurrent runs would write to the same output files and
+overwrite each other.
 
-Il comando viene costruito da un elenco chiuso di opzioni, mai da testo
-digitato: la dashboard esegue processi, e comporre una riga di comando con
-valori arbitrari sarebbe un'iniezione di comandi servita su un piatto.
+The command is built from a closed list of options, never from typed text: the
+dashboard executes processes, and composing a command line from arbitrary
+values would be command injection served on a plate.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Valori ammessi. Tutto ciò che arriva dal browser viene confrontato con questi
-# elenchi: quello che non c'è viene ignorato, non passato al comando.
+# Allowed values. Everything arriving from the browser is checked against these
+# lists: anything absent is ignored, not passed to the command.
 ALLOWED = {
     'command': {'all', 'merge', 'analyze'},
     'llm_provider': {'', 'openai', 'anthropic', 'ollama'},
@@ -37,13 +37,13 @@ ALLOWED = {
 
 
 def _pick(form, field, default=''):
-    """Valore dal modulo, solo se compreso fra quelli ammessi."""
+    """Value from the form, only if among those allowed."""
     value = (form.get(field) or [''])[0].strip()
     return value if value in ALLOWED[field] else default
 
 
 def build_command(form) -> list[str]:
-    """Traduce il modulo in argomenti, uno per uno e solo da valori noti."""
+    """Turn the form into arguments, one by one and only from known values."""
     argv = [sys.executable, 'run.py', _pick(form, 'command', 'all')]
 
     if form.get('llm'):
@@ -73,7 +73,7 @@ def build_command(form) -> list[str]:
 
 
 class Runner:
-    """Un run alla volta, con il log accumulato riga per riga."""
+    """One run at a time, with the log accumulated line by line."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -85,7 +85,7 @@ class Runner:
         self._finished = None
         self._returncode = None
 
-    # --- stato ------------------------------------------------------------
+    # --- state ------------------------------------------------------------
 
     @property
     def running(self) -> bool:
@@ -103,10 +103,10 @@ class Runner:
                 returncode=self._returncode,
             )
 
-    # --- esecuzione -------------------------------------------------------
+    # --- execution --------------------------------------------------------
 
     def start(self, argv) -> bool:
-        """Avvia un run. False se ce n'è già uno in corso."""
+        """Start a run. False if one is already in progress."""
         with self._lock:
             if self._process is not None and self._process.poll() is None:
                 return False
@@ -126,16 +126,15 @@ class Runner:
                 text=True,
                 bufsize=1,
             )
-            # Senza questo, Python traduce \r in \n e il ritorno a capo delle
-            # barre di avanzamento non arriva mai qui: ogni riscrittura
-            # diventerebbe una riga nuova, che e' esattamente cio' che si vuole
-            # evitare.
+            # Without this, Python translates \r into \n and the progress
+            # bars' carriage return never reaches us: every rewrite would become
+            # a new line, which is exactly what we are trying to avoid.
             self._process.stdout.reconfigure(newline='')
         threading.Thread(target=self._pump, daemon=True).start()
         return True
 
     def _pump(self):
-        """Legge l'output riga per riga, collassando le barre di avanzamento."""
+        """Read the output line by line, collapsing the progress bars."""
         process = self._process
         buffer = ''
         while True:
@@ -159,19 +158,19 @@ class Runner:
             self._finished = datetime.now().strftime('%H:%M:%S')
 
     def _append(self, line: str, provisional: bool = False):
-        """Aggiunge una riga, o rimpiazza quella in corso di riscrittura.
+        """Append a line, or replace the one being rewritten.
 
-        Un ritorno a capo senza avanzamento (\r) significa "riscrivi la riga
-        corrente": e' cosi' che tqdm anima la barra. Va quindi sostituita
-        l'ultima riga, non aggiunta una nuova, altrimenti una barra da cento
-        passi lascia cento righe nel log.
+        A carriage return without a line feed (\r) means "rewrite the current
+        line": that is how tqdm animates the bar. The last line must therefore
+        be replaced, not a new one added, otherwise a hundred-step bar leaves a
+        hundred lines in the log.
         """
         line = line.rstrip()
         with self._lock:
             if not line:
-                # Riga vuota. Se arriva da un \n chiude comunque quella in
-                # corso: senza, l'ultimo stato della barra verrebbe rimpiazzato
-                # dalla prima riga successiva invece di restare visibile.
+                # Empty line. Coming from a \n it still closes the current one:
+                # without this, the bar's final state would be replaced by the
+                # next line rather than staying visible.
                 if not provisional:
                     self._provisional = False
                 return
@@ -179,10 +178,10 @@ class Runner:
                 self._lines[-1] = line
             else:
                 self._lines.append(line)
-            # Finche' la riga e' provvisoria, la prossima la sostituisce; una
-            # riga terminata da \n la fissa e le successive si accodano.
+            # While the line is provisional the next one replaces it; a line
+            # ended by \n fixes it and later ones are appended.
             self._provisional = provisional
-            # Il log di un run lungo non deve crescere senza limite.
+            # A long run's log must not grow without limit.
             if len(self._lines) > 500:
                 del self._lines[:-500]
 

@@ -1,34 +1,32 @@
 """
-Seconda misura, indipendente, dei costrutti in stile LIWC: una rubrica valutata
-da un modello linguistico.
+A second, independent measurement of the LIWC-style constructs: a rubric scored
+by a language model.
 
-Serve a validare le misure dizionario-based di `text_metrics`. Le due strade
-sono metodologicamente diverse — una conta function words, l'altra legge il
-testo — quindi una correlazione alta fra loro è un'evidenza di validità
-convergente; una correlazione bassa è un segnale da riportare, non da
-nascondere.
+Its job is to validate the dictionary-based measures in `text_metrics`. The two
+routes are methodologically different — one counts function words, the other
+reads the text — so a high correlation between them is evidence of convergent
+validity; a low correlation is a finding to report, not to hide.
 
-Perché si valuta il testo aggregato e non il singolo messaggio
---------------------------------------------------------------
-Vale lo stesso argomento delle misure automatiche: un turno di chat di cinque
-parole non contiene abbastanza segnale per una scala 0-100. La rubrica gira
-quindi sulle trascrizioni già aggregate — coppia ordinata, coppia, gruppo — che
-sono anche le unità richieste dall'analisi.
+Why the aggregated text is scored, not the single message
+---------------------------------------------------------
+The same argument as for the automatic measures: a five-word chat turn does not
+carry enough signal for a 0-100 scale. The rubric therefore runs on already
+aggregated transcripts — directed dyad, dyad, group — which are also the units
+the analysis requires.
 
-Affidabilità
-------------
-Con `--llm-replicates 2` la stessa trascrizione viene valutata più volte in
-chiamate indipendenti: la dispersione fra repliche è la stima test-retest
-dell'errore di misura, e finisce nel dataset come `*_sd`. Si possono anche
-indicare più modelli giudici (`--llm-models`), ottenendo un accordo fra
-valutatori diversi anziché fra repliche dello stesso.
+Reliability
+-----------
+With `--llm-replicates 2` the same transcript is scored several times in
+independent calls: the spread across replicates is the test-retest estimate of
+measurement error, and lands in the dataset as `*_sd`. Several judge models can
+also be named (`--llm-models`), giving agreement between different raters
+rather than between replicates of the same one.
 
-Costo
------
-Per grandi volumi conviene `--llm-batch`, che usa la Batches API a metà prezzo (solo
-con il fornitore Anthropic). Sul
-pilota (25 gruppi, 311 messaggi) le chiamate sono poche centinaia e la modalità
-sincrona basta.
+Cost
+----
+For large volumes use `--llm-batch`, which uses the Batches API at half price
+(Anthropic provider only). On the pilot (25 groups, 311 messages) the calls
+number a few hundred and the synchronous mode is enough.
 """
 
 from __future__ import annotations
@@ -40,13 +38,13 @@ import statistics
 import time
 from dataclasses import dataclass
 
-# La rubrica non dipende da un fornitore specifico: quello che serve è un modello
-# che segua istruzioni e restituisca JSON. Sono quindi supportati tre backend, e
-# quello da usare si sceglie in base alle credenziali disponibili.
+# The rubric does not depend on a specific provider: what it needs is a model
+# that follows instructions and returns JSON. Three backends are therefore
+# supported, and the one to use is chosen from the credentials available.
 #
-# `openai` serve anche a chi non vuole una seconda chiave: se si usa già OpenAI
-# per TopicGPT, la stessa chiave copre anche questo stadio. `ollama` gira in
-# locale e non richiede alcuna credenziale.
+# `openai` also serves anyone who does not want a second key: if OpenAI is
+# already used for TopicGPT, the same key covers this stage. `ollama` runs
+# locally and needs no credential at all.
 PROVIDERS = {
     'anthropic': dict(
         default_model='claude-opus-5',
@@ -60,12 +58,12 @@ PROVIDERS = {
     ),
     'ollama': dict(
         default_model='llama3',
-        env_key=None,  # locale: nessuna chiave
-        label='Ollama (locale)',
+        env_key=None,  # local: no key
+        label='Ollama (local)',
     ),
 }
 
-# Ordine di preferenza quando il fornitore non è indicato esplicitamente.
+# Order of preference when no provider is named explicitly.
 PROVIDER_PRIORITY = ('anthropic', 'openai', 'ollama')
 
 OLLAMA_BASE_URL = 'http://localhost:11434/v1'
@@ -119,22 +117,22 @@ Rate the language of {target} in this transcript."""
 
 @functools.lru_cache(maxsize=1)
 def rubric_model():
-    """Schema di output della rubrica.
+    """Output schema of the rubric.
 
-    Costruito su richiesta perché pydantic serve solo a questo stadio: le
-    misure deterministiche di `text_metrics` devono restare eseguibili senza
-    alcuna dipendenza esterna.
+    Built on demand because pydantic is needed only at this stage: the
+    deterministic measures in `text_metrics` must stay runnable with no external
+    dependency at all.
     """
     try:
         from pydantic import BaseModel, Field
     except ImportError as exc:  # pragma: no cover - dipende dall'ambiente
         raise RuntimeError(
-            'La rubrica richiede pydantic e il client del fornitore scelto.\n'
+            'The rubric needs pydantic and the chosen provider client.\n'
             '  pip install -r requirements.txt'
         ) from exc
 
     class RubricScores(BaseModel):
-        """Punteggi della rubrica per una singola trascrizione."""
+        """Rubric scores for a single transcript."""
 
         analytic: int = Field(ge=0, le=100, description='Analytical thinking, 0-100')
         clout: int = Field(ge=0, le=100, description='Confidence and social status, 0-100')
@@ -164,7 +162,7 @@ FLAG_FIELDS = (
 
 @dataclass
 class RubricUnit:
-    """Una trascrizione da valutare, con la sua chiave di ricongiungimento."""
+    """A transcript to score, with the key that rejoins it to the data."""
 
     key: tuple
     unit: str
@@ -175,7 +173,7 @@ class RubricUnit:
 
 
 def build_units(features_rows, level: str, transcript_lookup) -> list[RubricUnit]:
-    """Costruisce le unità da valutare a partire dalle righe aggregate."""
+    """Build the units to score from the aggregated rows."""
     from .aggregate import LEVEL_KEYS
 
     keys = LEVEL_KEYS[level]
@@ -218,8 +216,8 @@ def _request_params(unit: RubricUnit, model: str) -> dict:
     return dict(
         model=model,
         max_tokens=8000,
-        # Il prompt di sistema è identico per ogni chiamata: metterlo in cache
-        # abbatte il costo dell'input su corpus grandi.
+        # The system prompt is identical on every call: caching it cuts the
+        # input cost on large corpora.
         system=[{
             'type': 'text',
             'text': SYSTEM_PROMPT,
@@ -251,10 +249,10 @@ def _scores_from_parsed(parsed, model: str) -> dict:
 
 
 def available_providers() -> list[str]:
-    """Fornitori utilizzabili con le credenziali presenti nell'ambiente.
+    """Providers usable with the credentials present in the environment.
 
-    Ollama è elencato solo se risponde davvero: dichiararlo disponibile perché
-    "tanto è locale" porterebbe a fallire a metà esecuzione.
+    Ollama is listed only if it actually answers: calling it available because
+    "it is local anyway" would lead to failing halfway through a run.
     """
     usable = []
     for name in PROVIDER_PRIORITY:
@@ -268,7 +266,7 @@ def available_providers() -> list[str]:
 
 
 def ollama_models() -> list[str]:
-    """Modelli effettivamente installati in Ollama; lista vuota se non risponde."""
+    """Models actually installed in Ollama; empty list if it does not answer."""
     import json
     import urllib.error
     import urllib.request
@@ -282,26 +280,26 @@ def ollama_models() -> list[str]:
 
 
 def _ollama_is_running() -> bool:
-    """Ollama è utilizzabile solo se ha almeno un modello installato.
+    """Ollama is usable only if it has at least one model installed.
 
-    Il server risponde anche a installazione vuota. Considerarlo disponibile in
-    quel caso porta a un fallimento lento e incomprensibile: ogni valutazione
-    fallisce e viene ritentata, e su centinaia di unità la pipeline sembra
-    bloccata invece che mal configurata.
+    The server answers even on an empty installation. Treating it as available
+    in that case leads to a slow, incomprehensible failure: every rating fails
+    and is retried, and across hundreds of units the pipeline looks stuck rather
+    than misconfigured.
     """
     return bool(ollama_models())
 
 
 def resolve_provider(preferred: str | None = None) -> str:
-    """Sceglie il fornitore, o spiega come renderne disponibile uno."""
+    """Pick the provider, or explain how to make one available."""
     if preferred:
         if preferred not in PROVIDERS:
-            raise SystemExit(f'Fornitore sconosciuto: {preferred}')
+            raise SystemExit(f'Unknown provider: {preferred}')
         env_key = PROVIDERS[preferred]['env_key']
         if env_key and not os.environ.get(env_key, '').strip():
             raise SystemExit(
-                f"\nIl fornitore '{preferred}' richiede {env_key}, che non è "
-                f'impostata.\n  python run.py keys\n'
+                f"\nProvider '{preferred}' requires {env_key}, which is not "
+                f'set.\n  python run.py keys\n'
             )
         return preferred
 
@@ -310,10 +308,10 @@ def resolve_provider(preferred: str | None = None) -> str:
         return usable[0]
 
     raise SystemExit(
-        '\nLa rubrica di validazione richiede un modello linguistico. Opzioni:\n'
-        '  - imposta OPENAI_API_KEY (la stessa chiave che usa TopicGPT), oppure\n'
-        '  - imposta ANTHROPIC_API_KEY, oppure\n'
-        '  - avvia un modello in locale: ollama pull llama3\n\n'
+        '\nThe validation rubric needs a language model. Options:\n'
+        '  - set OPENAI_API_KEY (the same key TopicGPT uses), or\n'
+        '  - set ANTHROPIC_API_KEY, or\n'
+        '  - start a local model: ollama pull llama3\n\n'
         '  python run.py keys\n'
     )
 
@@ -323,24 +321,24 @@ def default_model_for(provider: str) -> str:
 
 
 def check_models_available(provider: str, models) -> None:
-    """Verifica prima di partire che i modelli richiesti esistano.
+    """Check before starting that the requested models exist.
 
-    Si controlla solo dove è possibile e istantaneo, cioè in locale: scoprire a
-    metà di centinaia di chiamate che il modello non c'è è il modo peggiore di
-    accorgersene.
+    Checked only where it is possible and instant, that is locally: finding out
+    halfway through hundreds of calls that the model is missing is the worst way
+    to learn it.
     """
     if provider != 'ollama':
         return
     installed = ollama_models()
-    # Ollama accetta sia "llama3" sia "llama3:latest": si confronta il nome base.
+    # Ollama accepts both "llama3" and "llama3:latest": compare the base name.
     base = {name.split(':')[0] for name in installed}
     missing = [m for m in models if m.split(':')[0] not in base]
     if missing:
-        elenco = ', '.join(installed) if installed else 'nessuno'
+        listing = ', '.join(installed) if installed else 'none'
         raise SystemExit(
-            f"\nModelli non installati in Ollama: {', '.join(missing)}\n"
-            f'  installati: {elenco}\n'
-            f"  scaricali con:  ollama pull {missing[0]}\n"
+            f"\nModels not installed in Ollama: {', '.join(missing)}\n"
+            f'  installed: {listing}\n'
+            f'  pull them with:  ollama pull {missing[0]}\n'
         )
 
 
@@ -351,18 +349,18 @@ def make_client(provider: str):
 
     from openai import OpenAI
     if provider == 'ollama':
-        # La chiave è richiesta dalla libreria ma ignorata dal server locale.
+        # The library demands a key; the local server ignores it.
         return OpenAI(base_url=OLLAMA_BASE_URL, api_key='ollama')
     return OpenAI(api_key=os.environ['OPENAI_API_KEY'],
                   base_url=os.environ.get('OPENAI_BASE_URL') or None)
 
 
-# --- Valutazione ----------------------------------------------------------
+# --- Scoring ---------------------------------------------------------------
 
 
 def score_unit(client, unit: RubricUnit, model: str = DEFAULT_MODEL,
                provider: str = 'anthropic') -> dict:
-    """Valuta una trascrizione. Restituisce i punteggi o l'errore incontrato."""
+    """Score one transcript. Returns the scores or the error encountered."""
     if provider == 'anthropic':
         return _score_anthropic(client, unit, model)
     return _score_openai_compatible(client, unit, model)
@@ -377,7 +375,7 @@ def _score_anthropic(client, unit: RubricUnit, model: str, attempt: int = 0) -> 
             **_request_params(unit, model),
         )
     except anthropic.NotFoundError as exc:
-        raise RuntimeError(f'modello non disponibile: {model}') from exc
+        raise RuntimeError(f'model not available: {model}') from exc
     except anthropic.RateLimitError as exc:
         if attempt >= 4:
             return dict(_empty_scores(), error='rate_limit')
@@ -403,12 +401,12 @@ def _score_anthropic(client, unit: RubricUnit, model: str, attempt: int = 0) -> 
 
 
 def _json_instruction() -> str:
-    """Schema descritto nel prompt.
+    """Schema described in the prompt.
 
-    Si usa la modalità JSON generica anziché lo schema vincolato: quest'ultima
-    non è supportata allo stesso modo da tutti gli endpoint compatibili — in
-    particolare da Ollama — e la validazione avviene comunque in locale con
-    pydantic, che è il controllo che conta.
+    Generic JSON mode is used rather than constrained schema: the latter is not
+    supported uniformly across compatible endpoints — Ollama in particular — and
+    validation happens locally with pydantic anyway, which is the check that
+    matters.
     """
     fields = ', '.join(f'"{f}": integer 0-100' for f in SCALE_FIELDS)
     flags = ', '.join(f'"{f}": true/false' for f in FLAG_FIELDS)
@@ -420,7 +418,7 @@ def _json_instruction() -> str:
 
 def _score_openai_compatible(client, unit: RubricUnit, model: str,
                              attempt: int = 0) -> dict:
-    """Percorso per OpenAI e per qualunque endpoint compatibile, Ollama incluso."""
+    """Path for OpenAI and any compatible endpoint, Ollama included."""
     try:
         response = client.chat.completions.create(
             model=model,
@@ -430,7 +428,7 @@ def _score_openai_compatible(client, unit: RubricUnit, model: str,
             ],
             response_format={'type': 'json_object'},
         )
-    except Exception as exc:  # noqa: BLE001 - le eccezioni variano per endpoint
+    except Exception as exc:  # noqa: BLE001 - exceptions vary by endpoint
         if attempt >= 4:
             return dict(_empty_scores(), error=f'api_error:{type(exc).__name__}')
         time.sleep(5 * (attempt + 1))
@@ -439,9 +437,9 @@ def _score_openai_compatible(client, unit: RubricUnit, model: str,
     text = (response.choices[0].message.content or '').strip()
     try:
         parsed = rubric_model().model_validate_json(text)
-    except Exception:  # noqa: BLE001 - risposta non conforme allo schema
-        # Una risposta malformata è spesso transitoria: si riprova, e solo dopo
-        # si registra l'errore, così il dato mancante resta tracciato.
+    except Exception:  # noqa: BLE001 - response does not match the schema
+        # A malformed answer is often transient: retry first, and only then
+        # record the error, so the missing datum stays traceable.
         if attempt < 2:
             return _score_openai_compatible(client, unit, model, attempt + 1)
         return dict(_empty_scores(), error='unparseable')
@@ -450,11 +448,11 @@ def _score_openai_compatible(client, unit: RubricUnit, model: str,
 
 
 def unit_signature(unit: RubricUnit, models, replicates: int) -> str:
-    """Impronta di una valutazione: se cambia, il risultato non è riusabile.
+    """Fingerprint of a rating: if it changes, the result is not reusable.
 
-    Comprende il testo, il prompt e la configurazione dei giudici: modificare
-    la rubrica o il modello invalida la cache automaticamente, mentre rilanciare
-    la stessa analisi la riusa.
+    It covers the text, the prompt and the judges' configuration: changing the
+    rubric or the model invalidates the cache automatically, while re-running
+    the same analysis reuses it.
     """
     import hashlib
 
@@ -466,7 +464,7 @@ def unit_signature(unit: RubricUnit, models, replicates: int) -> str:
 
 
 def load_cache(path) -> dict:
-    """Valutazioni già pagate in esecuzioni precedenti, per impronta."""
+    """Ratings already paid for in earlier runs, keyed by fingerprint."""
     if path is None or not path.is_file():
         return {}
     entries = {}
@@ -478,17 +476,17 @@ def load_cache(path) -> dict:
             try:
                 record = json.loads(line)
             except ValueError:
-                continue  # riga troncata da un'interruzione: si ignora
+                continue  # line truncated by an interruption: ignore it
             if 'signature' in record and 'row' in record:
                 entries[record['signature']] = record['row']
     return entries
 
 
 def _append_cache(path, signature: str, row: dict) -> None:
-    """Salva subito la singola valutazione.
+    """Save the single rating immediately.
 
-    Si scrive una riga per volta, non alla fine: se l'esecuzione si interrompe
-    a metà, quello che è già stato pagato resta disponibile.
+    One line at a time rather than all at the end: if the run is interrupted
+    halfway, what has already been paid for stays available.
     """
     if path is None:
         return
@@ -500,15 +498,15 @@ def _append_cache(path, signature: str, row: dict) -> None:
 
 def score_units(units, models=None, replicates=1, progress=None, provider=None,
                 cache_path=None):
-    """Valuta tutte le unità, con repliche e/o più giudici.
+    """Score every unit, with replicates and/or several judges.
 
-    Restituisce una riga per unità: media fra tutte le valutazioni, deviazione
-    standard come stima dell'errore di misura, e i punteggi grezzi di ciascuna
-    valutazione per gli usi di controllo.
+    Returns one row per unit: the mean across all ratings, the standard
+    deviation as an estimate of measurement error, and the raw scores of each
+    rating for checking.
 
-    Le valutazioni riuscite vengono messe in cache: un rilancio sugli stessi
-    dati non le ripaga. Quelle fallite non entrano in cache, così un problema
-    temporaneo viene ritentato invece di restare cristallizzato.
+    Successful ratings are cached: re-running on the same data does not pay for
+    them again. Failed ratings are not cached, so a transient problem is retried
+    instead of being frozen in place.
     """
     provider = resolve_provider(provider)
     models = list(models) if models else [default_model_for(provider)]
@@ -566,7 +564,7 @@ def _summarize(unit: RubricUnit, judgements) -> dict:
         )
     for field in FLAG_FIELDS:
         values = [j[field] for j in valid if j.get(field) is not None]
-        # Maggioranza fra le valutazioni; a parità si sceglie 0.
+        # Majority across ratings; ties resolve to 0.
         row[f'llm_{field}'] = int(sum(values) * 2 > len(values)) if values else ''
 
     row['llm_n_judgements'] = len(valid)
@@ -577,17 +575,17 @@ def _summarize(unit: RubricUnit, judgements) -> dict:
     return row
 
 
-# --- Modalità batch, per il dataset finale ---------------------------------
+# --- Batch mode, for the final dataset ------------------------------------
 
 
 def submit_batch(units, model: str = DEFAULT_MODEL, replicates: int = 1):
-    """Invia le valutazioni alla Batches API (metà prezzo, esito asincrono).
+    """Send the ratings to the Batches API (half price, asynchronous result).
 
-    Disponibile solo con il fornitore Anthropic. Con gli altri backend si usa
-    la modalità sincrona, che sul volume di questo studio resta praticabile.
+    Available with the Anthropic provider only. With the other backends the
+    synchronous mode is used, which at this study's volume stays practical.
 
-    Restituisce l'id del batch: va conservato, perché i risultati si ritirano
-    con `collect_batch` anche in una sessione successiva.
+    Returns the batch id: keep it, because the results are collected with
+    `collect_batch`, possibly in a later session.
     """
     import anthropic
     from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
@@ -617,7 +615,7 @@ def submit_batch(units, model: str = DEFAULT_MODEL, replicates: int = 1):
 
 
 def collect_batch(batch_id: str, units, poll_seconds: int = 60, progress=None):
-    """Attende la fine del batch e ricompone le righe nell'ordine delle unità."""
+    """Wait for the batch to end and rebuild the rows in unit order."""
     import anthropic
 
     client = anthropic.Anthropic()
@@ -629,7 +627,7 @@ def collect_batch(batch_id: str, units, poll_seconds: int = 60, progress=None):
             progress(batch.request_counts.processing)
         time.sleep(poll_seconds)
 
-    # I risultati arrivano in ordine arbitrario: si indicizza per custom_id.
+    # Results arrive in arbitrary order: index them by custom_id.
     by_unit = {index: [] for index in range(len(units))}
     for result in client.messages.batches.results(batch_id):
         index = int(result.custom_id.split('-')[0])
@@ -643,7 +641,7 @@ def collect_batch(batch_id: str, units, poll_seconds: int = 60, progress=None):
         text = next((b.text for b in message.content if b.type == 'text'), '')
         try:
             payload = rubric_model().model_validate_json(text)
-        except Exception:  # noqa: BLE001 - risposta non conforme allo schema
+        except Exception:  # noqa: BLE001 - response does not match the schema
             by_unit[index].append(dict(_empty_scores(), error='unparseable'))
             continue
         row = {field: getattr(payload, field) for field in SCALE_FIELDS}
@@ -657,14 +655,14 @@ def collect_batch(batch_id: str, units, poll_seconds: int = 60, progress=None):
 
 
 def has_credentials() -> bool:
-    """True se almeno un fornitore è utilizzabile."""
+    """True if at least one provider is usable."""
     return bool(available_providers())
 
 
 def dry_run_payload(units, model: str = DEFAULT_MODEL) -> str:
-    """Anteprima della prima richiesta, per ispezione senza spendere token."""
+    """Preview of the first request, to inspect without spending tokens."""
     if not units:
-        return '(nessuna unità da valutare)'
+        return '(no units to score)'
     params = _request_params(units[0], model)
     preview = dict(
         model=params['model'],
@@ -675,6 +673,6 @@ def dry_run_payload(units, model: str = DEFAULT_MODEL) -> str:
     try:
         preview['output_format'] = rubric_model().model_json_schema()
     except RuntimeError as exc:
-        # L'anteprima deve restare utile anche senza le dipendenze opzionali.
-        preview['output_format'] = f'(schema non disponibile: {exc})'
+        # The preview must stay useful even without the optional dependencies.
+        preview['output_format'] = f'(schema unavailable: {exc})'
     return json.dumps(preview, indent=2, ensure_ascii=False)

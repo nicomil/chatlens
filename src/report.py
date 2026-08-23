@@ -1,17 +1,17 @@
 """
-Riassunto leggibile di un'esecuzione, in Markdown e HTML.
+Readable summary of a run, in Markdown and HTML.
 
-Serve a rispondere in trenta secondi a «com'e' andata?» senza aprire CSV da
-trecento colonne: copertura del campione, esiti del gioco, variabili
-comportamentali, misure del linguaggio e — quando ci sono — rubrica e topic.
+It answers "how did it go?" in thirty seconds without opening CSVs of three
+hundred columns: sample coverage, game outcomes, behavioural variables,
+language measures and — where present — rubric and topics.
 
-Le sezioni degli stadi non eseguiti non compaiono: un riassunto che elenca
-caselle vuote e' piu' difficile da leggere di uno piu' corto.
+Sections for stages that did not run do not appear: a summary listing empty
+boxes is harder to read than a shorter one.
 
-Il rapporto e' descrittivo per scelta. Su un numero di triadi come quello del
-pilota qualunque confronto fra trattamenti sarebbe rumore, quindi non vengono
-mostrati test: i numeri per trattamento servono a vedere che la pipeline abbia
-prodotto qualcosa di sensato, non a trarne conclusioni.
+The report is descriptive by choice. At a triad count like the pilot's any
+comparison between treatments would be noise, so no tests are shown: the
+per-treatment figures are there to see that the pipeline produced something
+sensible, not to draw conclusions from.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ TREATMENT_LABELS = {
 }
 
 
-# --- Lettura e statistiche -------------------------------------------------
+# --- Reading and statistics ------------------------------------------------
 
 
 def _read(path: Path) -> list[dict]:
@@ -41,7 +41,7 @@ def _read(path: Path) -> list[dict]:
 
 
 def _num(value):
-    """Converte in numero, o None se la cella e' vuota o non numerica."""
+    """Convert to a number, or None if the cell is empty or not numeric."""
     if value in (None, '', 'None'):
         return None
     try:
@@ -83,7 +83,7 @@ def _has_data(rows, column) -> bool:
 
 
 def _by_treatment(rows):
-    """Righe raggruppate per trattamento, in ordine stabile."""
+    """Rows bucketed by treatment, in a stable order."""
     groups = {}
     for row in rows:
         groups.setdefault(row.get('treatment', ''), []).append(row)
@@ -93,7 +93,7 @@ def _by_treatment(rows):
 
 
 def _triads(rows):
-    """Una riga rappresentativa per triade: le variabili di gruppo si ripetono."""
+    """One representative row per triad: group variables repeat on each."""
     seen = {}
     for row in rows:
         uid = row.get('group_uid')
@@ -103,12 +103,12 @@ def _triads(rows):
 
 
 def collect(outdir: Path, stem: str, stages=None) -> dict:
-    """Raccoglie tutto il necessario dai file prodotti dall'esecuzione."""
+    """Collect everything needed from the files the run produced."""
     datasets = outdir / 'datasets'
     aggregated = _read(datasets / f'{stem}_chat_aggregated_nlp.csv')
     by_partner = _read(datasets / f'{stem}_chat_by_partner_nlp.csv')
     if not aggregated:
-        # Senza analisi del testo restano comunque i file del solo merge.
+        # Without the text analysis, the merge-only files are still there.
         aggregated = _read(outdir / 'merged' / f'{stem}_chat_aggregated.csv')
         by_partner = _read(outdir / 'merged' / f'{stem}_chat_by_partner.csv')
 
@@ -212,8 +212,8 @@ def _behaviour(aggregated, by_partner) -> dict:
 
 
 LANGUAGE_METRICS = [
-    ('nlp_group_wc', 'Parole per triade', 0),
-    ('nlp_group_n_messages', 'Messaggi per triade', 1),
+    ('nlp_group_wc', 'Words per triad', 0),
+    ('nlp_group_n_messages', 'Messages per triad', 1),
     ('nlp_group_analytic_100', 'Analytic', 1),
     ('nlp_group_clout_100', 'Clout', 1),
     ('nlp_group_authenticity_100', 'Authenticity', 1),
@@ -325,23 +325,23 @@ def _quality(aggregated, by_partner) -> dict:
 
     invalid = [r for r in triads if r.get('group_valid') != '1']
     if invalid:
-        soggetto = (f'1 triade su {len(triads)} ha' if len(invalid) == 1
-                    else f'{len(invalid)} triadi su {len(triads)} hanno')
+        subject = (f'1 triad out of {len(triads)} has' if len(invalid) == 1
+                   else f'{len(invalid)} triads out of {len(triads)} have')
         notes.append(
-            f'{soggetto} almeno un membro escluso per inattivita o interrotto: '
-            f'restano nel dataset, ma le analisi principali vanno fatte su '
-            f'group_valid == 1.'
+            f'{subject} at least one member excluded for inactivity or cut '
+            f'short: they stay in the dataset, but the main analyses should be '
+            f'run on group_valid == 1.'
         )
 
     if _has_column(aggregated, 'nlp_group_low_language_flag'):
         flagged = [r for r in triads
                    if r.get('nlp_group_low_language_flag') == '1']
         if flagged:
-            soggetto = ('1 triade contiene' if len(flagged) == 1
-                        else f'{len(flagged)} triadi contengono')
+            subject = ('1 triad contains' if len(flagged) == 1
+                       else f'{len(flagged)} triads contain')
             notes.append(
-                f'{soggetto} testo che non sembra lingua: gli indici del '
-                f'linguaggio non vanno letti su quelle unita.'
+                f'{subject} text that does not look like language: the language '
+                f'indices should not be read on those units.'
             )
 
     if _has_column(aggregated, 'nlp_group_llm_n_errors'):
@@ -349,26 +349,26 @@ def _quality(aggregated, by_partner) -> dict:
                      for r in triads)
         if errors:
             notes.append(
-                '1 valutazione della rubrica non e riuscita.' if errors == 1
-                else f'{errors} valutazioni della rubrica non sono riuscite.'
+                '1 rubric rating failed.' if errors == 1
+                else f'{errors} rubric ratings failed.'
             )
 
     silent = [r for r in triads if (_num(r.get('nlp_group_n_messages')) or 0) == 0]
     if silent:
-        soggetto = ('1 triade non ha' if len(silent) == 1
-                    else f'{len(silent)} triadi non hanno')
-        notes.append(f'{soggetto} scambiato alcun messaggio.')
+        subject = ('1 triad exchanged' if len(silent) == 1
+                   else f'{len(silent)} triads exchanged')
+        notes.append(f'{subject} no messages at all.')
 
     if len(triads) < 60:
         notes.append(
-            f'Con {len(triads)} triadi i confronti fra trattamenti sono '
-            f'descrittivi: i numeri servono a verificare che la pipeline '
-            f'produca risultati sensati, non a trarne conclusioni.'
+            f'With {len(triads)} triads the comparisons between treatments are '
+            f'descriptive: the figures serve to check that the pipeline '
+            f'produces sensible results, not to draw conclusions from.'
         )
     return dict(notes=notes)
 
 
-# --- Resa in Markdown ------------------------------------------------------
+# --- Markdown rendering ----------------------------------------------------
 
 
 def _md_table(headers, rows) -> str:
@@ -382,65 +382,66 @@ def _md_table(headers, rows) -> str:
 def render_markdown(data: dict) -> str:
     cov = data['coverage']
     parts = [
-        f"# Analisi del testo — {data['stem']}",
+        f"# Text analysis — {data['stem']}",
         '',
-        f"Esecuzione del {data['generated']}."
-        + (f" Stadi eseguiti: {', '.join(data['stages'])}."
+        f"Run of {data['generated']}."
+        + (f" Stages run: {', '.join(data['stages'])}."
            if data.get('stages') else ''),
         '',
-        '## Copertura',
+        '## Coverage',
         '',
     ]
 
     rows = [
-        ['Partecipanti analizzati', cov['n_participants']],
-        ['Triadi', cov['n_triads']],
-        ['Triadi valide', f"{cov['n_valid_triads']} su {cov['n_triads']}"],
-        ['Coppie ordinate', cov['n_pairs']],
+        ['Participants analysed', cov['n_participants']],
+        ['Triads', cov['n_triads']],
+        ['Valid triads', f"{cov['n_valid_triads']} of {cov['n_triads']}"],
+        ['Directed pairs', cov['n_pairs']],
     ]
     if cov.get('n_messages') is not None:
-        rows.append(['Messaggi analizzati', cov['n_messages']])
-    parts.append(_md_table(['', 'Valore'], rows))
+        rows.append(['Messages analysed', cov['n_messages']])
+    parts.append(_md_table(['', 'Value'], rows))
 
     if cov['dropped']:
-        parts += ['', f"Dall'export di {cov['n_input']} partecipanti sono stati "
-                      f"esclusi {cov['dropped'].get('mai_raggruppati', 0)} mai "
-                      f"raggruppati e {cov['dropped'].get('senza_pid_prolific', 0)} "
-                      f"senza identificativo Prolific (sessioni di collaudo)."]
+        parts += ['', f"Of the {cov['n_input']} participants in the export, "
+                      f"{cov['dropped'].get('never_grouped', 0)} were excluded "
+                      f"as never grouped and "
+                      f"{cov['dropped'].get('no_prolific_id', 0)} as having no "
+                      f"Prolific identifier (test sessions)."]
 
     parts += ['', _md_table(
-        ['Trattamento', 'Triadi', 'Partecipanti'],
+        ['Treatment', 'Triads', 'Participants'],
         [[t['label'], t['n_triads'], t['n_participants']]
          for t in cov['per_treatment']],
     )]
 
     out = data['outcomes']
-    parts += ['', '## Esiti del gioco', '', _md_table(
-        ['Trattamento', 'Triadi', 'Coordinamento', 'Payoff di gruppo',
-         'Payoff individuale'],
+    parts += ['', '## Game outcomes', '', _md_table(
+        ['Treatment', 'Triads', 'Coordination', 'Group payoff',
+         'Individual payoff'],
         [[r['label'], r['n_triads'], r['coordination'],
           _fmt(r['mean_group_payoff']), _fmt(r['mean_individual_payoff'])]
          for r in out['per_treatment']],
     )]
-    parts += ['', 'Esiti: ' + ', '.join(f'{k} ({v})'
-                                        for k, v in out['outcome_distribution'])]
-    parts += ['', 'Scelte finali: ' + ', '.join(f'{k} ({v})'
+    parts += ['', 'Outcomes: ' + ', '.join(f'{k} ({v})'
+                                           for k, v in out['outcome_distribution'])]
+    parts += ['', 'Final choices: ' + ', '.join(f'{k} ({v})'
                                                 for k, v in out['decisions'])]
 
     beh = data['behaviour']
-    parts += ['', '## Variabili comportamentali', '', _md_table(
-        ['Trattamento', 'Coppie', 'Segnali di sostegno', 'Persuasione',
-         'Coerenza segnale-scelta', 'Inganno strategico'],
+    parts += ['', '## Behavioural variables', '', _md_table(
+        ['Treatment', 'Pairs', 'Support signals', 'Persuasion',
+         'Choice-signal consistency', 'Strategic deception'],
         [[r['label'], r['n_pairs'], _fmt(r['support_signals']),
           _fmt(r['persuasion']), _fmt(r['consistency']), _fmt(r['deception'])]
          for r in beh['per_treatment']],
     )]
-    parts += ['', 'Le prime due colonne sono quote sulle coppie ordinate, le '
-                  'ultime due medie sui partecipanti.']
+    parts += ['', 'The first two columns are proportions over directed pairs, '
+                  'the last two are means over participants.']
 
     lang = data['language']
     if lang:
-        parts += ['', '## Linguaggio (mediane per triade)', '', _md_table(
+        parts += ['', '## Language (medians per triad)', '', _md_table(
             [''] + lang['labels'],
             [[m['label']] + [_fmt(v, m['digits']) for v in m['values']]
              for m in lang['metrics']],
@@ -448,29 +449,30 @@ def render_markdown(data: dict) -> str:
 
     rub = data['rubric']
     if rub:
-        parts += ['', '## Rubrica di validazione', '', _md_table(
-            ['Costrutto', 'Rubrica', 'Da dizionario', 'Scarto fra repliche',
-             'Correlazione'],
+        parts += ['', '## Validation rubric', '', _md_table(
+            ['Construct', 'Rubric', 'Dictionary', 'Spread across replicates',
+             'Correlation'],
             [[r['label'], _fmt(r['llm_median'], 1), _fmt(r['dict_median'], 1),
               _fmt(r['sd'], 1), _fmt(r['correlation'])] for r in rub['rows']],
         )]
-        parts += ['', f"Impegni espliciti di sostegno rilevati in "
-                      f"{rub['n_with_commitment']} triadi su {rub['n_triads']}.",
-                  '', 'La correlazione confronta la rubrica con la misura da '
-                      'dizionario: e\' la validazione convergente, non un '
-                      'controllo di correttezza. Se e\' bassa o negativa va '
-                      'riportata, non corretta.']
+        parts += ['', f"Explicit commitments to support detected in "
+                      f"{rub['n_with_commitment']} triads out of "
+                      f"{rub['n_triads']}.",
+                  '', 'The correlation compares the rubric with the dictionary '
+                      'measure: it is the convergent validation, not a '
+                      'correctness check. If it is low or negative it should be '
+                      'reported, not corrected.']
 
     top = data['topics']
     if top:
-        parts += ['', '## Topic', '',
-                  f"Assegnati a {top['n_with_topic']} coppie ordinate su "
+        parts += ['', '## Topics', '',
+                  f"Assigned to {top['n_with_topic']} directed pairs out of "
                   f"{top['n_pairs']}.", '',
-                  _md_table(['Topic', 'Coppie'],
+                  _md_table(['Topic', 'Pairs'],
                             [[k, v] for k, v in top['counts']])]
         if len(top['per_treatment']) > 1:
             parts += ['', _md_table(
-                ['Trattamento'] + top['topics'],
+                ['Treatment'] + top['topics'],
                 [[t['label']] + [t['counts'].get(name, 0)
                                  for name in top['topics']]
                  for t in top['per_treatment']],
@@ -478,13 +480,13 @@ def render_markdown(data: dict) -> str:
 
     notes = data['quality']['notes']
     if notes:
-        parts += ['', '## Da tenere presente', '']
+        parts += ['', '## Worth keeping in mind', '']
         parts += [f'- {n}' for n in notes]
 
     return '\n'.join(parts) + '\n'
 
 
-# --- Resa in HTML ----------------------------------------------------------
+# --- HTML rendering --------------------------------------------------------
 
 HTML_STYLE = """
 :root {
@@ -550,18 +552,18 @@ def render_html(data: dict) -> str:
     beh = data['behaviour']
 
     cards = [
-        (cov['n_triads'], 'triadi'),
-        (cov['n_participants'], 'partecipanti'),
-        (cov['n_pairs'], 'coppie ordinate'),
+        (cov['n_triads'], 'triads'),
+        (cov['n_participants'], 'participants'),
+        (cov['n_pairs'], 'directed pairs'),
     ]
     if cov.get('n_messages') is not None:
-        cards.append((cov['n_messages'], 'messaggi'))
-    cards.append((f"{cov['n_valid_triads']}/{cov['n_triads']}", 'triadi valide'))
+        cards.append((cov['n_messages'], 'messages'))
+    cards.append((f"{cov['n_valid_triads']}/{cov['n_triads']}", 'valid triads'))
 
     body = [
-        f"<h1>Analisi del testo — {html.escape(data['stem'])}</h1>",
-        f"<p class=\"meta\">Esecuzione del {html.escape(data['generated'])}"
-        + (f" &middot; stadi: {html.escape(', '.join(data['stages']))}"
+        f"<h1>Text analysis — {html.escape(data['stem'])}</h1>",
+        f"<p class=\"meta\">Run of {html.escape(data['generated'])}"
+        + (f" &middot; stages: {html.escape(', '.join(data['stages']))}"
            if data.get('stages') else '') + "</p>",
         '<div class="cards">',
         *(f'<div class="card"><div class="v">{v}</div>'
@@ -571,84 +573,85 @@ def render_html(data: dict) -> str:
 
     if cov['dropped']:
         body.append(
-            f"<p class=\"caption\">Dall'export di {cov['n_input']} partecipanti "
-            f"sono stati esclusi {cov['dropped'].get('mai_raggruppati', 0)} mai "
-            f"raggruppati e {cov['dropped'].get('senza_pid_prolific', 0)} senza "
-            f"identificativo Prolific (sessioni di collaudo).</p>")
+            f"<p class=\"caption\">Of the {cov['n_input']} participants in the "
+            f"export, {cov['dropped'].get('never_grouped', 0)} were excluded as "
+            f"never grouped and {cov['dropped'].get('no_prolific_id', 0)} as "
+            f"having no Prolific identifier (test sessions).</p>")
 
-    body += ['<h2>Copertura</h2>', _html_table(
-        ['Trattamento', 'Triadi', 'Partecipanti'],
+    body += ['<h2>Coverage</h2>', _html_table(
+        ['Treatment', 'Triads', 'Participants'],
         [[t['label'], t['n_triads'], t['n_participants']]
          for t in cov['per_treatment']])]
 
-    body += ['<h2>Esiti del gioco</h2>', _html_table(
-        ['Trattamento', 'Triadi', 'Coordinamento', 'Payoff gruppo',
-         'Payoff individuale'],
+    body += ['<h2>Game outcomes</h2>', _html_table(
+        ['Treatment', 'Triads', 'Coordination', 'Group payoff',
+         'Individual payoff'],
         [[r['label'], r['n_triads'], r['coordination'],
           _fmt(r['mean_group_payoff']), _fmt(r['mean_individual_payoff'])]
          for r in out['per_treatment']])]
-    body.append('<p class="caption">Esiti: ' + html.escape(
+    body.append('<p class="caption">Outcomes: ' + html.escape(
         ', '.join(f'{k} ({v})' for k, v in out['outcome_distribution'])) +
-        '<br>Scelte finali: ' + html.escape(
+        '<br>Final choices: ' + html.escape(
         ', '.join(f'{k} ({v})' for k, v in out['decisions'])) + '</p>')
 
-    body += ['<h2>Variabili comportamentali</h2>', _html_table(
-        ['Trattamento', 'Coppie', 'Segnali di sostegno', 'Persuasione',
-         'Coerenza', 'Inganno strategico'],
+    body += ['<h2>Behavioural variables</h2>', _html_table(
+        ['Treatment', 'Pairs', 'Support signals', 'Persuasion',
+         'Consistency', 'Strategic deception'],
         [[r['label'], r['n_pairs'], _fmt(r['support_signals']),
           _fmt(r['persuasion']), _fmt(r['consistency']), _fmt(r['deception'])]
          for r in beh['per_treatment']]),
-        '<p class="caption">Le prime due colonne sono quote sulle coppie '
-        'ordinate, le ultime due medie sui partecipanti.</p>']
+        '<p class="caption">The first two columns are proportions over '
+        'directed pairs, the last two are means over participants.</p>']
 
     lang = data['language']
     if lang:
-        body += ['<h2>Linguaggio (mediane per triade)</h2>', _html_table(
+        body += ['<h2>Language (medians per triad)</h2>', _html_table(
             [''] + lang['labels'],
             [[m['label']] + [_fmt(v, m['digits']) for v in m['values']]
              for m in lang['metrics']])]
 
     rub = data['rubric']
     if rub:
-        body += ['<h2>Rubrica di validazione</h2>', _html_table(
-            ['Costrutto', 'Rubrica', 'Da dizionario', 'Scarto repliche',
-             'Correlazione'],
+        body += ['<h2>Validation rubric</h2>', _html_table(
+            ['Construct', 'Rubric', 'Dictionary', 'Replicate spread',
+             'Correlation'],
             [[r['label'], _fmt(r['llm_median'], 1), _fmt(r['dict_median'], 1),
               _fmt(r['sd'], 1), _fmt(r['correlation'])] for r in rub['rows']]),
-            f"<p class=\"caption\">Impegni espliciti di sostegno rilevati in "
-            f"{rub['n_with_commitment']} triadi su {rub['n_triads']}. "
-            f"La correlazione e' la validazione convergente fra le due misure: "
-            f"se e' bassa o negativa va riportata, non corretta.</p>"]
+            f'<p class="caption">Explicit commitments to support detected in '
+            f"{rub['n_with_commitment']} triads out of {rub['n_triads']}. "
+            f'The correlation is the convergent validation between the two '
+            f'measures: if it is low or negative it should be reported, not '
+            f'corrected.</p>']
 
     top = data['topics']
     if top:
-        body += ['<h2>Topic</h2>',
-                 f"<p>Assegnati a {top['n_with_topic']} coppie ordinate su "
+        body += ['<h2>Topics</h2>',
+                 f"<p>Assigned to {top['n_with_topic']} directed pairs out of "
                  f"{top['n_pairs']}.</p>",
-                 _html_table(['Topic', 'Coppie'],
+                 _html_table(['Topic', 'Pairs'],
                              [[k, v] for k, v in top['counts']])]
         if len(top['per_treatment']) > 1:
             body.append(_html_table(
-                ['Trattamento'] + top['topics'],
+                ['Treatment'] + top['topics'],
                 [[t['label']] + [t['counts'].get(n, 0) for n in top['topics']]
                  for t in top['per_treatment']]))
 
     notes = data['quality']['notes']
     if notes:
-        body.append('<h2>Da tenere presente</h2>')
+        body.append('<h2>Worth keeping in mind</h2>')
         body += [f'<div class="note">{html.escape(n)}</div>' for n in notes]
 
     return (
-        '<!doctype html><html lang="it"><head><meta charset="utf-8">'
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f'<title>Analisi del testo — {html.escape(data["stem"])}</title>'
+        f'<title>Text analysis — {html.escape(data["stem"])}</title>'
         f'<style>{HTML_STYLE}</style></head><body><main>'
         + ''.join(body) + '</main></body></html>'
     )
 
 
 def write(outdir: Path, stem: str, stages=None) -> list[Path]:
-    """Genera il rapporto nei due formati e restituisce i percorsi."""
+    """Generate the report in both formats and return the paths."""
     data = collect(outdir, stem, stages=stages)
     md_path = outdir / f'{stem}_report.md'
     html_path = outdir / f'{stem}_report.html'

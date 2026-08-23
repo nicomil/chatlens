@@ -1,14 +1,14 @@
-"""Pipeline NLP per l'esperimento bargaining_tdl.
+"""Text analysis for the bargaining_tdl experiment.
 
-Moduli:
-- ``text_metrics`` / ``lexicons``: misure deterministiche in stile LIWC-22,
-  volume e sentiment. Nessuna dipendenza esterna obbligatoria.
-- ``llm_rubric``: seconda misura degli stessi costrutti tramite rubrica
-  valutata da Claude, per validazione convergente.
-- ``topicgpt``: adattatore per il codice ufficiale di TopicGPT
-  (Pham et al., 2024).
-- ``aggregate``: aggregazione a coppia ordinata, coppia, partecipante e gruppo,
-  e innesto sui dataset dell'esperimento.
+Modules:
+- ``text_metrics`` / ``lexicons``: deterministic LIWC-style measures, volume
+  and sentiment. No mandatory external dependency.
+- ``llm_rubric``: a second, independent measurement of the same constructs
+  through a rubric scored by a language model, for convergent validation.
+- ``topicgpt``: adapter for the official TopicGPT code (Pham et al., 2024).
+- ``aggregate``: aggregation to directed dyad, dyad, participant and group,
+  and grafting onto the experiment datasets.
+- ``report`` / ``archive``: readable summary of a run, and its archived copy.
 
-Il punto di ingresso è ``run.py`` nella radice del progetto.
+The entry point is ``run.py`` at the project root.
 """

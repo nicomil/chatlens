@@ -1,6 +1,6 @@
-// Il log resta agganciato in fondo mentre avanza, ma solo finche' non lo si
-// scorre a mano: se si sta leggendo piu' in alto, l'aggiornamento automatico
-// non deve strappare via la posizione.
+// The log stays pinned to the bottom as it grows, but only until it is
+// scrolled by hand: if the reader is looking further up, the automatic update
+// must not tear the position away.
 (function () {
   var wrap = document.getElementById('logwrap');
   if (!wrap) { return; }
@@ -15,13 +15,13 @@
   });
 })();
 
-// I preset sono la scelta principale: impostano le opzioni di dettaglio, che
-// restano visibili e modificabili per chi deve scostarsene.
+// The presets are the main choice: they set the detail options, which stay
+// visible and editable for anyone who needs to depart from them.
 (function () {
   var PRESETS = {
-    base:        { llm: false, topics: false },
-    validazione: { llm: true,  topics: false },
-    completa:    { llm: true,  topics: true }
+    base:       { llm: false, topics: false },
+    validation: { llm: true,  topics: false },
+    full:       { llm: true,  topics: true }
   };
 
   var form = document.getElementById('launch');
@@ -37,8 +37,8 @@
     form.querySelectorAll('.preset').forEach(function (card) {
       card.classList.toggle('on', card.querySelector('input').checked);
     });
-    // Un solo evento, sul form: la stima lo ascolta. Il run parte soltanto
-    // dall'invio del modulo, mai da un cambiamento.
+    // A single event, on the form: the estimate listens for it. The run starts
+    // only from the form submission, never from a change.
     form.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
@@ -47,15 +47,15 @@
       apply(event.target.value);
       return;
     }
-    // Toccando le caselle di dettaglio la scelta non corrisponde piu' a nessun
-    // preset: si toglie l'evidenziazione invece di lasciarla mentire.
+    // Touching the detail boxes means the choice no longer matches any preset:
+    // the highlight is removed rather than left to lie.
     if (event.target.name === 'llm' || event.target.name === 'topics') {
-      var stato = {
+      var state = {
         llm: form.querySelector('input[name="llm"]').checked,
         topics: form.querySelector('input[name="topics"]').checked
       };
       var match = Object.keys(PRESETS).find(function (k) {
-        return PRESETS[k].llm === stato.llm && PRESETS[k].topics === stato.topics;
+        return PRESETS[k].llm === state.llm && PRESETS[k].topics === state.topics;
       });
       form.querySelectorAll('.preset').forEach(function (card) {
         var input = card.querySelector('input');

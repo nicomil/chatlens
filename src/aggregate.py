@@ -1,20 +1,20 @@
 """
-Aggregazione delle misure testuali e innesto sui dataset dell'esperimento.
+Aggregation of the text measures and grafting onto the experiment datasets.
 
-Parte da `..._messages_long.csv` (prodotto da `src/merge.py`)
-e produce le misure a quattro livelli:
+Starts from `..._messages_long.csv` (produced by `src/merge.py`) and computes
+the measures at four levels:
 
-``message``       il singolo messaggio (solo conteggi e sentiment)
-``dyad_directed`` i messaggi che i manda a j — l'unità della persuasione
-``dyad``          l'intera conversazione della coppia, nei due sensi
-``sender_group``  tutto ciò che i ha scritto nel gruppo
-``group``         l'intera conversazione della triade
+``message``       the single message (counts and sentiment only)
+``dyad_directed`` the messages i sends to j — the unit of persuasion
+``dyad``          the pair's whole conversation, both directions
+``sender_group``  everything i wrote in the group
+``group``         the triad's whole conversation
 
-Gli indici compositi (analytic, clout, authenticity, tone) vengono calcolati
-sui conteggi *sommati* dell'unità, non come media di valori per messaggio: su
-testi di poche parole la seconda strada produrrebbe rumore. La
-standardizzazione avviene separatamente dentro ciascun livello, perché unità di
-lunghezza molto diversa non sono confrontabili sulla stessa scala.
+The composite indices (analytic, clout, authenticity, tone) are computed on the
+unit's *summed* counts, not as an average of per-message values: on texts of a
+few words the latter would produce noise. Standardisation happens separately
+within each level, because units of very different length are not comparable on
+the same scale.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from .text_metrics import (
 
 LEVELS = ('dyad_directed', 'dyad', 'sender_group', 'group')
 
-# Chiavi identificative per ciascun livello di aggregazione.
+# Identifying keys for each aggregation level.
 LEVEL_KEYS = {
     'dyad_directed': ('group_uid', 'sender_id_in_group', 'receiver_id_in_group'),
     'dyad': ('group_uid', 'dyad_key'),
@@ -48,7 +48,7 @@ def read_messages(path: Path) -> list[dict]:
 
 
 def analyze_messages(messages: list[dict]) -> list[dict]:
-    """Aggiunge conteggi e sentiment a ogni messaggio."""
+    """Add counts and sentiment to every message."""
     enriched = []
     for message in messages:
         row = dict(message)
@@ -65,7 +65,7 @@ def _group_by(messages, keys):
 
 
 def aggregate_level(messages: list[dict], level: str) -> list[dict]:
-    """Aggrega i messaggi a un livello e calcola gli indici."""
+    """Aggregate messages to one level and compute the indices."""
     keys = LEVEL_KEYS[level]
     rows = []
     for key_values, bucket in _group_by(messages, keys).items():
@@ -86,7 +86,7 @@ def aggregate_level(messages: list[dict], level: str) -> list[dict]:
         row['duration_seconds'] = (
             round(timestamps[-1] - timestamps[0], 3) if len(timestamps) > 1 else 0.0
         )
-        # Ritmo dello scambio: intervallo mediano fra turni consecutivi.
+        # Pace of the exchange: median gap between consecutive turns.
         gaps = [b - a for a, b in zip(timestamps, timestamps[1:])]
         row['median_gap_seconds'] = round(sorted(gaps)[len(gaps) // 2], 3) if gaps else ''
 
@@ -110,10 +110,10 @@ def aggregate_all(messages: list[dict]) -> dict:
     return {level: aggregate_level(messages, level) for level in LEVELS}
 
 
-# --- Innesto sui dataset dell'esperimento ----------------------------------
+# --- Grafting onto the experiment datasets ---------------------------------
 
-# Colonne portate dentro i dataset finali. Le altre restano nei file di
-# feature, per non gonfiare oltre misura i CSV principali.
+# Columns carried into the final datasets. The rest stay in the feature files,
+# so as not to bloat the main CSVs beyond reason.
 MERGE_COLUMNS = [
     'n_messages', 'wc', 'mean_words_per_message', 'type_token_ratio',
     'duration_seconds', 'median_gap_seconds',
@@ -133,11 +133,11 @@ def _index(rows, keys):
 
 
 def _prefixed(row, prefix, columns=MERGE_COLUMNS):
-    """Colonne da innestare, con il prefisso del blocco.
+    """Columns to graft, carrying the block's prefix.
 
-    Oltre all'elenco fisso vengono portate tutte le colonne `llm_`, che
-    esistono solo quando la rubrica è stata eseguita: elencarle a mano
-    significherebbe pagare le valutazioni e poi non ritrovarle nei dataset.
+    Beyond the fixed list, every `llm_` column is carried across; those exist
+    only when the rubric has run. Listing them by hand would mean paying for the
+    ratings and then not finding them in the datasets.
     """
     if row is None:
         return {f'{prefix}{c}': '' for c in columns}
@@ -146,7 +146,7 @@ def _prefixed(row, prefix, columns=MERGE_COLUMNS):
 
 
 def merge_into_by_partner(by_partner_rows, features, topics_by_directed=None):
-    """Aggiunge a ogni coppia ordinata le misure inviate, ricevute e diadiche."""
+    """Give each directed pair its sent, received and dyadic measures."""
     directed = _index(features['dyad_directed'], LEVEL_KEYS['dyad_directed'])
     dyads = _index(features['dyad'], LEVEL_KEYS['dyad'])
 
@@ -167,7 +167,7 @@ def merge_into_by_partner(by_partner_rows, features, topics_by_directed=None):
 
 def merge_into_aggregated(aggregated_rows, features, topics_by_sender=None,
                           topics_by_group=None):
-    """Aggiunge a ogni partecipante le misure individuali e di gruppo."""
+    """Give each participant their individual and group-level measures."""
     senders = _index(features['sender_group'], LEVEL_KEYS['sender_group'])
     groups = _index(features['group'], LEVEL_KEYS['group'])
 

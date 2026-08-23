@@ -1,8 +1,8 @@
-"""Test per l'analisi del testo (src/).
+"""Tests for the text analysis (src/).
 
-Non richiedono credenziali, rete, né dipendenze opzionali: la rubrica LLM è
-esercitata sulle sue parti pure (costruzione del prompt e sintesi dei giudizi),
-mentre le chiamate all'API non vengono effettuate.
+They need no credentials, no network and no optional dependencies: the LLM
+rubric is exercised on its pure parts (building the prompt and combining the
+ratings), while no API call is ever made.
 
     python tests/test_analysis.py
 """
@@ -47,7 +47,7 @@ class AdverbHeuristicTests(unittest.TestCase):
 
 class CountTests(unittest.TestCase):
     def test_categories_overlap_by_design(self):
-        """"don't" è insieme ausiliare e negazione, come in LIWC."""
+        """"don't" is both an auxiliary and a negation, as in LIWC."""
         counts = text_metrics.count_categories("don't")
         self.assertEqual(counts['wc'], 1)
         self.assertEqual(counts['auxverb'], 1)
@@ -58,7 +58,7 @@ class CountTests(unittest.TestCase):
         self.assertEqual(counts['i'], 1)
         self.assertEqual(counts['you'], 1)
         self.assertEqual(counts['we'], 1)
-        # ppron è l'unione dei sottoinsiemi personali.
+        # ppron is the union of the personal subsets.
         self.assertEqual(counts['ppron'], 3)
 
     def test_sum_counts_matches_concatenated_text(self):
@@ -72,15 +72,15 @@ class CountTests(unittest.TestCase):
 
 
 class AnalyticFormulaTests(unittest.TestCase):
-    """Il CDI è una formula pubblicata: qui si verifica alla lettera."""
+    """The CDI is a published formula: here it is checked to the letter."""
 
     def test_cdi_matches_hand_computation(self):
-        text = 'the deal'  # 2 parole: 1 articolo, nient'altro di function word
+        text = 'the deal'  # 2 words: 1 article, no other function word
         counts = text_metrics.count_categories(text)
         self.assertEqual(counts['wc'], 2)
         self.assertEqual(counts['article'], 1)
         scores = text_metrics.score_counts(counts)
-        # CDI = 30 + 50 (articoli) - 0 = 80
+        # CDI = 30 + 50 (articles) - 0 = 80
         self.assertAlmostEqual(scores['analytic_cdi'], 80.0, places=6)
 
     def test_cdi_drops_with_pronouns_and_negations(self):
@@ -99,7 +99,7 @@ class AnalyticFormulaTests(unittest.TestCase):
 
 
 class CompositeDirectionTests(unittest.TestCase):
-    """I segni dei compositi devono seguire la letteratura di riferimento."""
+    """The composites' signs must follow the reference literature."""
 
     def _score(self, text):
         return text_metrics.score_counts(text_metrics.count_categories(text))
@@ -117,17 +117,17 @@ class CompositeDirectionTests(unittest.TestCase):
         )
 
     def test_tone_does_not_saturate_on_one_emotion_word(self):
-        """La differenza fra percentuali non salta a +/-100 con una sola parola."""
+        """The difference between percentages must not jump to +/-100 on one word."""
         scores = self._score('great to see the rest of the message here ok')
         self.assertLess(abs(scores['tone_raw']), 100.0)
         self.assertEqual(scores['has_emotion_words'], 1)
 
     def test_gibberish_is_flagged_as_non_language(self):
-        """Senza function words il CDI resta alto: va riconosciuto, non creduto."""
+        """With no function words the CDI stays high: spot it, do not believe it."""
         gibberish = self._score('shshahah dhsrhahah qwkjhas zxcvbn mnbvcx')
         self.assertEqual(gibberish['low_language_flag'], 1)
         self.assertEqual(gibberish['pct_funcwords'], 0.0)
-        # Ed è proprio il caso in cui il CDI sembrerebbe massimo.
+        # And this is exactly the case where the CDI would look maximal.
         self.assertGreater(gibberish['analytic_cdi'], 25.0)
 
     def test_real_conversation_is_not_flagged(self):
@@ -139,7 +139,7 @@ class CompositeDirectionTests(unittest.TestCase):
         self.assertGreater(real['pct_funcwords'], 30.0)
 
     def test_short_text_is_never_flagged(self):
-        """Su meno di cinque parole l'indicatore non è affidabile."""
+        """On fewer than five words the indicator is not reliable."""
         self.assertEqual(self._score('blah')['low_language_flag'], 0)
 
     def test_tone_balance_flagged_when_no_emotion_words(self):
@@ -157,7 +157,7 @@ class StandardizeTests(unittest.TestCase):
         ]
         text_metrics.standardize(rows)
         zs = [r['analytic_z'] for r in rows]
-        # I valori escono arrotondati a sei decimali: la tolleranza lo riflette.
+        # The values come out rounded to six decimals: the tolerance reflects that.
         self.assertAlmostEqual(sum(zs) / len(zs), 0.0, places=6)
         self.assertAlmostEqual(
             (sum(z * z for z in zs) / (len(zs) - 1)) ** 0.5, 1.0, places=6
@@ -231,7 +231,7 @@ class AggregationTests(unittest.TestCase):
             (r['group_uid'], r['sender_id_in_group'], r['receiver_id_in_group']): r
             for r in self.features['dyad_directed']
         }
-        # 1->2 e 2->1 sono unità distinte, con testi diversi.
+        # 1->2 and 2->1 are distinct units, with different texts.
         self.assertIn(('g1', '1', '2'), directed)
         self.assertIn(('g1', '2', '1'), directed)
         self.assertNotEqual(
@@ -252,7 +252,7 @@ class AggregationTests(unittest.TestCase):
         )
 
     def test_indices_come_from_summed_counts_not_averaged_percentages(self):
-        """Il CDI del gruppo è quello del testo unito, non la media per messaggio."""
+        """The group's CDI is that of the joined text, not the per-message mean."""
         group = next(r for r in self.features['group'] if r['group_uid'] == 'g1')
         joined = ' '.join(m['body'] for m in SAMPLE if m['group_uid'] == 'g1')
         expected = text_metrics.score_counts(text_metrics.count_categories(joined))
@@ -273,21 +273,21 @@ class MergeTests(unittest.TestCase):
                      partner_id_in_group='2', dyad_key='1_2')]
         agg.merge_into_by_partner(rows, self.features)
         row = rows[0]
-        # Inviati da 1 a 2: "I will support you" = 4 parole.
+        # Sent from 1 to 2: "I will support you" = 4 words.
         self.assertEqual(row['nlp_sent_wc'], 4)
-        # Ricevuti da 2: "ok deal" = 2 parole.
+        # Received from 2: "ok deal" = 2 words.
         self.assertEqual(row['nlp_recv_wc'], 2)
         self.assertEqual(row['nlp_dyad_wc'], 6)
 
     def test_missing_unit_yields_blank_columns_not_crash(self):
-        rows = [dict(group_uid='ignoto', focal_id_in_group='1',
+        rows = [dict(group_uid='unknown', focal_id_in_group='1',
                      partner_id_in_group='2', dyad_key='1_2')]
         agg.merge_into_by_partner(rows, self.features)
         self.assertEqual(rows[0]['nlp_sent_wc'], '')
         self.assertEqual(rows[0]['nlp_dyad_analytic_z'], '')
 
     def test_rubric_columns_reach_the_final_datasets(self):
-        """Le valutazioni sono a pagamento: non devono fermarsi ai file intermedi."""
+        """The ratings are paid for: they must not stop at the intermediate files."""
         group_row = next(
             r for r in self.features['group'] if r['group_uid'] == 'g1'
         )
@@ -302,7 +302,7 @@ class MergeTests(unittest.TestCase):
     def test_aggregated_gets_sender_and_group_blocks(self):
         rows = [dict(group_uid='g1', focal_id_in_group='1')]
         agg.merge_into_aggregated(rows, self.features)
-        # 1 ha scritto "I will support you" e "I don't trust them" = 8 parole.
+        # 1 wrote "I will support you" and "I don't trust them" = 8 words.
         self.assertEqual(rows[0]['nlp_sent_wc'], 8)
         self.assertEqual(rows[0]['nlp_group_n_messages'], 3)
 
@@ -354,12 +354,12 @@ class TopicGPTAdapterTests(unittest.TestCase):
 
     def test_missing_installation_gives_actionable_error(self):
         with self.assertRaises(topicgpt_runner.TopicGPTUnavailable) as ctx:
-            topicgpt_runner.check_installation(Path('/percorso/inesistente'))
+            topicgpt_runner.check_installation(Path('/path/that/does/not/exist'))
         self.assertIn('topicgpt', str(ctx.exception).lower())
 
 
 class LLMRubricPureTests(unittest.TestCase):
-    """Parti della rubrica che non toccano la rete."""
+    """The parts of the rubric that never touch the network."""
 
     def setUp(self):
         from src import llm_rubric
@@ -409,9 +409,9 @@ class LLMRubricPureTests(unittest.TestCase):
         self.assertEqual(row['llm_analytic'], 45.0)
         self.assertAlmostEqual(row['llm_analytic_sd'], 7.071, places=2)
         self.assertEqual(row['llm_n_judgements'], 2)
-        # Impegno di sostegno riconosciuto da entrambi i giudizi.
+        # A support commitment recognised by both ratings.
         self.assertEqual(row['llm_contains_support_commitment'], 1)
-        # Richiesta riconosciuta da uno solo: la maggioranza non c'è.
+        # A request recognised by only one: there is no majority.
         self.assertEqual(row['llm_contains_support_request'], 0)
 
     def test_failed_judgements_are_counted_not_silently_dropped(self):
@@ -434,7 +434,7 @@ class LLMRubricPureTests(unittest.TestCase):
 
 
 class ProviderSelectionTests(unittest.TestCase):
-    """La rubrica deve poter girare senza una chiave Anthropic."""
+    """The rubric must be able to run without an Anthropic key."""
 
     def setUp(self):
         import os
@@ -445,8 +445,8 @@ class ProviderSelectionTests(unittest.TestCase):
             k: os.environ.pop(k, None)
             for k in ('ANTHROPIC_API_KEY', 'OPENAI_API_KEY')
         }
-        # Ollama dipende da cosa gira sulla macchina: lo si neutralizza, così
-        # il test misura la logica di scelta e non l'ambiente.
+        # Ollama depends on what is running on the machine: it is neutralised
+        # so the test measures the selection logic, not the environment.
         self._real_probe = llm_rubric._ollama_is_running
         llm_rubric._ollama_is_running = lambda: False
 
@@ -459,13 +459,13 @@ class ProviderSelectionTests(unittest.TestCase):
                 self.os.environ[key] = value
 
     def test_openai_key_alone_is_enough(self):
-        self.os.environ['OPENAI_API_KEY'] = 'sk-finta'
+        self.os.environ['OPENAI_API_KEY'] = 'sk-fake'
         self.assertEqual(self.llm.resolve_provider(None), 'openai')
         self.assertTrue(self.llm.has_credentials())
 
     def test_anthropic_preferred_when_both_present(self):
-        self.os.environ['OPENAI_API_KEY'] = 'sk-finta'
-        self.os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-finta'
+        self.os.environ['OPENAI_API_KEY'] = 'sk-fake'
+        self.os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-fake'
         self.assertEqual(self.llm.resolve_provider(None), 'anthropic')
 
     def test_local_backend_needs_no_key(self):
@@ -482,7 +482,7 @@ class ProviderSelectionTests(unittest.TestCase):
         self.assertIn('ollama', message)
 
     def test_explicit_provider_without_its_key_is_refused(self):
-        self.os.environ['OPENAI_API_KEY'] = 'sk-finta'
+        self.os.environ['OPENAI_API_KEY'] = 'sk-fake'
         with self.assertRaises(SystemExit) as ctx:
             self.llm.resolve_provider('anthropic')
         self.assertIn('ANTHROPIC_API_KEY', str(ctx.exception))
@@ -492,21 +492,21 @@ class ProviderSelectionTests(unittest.TestCase):
             self.assertTrue(self.llm.default_model_for(name), msg=name)
 
     def test_json_instruction_names_every_field(self):
-        """Il percorso compatibile OpenAI descrive lo schema nel prompt."""
+        """The OpenAI-compatible path describes the schema in the prompt."""
         instruction = self.llm._json_instruction()
         for field in self.llm.SCALE_FIELDS + self.llm.FLAG_FIELDS:
             self.assertIn(field, instruction, msg=field)
 
 
 class RubricCacheTests(unittest.TestCase):
-    """Le valutazioni costano: una volta pagate non si ripagano."""
+    """Ratings cost money: once paid for, they are not paid for again."""
 
     def _setup(self):
         import os
         from src import llm_rubric
         self.llm = llm_rubric
         self.os = os
-        os.environ['OPENAI_API_KEY'] = 'sk-finta'
+        os.environ['OPENAI_API_KEY'] = 'sk-fake'
         self._real_score = llm_rubric.score_unit
         self._real_client = llm_rubric.make_client
         self.calls = []
@@ -544,7 +544,7 @@ class RubricCacheTests(unittest.TestCase):
         self._setup()
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
-                cache = P(tmpdir) / 'rubrica.jsonl'
+                cache = P(tmpdir) / 'rubric.jsonl'
                 units = self._units()
 
                 rows1, reused1 = self.llm.score_units(
@@ -557,25 +557,25 @@ class RubricCacheTests(unittest.TestCase):
                 rows2, reused2 = self.llm.score_units(
                     units, provider='openai', cache_path=cache)
                 self.assertEqual(reused2, 2)
-                self.assertEqual(self.calls, [], 'ha richiamato l API a vuoto')
+                self.assertEqual(self.calls, [], 'it called the API for nothing')
                 self.assertEqual(rows1, rows2)
         finally:
             self._teardown()
 
     def test_changed_transcript_is_not_reused(self):
-        """Dati nuovi devono essere rivalutati, non ripescati."""
+        """New data must be scored again, not fished out of the cache."""
         import tempfile
         from pathlib import Path as P
 
         self._setup()
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
-                cache = P(tmpdir) / 'rubrica.jsonl'
+                cache = P(tmpdir) / 'rubric.jsonl'
                 units = self._units()
                 self.llm.score_units(units, provider='openai', cache_path=cache)
 
                 self.calls.clear()
-                units[0].transcript = 'testo modificato'
+                units[0].transcript = 'modified text'
                 _rows, reused = self.llm.score_units(
                     units, provider='openai', cache_path=cache)
                 self.assertEqual(reused, 1)
@@ -590,7 +590,7 @@ class RubricCacheTests(unittest.TestCase):
         self._setup()
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
-                cache = P(tmpdir) / 'rubrica.jsonl'
+                cache = P(tmpdir) / 'rubric.jsonl'
                 units = self._units()
                 self.llm.score_units(units, provider='openai', replicates=1,
                                      cache_path=cache)
@@ -603,7 +603,7 @@ class RubricCacheTests(unittest.TestCase):
             self._teardown()
 
     def test_failed_evaluations_are_not_cached(self):
-        """Un errore temporaneo non deve restare cristallizzato per sempre."""
+        """A temporary error must not stay frozen for ever."""
         import tempfile
         from pathlib import Path as P
 
@@ -620,7 +620,7 @@ class RubricCacheTests(unittest.TestCase):
 
             self.llm.score_unit = failing
             with tempfile.TemporaryDirectory() as tmpdir:
-                cache = P(tmpdir) / 'rubrica.jsonl'
+                cache = P(tmpdir) / 'rubric.jsonl'
                 units = self._units()
                 self.llm.score_units(units, provider='openai', cache_path=cache)
                 self.calls.clear()
@@ -632,18 +632,18 @@ class RubricCacheTests(unittest.TestCase):
             self._teardown()
 
     def test_truncated_cache_line_is_ignored(self):
-        """Un'interruzione a metà scrittura non deve rendere illeggibile tutto."""
+        """An interruption mid-write must not make everything unreadable."""
         import tempfile
         from pathlib import Path as P
 
         self._setup()
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
-                cache = P(tmpdir) / 'rubrica.jsonl'
+                cache = P(tmpdir) / 'rubric.jsonl'
                 units = self._units()
                 self.llm.score_units(units, provider='openai', cache_path=cache)
                 with cache.open('a', encoding='utf-8') as handle:
-                    handle.write('{"signature": "tronc')
+                    handle.write('{"signature": "trunc')
 
                 entries = self.llm.load_cache(cache)
                 self.assertEqual(len(entries), 2)
@@ -652,14 +652,14 @@ class RubricCacheTests(unittest.TestCase):
 
 
 def analysis_args(outdir, merged_dir, stem, **overrides):
-    """Spazio dei nomi equivalente a quello costruito da run.py."""
+    """A namespace equivalent to the one run.py builds."""
     from types import SimpleNamespace
 
     base = dict(
         merged_dir=merged_dir, outdir=outdir, stem=stem, verbose=False,
         llm=False, llm_provider=None, llm_models=None, llm_replicates=1,
         llm_levels=['group'], llm_batch=False, llm_dry_run=False,
-        topics=False, topicgpt_repo='/percorso/inesistente',
+        topics=False, topicgpt_repo='/path/that/does/not/exist',
         topicgpt_api='openai', topicgpt_model='gpt-4o',
         topicgpt_unit='dyad_directed', topicgpt_no_refine=False,
         topicgpt_dry_run=False,
@@ -669,7 +669,7 @@ def analysis_args(outdir, merged_dir, stem, **overrides):
 
 
 class PreflightTests(unittest.TestCase):
-    """I prerequisiti si verificano prima di spendere, non dopo."""
+    """Prerequisites are checked before spending, not after."""
 
     def setUp(self):
         import os
@@ -696,19 +696,19 @@ class PreflightTests(unittest.TestCase):
         return analysis_args(Path('/tmp'), Path('/tmp'), 't', **kw)
 
     def test_passes_when_nothing_extra_is_requested(self):
-        self.pipeline.preflight(self._args())  # non deve sollevare
+        self.pipeline.preflight(self._args())  # must not raise
 
     def test_missing_topicgpt_stops_before_any_call(self):
         with self.assertRaises(SystemExit) as ctx:
             self.pipeline.preflight(self._args(topics=True))
         message = str(ctx.exception)
-        self.assertIn('Nessuna chiamata', message)
-        # Il ramo esatto dipende da cosa manca — pacchetto o file di prompt —
-        # e non e' quello che il test vuole fissare.
+        self.assertIn('No call', message)
+        # The exact branch depends on what is missing — package or prompt
+        # file — and that is not what this test means to pin down.
         self.assertIn('topicgpt', message.lower())
 
     def test_all_problems_are_reported_together(self):
-        """Meglio una lista sola che scoprirne uno per volta."""
+        """Better one list than discovering them one at a time."""
         with self.assertRaises(SystemExit) as ctx:
             self.pipeline.preflight(self._args(llm=True, topics=True))
         message = str(ctx.exception)
@@ -722,25 +722,25 @@ class PreflightTests(unittest.TestCase):
         )
 
     def test_batch_with_the_wrong_provider_is_caught_upfront(self):
-        self.os.environ['OPENAI_API_KEY'] = 'sk-finta'
+        self.os.environ['OPENAI_API_KEY'] = 'sk-fake'
         with self.assertRaises(SystemExit) as ctx:
             self.pipeline.preflight(self._args(llm=True, llm_batch=True))
         self.assertIn('--llm-batch', str(ctx.exception))
 
 
 class PartialResultsTests(unittest.TestCase):
-    """Se uno stadio a valle fallisce, quello gia' pagato va comunque salvato."""
+    """If a later stage fails, the one already paid for must still be saved."""
 
     STEM = 't'
 
     def setUp(self):
         import os
-        # La rubrica e' simulata, ma il controllo preliminare pretende comunque
-        # un fornitore: gliene si dichiara uno, altrimenti si fermerebbe prima
-        # di arrivare allo scenario che il test vuole esercitare.
+        # The rubric is simulated, but the preflight check still demands a
+        # provider: one is declared, otherwise it would stop before reaching
+        # the scenario this test means to exercise.
         self.os = os
         self._saved = os.environ.get('OPENAI_API_KEY')
-        os.environ['OPENAI_API_KEY'] = 'sk-finta'
+        os.environ['OPENAI_API_KEY'] = 'sk-fake'
 
     def tearDown(self):
         if self._saved is None:
@@ -789,10 +789,10 @@ class PartialResultsTests(unittest.TestCase):
             real_llm = pipeline.run_llm_stage
 
             def failing_topics(messages, args):
-                raise RuntimeError('TopicGPT esploso a meta strada')
+                raise RuntimeError('TopicGPT blew up halfway through')
 
             def fake_llm(features, transcripts, args):
-                # Simula valutazioni gia' pagate.
+                # Simulates ratings already paid for.
                 for row in features['group']:
                     row['llm_analytic'] = 77.0
 
@@ -808,23 +808,23 @@ class PartialResultsTests(unittest.TestCase):
                 pipeline.run_topics_stage = real_topics
                 pipeline.run_llm_stage = real_llm
 
-            # Il fallimento e' registrato, non nascosto.
+            # The failure is recorded, not hidden.
             self.assertIsNotNone(summary['failed_stage'])
             self.assertEqual(summary['failed_stage'][0], 'TopicGPT')
 
-            # I dataset esistono e contengono le valutazioni gia' pagate.
+            # The datasets exist and hold the ratings already paid for.
             for path in summary['datasets']:
                 self.assertTrue(path.is_file(), msg=str(path))
             with summary['datasets'][1].open(encoding='utf-8-sig') as handle:
                 rows = list(_csv.DictReader(handle))
             self.assertEqual(float(rows[0]['nlp_group_llm_analytic']), 77.0)
 
-            # E il programma deve segnalare l'esito parziale con codice non zero.
+            # And the program must report the partial outcome with a non-zero code.
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(pipeline.print_summary(summary), 1)
 
     def test_run_refuses_to_start_when_prerequisites_are_missing(self):
-        """Il controllo dev'essere invocato da run(), non solo esistere."""
+        """The check must be invoked by run(), not merely exist."""
         import contextlib
         import io
         import tempfile
@@ -840,8 +840,8 @@ class PartialResultsTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 with contextlib.redirect_stdout(io.StringIO()):
                     pipeline.run(args)
-            self.assertIn('Nessuna chiamata', str(ctx.exception))
-            # E non deve aver prodotto nulla.
+            self.assertIn('No call', str(ctx.exception))
+            # And it must have produced nothing.
             self.assertFalse((outdir / 'datasets').exists())
 
     def test_clean_run_returns_zero(self):
@@ -862,7 +862,7 @@ class PartialResultsTests(unittest.TestCase):
 
 
 class ReportTests(unittest.TestCase):
-    """Il riassunto deve reggere anche quando mancano gli stadi facoltativi."""
+    """The summary must hold up even when the optional stages are missing."""
 
     def _write(self, outdir, aggregated, by_partner, summary=None):
         import csv as _csv
@@ -913,14 +913,14 @@ class ReportTests(unittest.TestCase):
             paths = report.write(outdir, 't')
             self.assertEqual(len(paths), 2)
             markdown = paths[0].read_text(encoding='utf-8')
-        self.assertIn('Copertura', markdown)
-        self.assertIn('Esiti del gioco', markdown)
-        # Le sezioni degli stadi non eseguiti non devono comparire.
-        self.assertNotIn('Rubrica di validazione', markdown)
-        self.assertNotIn('## Topic', markdown)
+        self.assertIn('Coverage', markdown)
+        self.assertIn('Game outcomes', markdown)
+        # The sections of the stages not run must not appear.
+        self.assertNotIn('Validation rubric', markdown)
+        self.assertNotIn('## Topics', markdown)
 
     def test_group_variables_are_not_counted_once_per_member(self):
-        """Le variabili di triade si ripetono su ogni riga: vanno deduplicate."""
+        """Triad variables repeat on every row: they must be deduplicated."""
         import tempfile
         from src import report
 
@@ -932,7 +932,7 @@ class ReportTests(unittest.TestCase):
 
         self.assertEqual(data['coverage']['n_triads'], 1)
         self.assertEqual(data['coverage']['n_participants'], 2)
-        # Il payoff di gruppo e' 6, non 12.
+        # The group payoff is 6, not 12.
         self.assertEqual(data['outcomes']['per_treatment'][0]['mean_group_payoff'], 6.0)
 
     def test_optional_sections_appear_when_their_data_is_there(self):
@@ -953,9 +953,9 @@ class ReportTests(unittest.TestCase):
             self._write(outdir, aggregated, by_partner)
             markdown = report.write(outdir, 't')[0].read_text(encoding='utf-8')
 
-        self.assertIn('Linguaggio', markdown)
-        self.assertIn('Rubrica di validazione', markdown)
-        self.assertIn('## Topic', markdown)
+        self.assertIn('Language', markdown)
+        self.assertIn('Validation rubric', markdown)
+        self.assertIn('## Topics', markdown)
         self.assertIn('Commitment', markdown)
 
     def test_html_is_self_contained_and_escaped(self):
@@ -969,8 +969,8 @@ class ReportTests(unittest.TestCase):
             self._write(outdir, aggregated, by_partner)
             page = report.write(outdir, 't')[1].read_text(encoding='utf-8')
 
-        self.assertIn('<style>', page)          # niente fogli di stile esterni
-        self.assertNotIn('<script>alert', page)  # contenuto sfuggito
+        self.assertIn('<style>', page)          # no external stylesheets
+        self.assertNotIn('<script>alert', page)  # content escaped
         self.assertIn('&lt;script&gt;', page)
 
     def test_empty_values_do_not_crash(self):
@@ -989,7 +989,7 @@ class ReportTests(unittest.TestCase):
 
 
 class ArchiveTests(unittest.TestCase):
-    """Rilanciare non deve cancellare l'esecuzione precedente."""
+    """Launching again must not erase the previous run."""
 
     def _args(self, **kw):
         from types import SimpleNamespace
@@ -1004,20 +1004,20 @@ class ArchiveTests(unittest.TestCase):
         (outdir / 'datasets').mkdir(parents=True, exist_ok=True)
         (outdir / 'datasets' / 't_chat_aggregated_nlp.csv').write_text(
             f'col\n{marker}\n', encoding='utf-8')
-        (outdir / 't_report.md').write_text(f'# rapporto {marker}',
+        (outdir / 't_report.md').write_text(f'# report {marker}',
                                             encoding='utf-8')
 
     def test_stages_reflect_what_was_actually_run(self):
         from src import archive
 
-        self.assertEqual(archive.stages_of(self._args()), ['misure'])
+        self.assertEqual(archive.stages_of(self._args()), ['measures'])
         self.assertEqual(
             archive.stages_of(self._args(llm=True, topics=True)),
-            ['misure', 'rubrica', 'topic'])
-        # Le prove in secca non sono esecuzioni.
+            ['measures', 'rubric', 'topics'])
+        # Dry runs are not runs.
         self.assertEqual(
             archive.stages_of(self._args(llm=True, llm_dry_run=True)),
-            ['misure'])
+            ['measures'])
 
     def test_a_second_run_does_not_erase_the_first(self):
         import tempfile
@@ -1025,21 +1025,21 @@ class ArchiveTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = Path(tmpdir)
-            self._prepare(outdir, 'primo')
+            self._prepare(outdir, 'first')
             first = archive.save(outdir, 't', self._args(), {})
 
-            self._prepare(outdir, 'secondo')
+            self._prepare(outdir, 'second')
             second = archive.save(outdir, 't', self._args(llm=True), {})
 
             self.assertNotEqual(first, second)
-            self.assertIn('primo', (first / 'datasets' /
+            self.assertIn('first', (first / 'datasets' /
                                     't_chat_aggregated_nlp.csv').read_text())
-            self.assertIn('secondo', (second / 'datasets' /
-                                      't_chat_aggregated_nlp.csv').read_text())
+            self.assertIn('second', (second / 'datasets' /
+                                     't_chat_aggregated_nlp.csv').read_text())
             self.assertEqual(len(archive.list_runs(outdir)), 2)
 
     def test_same_second_collision_is_resolved(self):
-        """Due esecuzioni possono chiudersi nello stesso secondo."""
+        """Two runs can finish within the same second."""
         import tempfile
         from src import archive
 
@@ -1063,13 +1063,13 @@ class ArchiveTests(unittest.TestCase):
             run_dir = archive.save(outdir, 't', args, dict(n_messages=283))
 
             info = _json.loads((run_dir / 'run.json').read_text(encoding='utf-8'))
-        self.assertEqual(info['stages'], ['misure', 'rubrica'])
-        self.assertEqual(info['rubrica']['provider'], 'openai')
-        self.assertEqual(info['rubrica']['replicates'], 2)
+        self.assertEqual(info['stages'], ['measures', 'rubric'])
+        self.assertEqual(info['rubric']['provider'], 'openai')
+        self.assertEqual(info['rubric']['replicates'], 2)
         self.assertEqual(info['n_messages'], 283)
 
     def test_listing_is_ordered_by_recorded_instant(self):
-        """I suffissi delle collisioni non seguono l'ordine alfabetico."""
+        """The collision suffixes do not follow alphabetical order."""
         import json as _json
         import tempfile
         from src import archive
@@ -1081,7 +1081,7 @@ class ArchiveTests(unittest.TestCase):
                                 ('2026-01-01_120000_2', '2026-01-01T12:00:02')):
                 (runs / name).mkdir(parents=True)
                 (runs / name / 'run.json').write_text(
-                    _json.dumps({'timestamp': stamp, 'stages': ['misure']}),
+                    _json.dumps({'timestamp': stamp, 'stages': ['measures']}),
                     encoding='utf-8')
             listed = [r['path'].name for r in archive.list_runs(outdir)]
         self.assertEqual(listed[0], '2026-01-01_120000_10')
@@ -1092,28 +1092,28 @@ class ArchiveTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = Path(tmpdir)
-            (outdir / 'runs' / 'rotta').mkdir(parents=True)
-            (outdir / 'runs' / 'rotta' / 'run.json').write_text(
-                '{non json', encoding='utf-8')
+            (outdir / 'runs' / 'broken').mkdir(parents=True)
+            (outdir / 'runs' / 'broken' / 'run.json').write_text(
+                '{not json', encoding='utf-8')
             runs = archive.list_runs(outdir)
         self.assertEqual(len(runs), 1)
         self.assertIn('?', archive.render_list(runs))
 
 
 class PruneTests(unittest.TestCase):
-    """La potatura dell'archivio: irreversibile, quindi va delimitata bene."""
+    """Pruning the archive: irreversible, so it must be well fenced in."""
 
-    def _archive(self, tmpdir, quante):
+    def _archive(self, tmpdir, how_many):
         import json as _json
 
         outdir = Path(tmpdir)
-        for i in range(quante):
+        for i in range(how_many):
             run = outdir / 'runs' / f'2026-01-01_1200{i:02d}'
             (run / 'datasets').mkdir(parents=True)
             (run / 'datasets' / 'x.csv').write_text('a', encoding='utf-8')
             (run / 'run.json').write_text(
                 _json.dumps({'timestamp': f'2026-01-01T12:00:{i:02d}',
-                             'stages': ['misure']}), encoding='utf-8')
+                             'stages': ['measures']}), encoding='utf-8')
         return outdir
 
     def test_keeps_the_most_recent(self):
@@ -1122,11 +1122,11 @@ class PruneTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = self._archive(tmpdir, 5)
-            rimossi = archive.prune(outdir, 2)
-            rimasti = [r['path'].name for r in archive.list_runs(outdir)]
+            removed = archive.prune(outdir, 2)
+            kept = [r['path'].name for r in archive.list_runs(outdir)]
 
-        self.assertEqual(len(rimossi), 3)
-        self.assertEqual(rimasti, ['2026-01-01_120004', '2026-01-01_120003'])
+        self.assertEqual(len(removed), 3)
+        self.assertEqual(kept, ['2026-01-01_120004', '2026-01-01_120003'])
 
     def test_is_idempotent(self):
         import tempfile
@@ -1157,21 +1157,21 @@ class PruneTests(unittest.TestCase):
             self.assertEqual(len(archive.list_runs(outdir)), 2)
 
     def test_only_touches_the_archive(self):
-        """Cancella dentro output/runs e da nessun'altra parte."""
+        """It deletes inside output/runs and nowhere else."""
         import tempfile
         from src import archive
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = self._archive(tmpdir, 3)
-            altrove = outdir / 'datasets'
-            altrove.mkdir()
-            (altrove / 'importante.csv').write_text('dati', encoding='utf-8')
+            elsewhere = outdir / 'datasets'
+            elsewhere.mkdir()
+            (elsewhere / 'important.csv').write_text('data', encoding='utf-8')
             archive.prune(outdir, 1)
-            self.assertTrue((altrove / 'importante.csv').is_file())
+            self.assertTrue((elsewhere / 'important.csv').is_file())
 
 
 class ConfigTests(unittest.TestCase):
-    """Chiavi API e percorsi: devono essere prevedibili e non sorprendere."""
+    """API keys and paths: they must be predictable and never surprise."""
 
     def setUp(self):
         from src import config
@@ -1179,45 +1179,45 @@ class ConfigTests(unittest.TestCase):
 
     def test_parses_the_forms_people_actually_write(self):
         parsed = self.secrets.parse_env(
-            '# commento\n'
-            'OPENAI_API_KEY=sk-uno\n'
-            'export ANTHROPIC_API_KEY="sk-ant-due"\n'
-            "OPENAI_BASE_URL='https://esempio/v1'\n"
+            '# a comment\n'
+            'OPENAI_API_KEY=sk-one\n'
+            'export ANTHROPIC_API_KEY="sk-ant-two"\n'
+            "OPENAI_BASE_URL='https://example/v1'\n"
             '\n'
-            'riga senza uguale\n'
+            'a line without an equals sign\n'
         )
-        self.assertEqual(parsed['OPENAI_API_KEY'], 'sk-uno')
-        self.assertEqual(parsed['ANTHROPIC_API_KEY'], 'sk-ant-due')
-        self.assertEqual(parsed['OPENAI_BASE_URL'], 'https://esempio/v1')
-        self.assertNotIn('riga senza uguale', parsed)
+        self.assertEqual(parsed['OPENAI_API_KEY'], 'sk-one')
+        self.assertEqual(parsed['ANTHROPIC_API_KEY'], 'sk-ant-two')
+        self.assertEqual(parsed['OPENAI_BASE_URL'], 'https://example/v1')
+        self.assertNotIn('a line without an equals sign', parsed)
 
     def test_values_containing_equals_survive(self):
         parsed = self.secrets.parse_env('K=abc=def==\n')
         self.assertEqual(parsed['K'], 'abc=def==')
 
     def test_environment_wins_over_the_file(self):
-        """Chi gestisce le chiavi a modo suo non deve essere scavalcato."""
+        """Whoever manages their keys their own way must not be overridden."""
         import os
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / '.env'
-            path.write_text('TEST_CHIAVE_A=dal_file\nTEST_CHIAVE_B=dal_file\n',
+            path.write_text('TEST_KEY_A=from_file\nTEST_KEY_B=from_file\n',
                             encoding='utf-8')
-            os.environ['TEST_CHIAVE_A'] = 'dall_ambiente'
-            os.environ.pop('TEST_CHIAVE_B', None)
+            os.environ['TEST_KEY_A'] = 'from_environment'
+            os.environ.pop('TEST_KEY_B', None)
             try:
                 loaded = self.secrets.load_env(path)
-                self.assertEqual(os.environ['TEST_CHIAVE_A'], 'dall_ambiente')
-                self.assertEqual(os.environ['TEST_CHIAVE_B'], 'dal_file')
-                self.assertIn('TEST_CHIAVE_B', loaded)
-                self.assertNotIn('TEST_CHIAVE_A', loaded)
+                self.assertEqual(os.environ['TEST_KEY_A'], 'from_environment')
+                self.assertEqual(os.environ['TEST_KEY_B'], 'from_file')
+                self.assertIn('TEST_KEY_B', loaded)
+                self.assertNotIn('TEST_KEY_A', loaded)
             finally:
-                os.environ.pop('TEST_CHIAVE_A', None)
-                os.environ.pop('TEST_CHIAVE_B', None)
+                os.environ.pop('TEST_KEY_A', None)
+                os.environ.pop('TEST_KEY_B', None)
 
     def test_missing_file_is_not_an_error(self):
-        self.assertEqual(self.secrets.load_env(Path('/percorso/inesistente')), [])
+        self.assertEqual(self.secrets.load_env(Path('/path/that/does/not/exist')), [])
 
     def test_missing_key_explains_what_to_do(self):
         import os
@@ -1230,7 +1230,7 @@ class ConfigTests(unittest.TestCase):
         self.assertIn('TopicGPT', message)
 
     def test_secrets_file_is_git_ignored(self):
-        """Le chiavi non devono mai poter finire sotto controllo di versione."""
+        """The keys must never be able to end up under version control."""
         self.assertIs(
             self.secrets.is_git_ignored(self.secrets.ENV_FILE), True
         )

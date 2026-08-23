@@ -1,15 +1,15 @@
 """
-Dashboard locale per lanciare i run e vederne i risultati.
+Local dashboard for launching runs and seeing their results.
 
-    python run.py dashboard        (oppure: make dashboard)
+    python run.py dashboard        (or: make dashboard)
 
-Sta in ascolto solo su 127.0.0.1: e' uno strumento da scrivania, non un
-servizio. Esegue processi, quindi non deve essere raggiungibile dalla rete, e
-gli argomenti dei comandi vengono presi da un elenco chiuso (vedi runner.py) e
-mai composti con testo arrivato dal browser.
+It listens on 127.0.0.1 only: this is a desktop tool, not a service. It executes
+processes, so it must not be reachable from the network, and command arguments
+are taken from a closed list (see runner.py), never composed from text arriving
+from the browser.
 
-Libreria standard soltanto: htmx e' incluso nel progetto, cosi' la dashboard
-funziona anche senza connessione.
+Standard library only: htmx ships with the project, so the dashboard works
+offline too.
 """
 
 from __future__ import annotations
@@ -41,16 +41,16 @@ class Handler(BaseHTTPRequestHandler):
     server_version = 'AnalisiTesto'
 
     def log_message(self, *_args):
-        """Silenzio: il terminale serve a mostrare l'indirizzo, non le richieste."""
+        """Silence: the terminal is for showing the address, not requests."""
 
-    # --- risposte ---------------------------------------------------------
+    # --- responses --------------------------------------------------------
 
     def _send(self, body: bytes, content_type='text/html; charset=utf-8',
               status=200):
         self.send_response(status)
         self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(body)))
-        # Le pagine sono generate a ogni richiesta: non vanno mai messe in cache.
+        # Pages are generated on every request: never cache them.
         self.send_header('Cache-Control', 'no-store')
         self.end_headers()
         self.wfile.write(body)
@@ -59,7 +59,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(markup.encode('utf-8'), status=status)
 
     def _file(self, path: Path, base: Path):
-        """Serve un file, rifiutando qualunque percorso fuori dalla sua radice."""
+        """Serve a file, refusing any path outside its root."""
         try:
             resolved = path.resolve()
             resolved.relative_to(base.resolve())
@@ -72,9 +72,9 @@ class Handler(BaseHTTPRequestHandler):
         content_type = CONTENT_TYPES.get(resolved.suffix, 'application/octet-stream')
         self._send(resolved.read_bytes(), content_type=content_type)
 
-    # --- instradamento ----------------------------------------------------
+    # --- routing ----------------------------------------------------------
 
-    def do_GET(self):  # noqa: N802 - nome imposto da BaseHTTPRequestHandler
+    def do_GET(self):  # noqa: N802 - name imposed by BaseHTTPRequestHandler
         route = urlparse(self.path).path
 
         if route == '/':
@@ -86,7 +86,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route == '/report':
             self._html(views.report_panel())
         elif route.startswith('/run/'):
-            # Solo il nome della cartella: nessun percorso, nessuna risalita.
+            # Folder name only: no paths, no traversal.
             name = route[len('/run/'):].strip('/')
             if '/' in name or name in ('', '.', '..'):
                 self._html('<h1>404</h1>', status=404)
@@ -97,7 +97,7 @@ class Handler(BaseHTTPRequestHandler):
             if reports:
                 self._file(reports[-1], config.OUTPUT_DIR)
             else:
-                self._html('<p>Nessun rapporto ancora prodotto.</p>')
+                self._html('<p>No report produced yet.</p>')
         elif route.startswith('/runs/'):
             self._file(config.OUTPUT_DIR / 'runs' / route[len('/runs/'):],
                        config.OUTPUT_DIR / 'runs')
@@ -120,8 +120,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if not runner.start(build_command(form)):
-            self._html('<div class="logbody empty">Un run e\' gia\' in corso: '
-                       'attendi che finisca.</div>')
+            self._html('<div class="logbody empty">A run is already in '
+                       'progress: wait for it to finish.</div>')
             return
         self._html(views.log_panel())
 
@@ -132,14 +132,14 @@ def serve(host='127.0.0.1', port=8765, open_browser=True):
 
     httpd = ThreadingHTTPServer((host, port), Handler)
     url = f'http://{host}:{port}/'
-    print(f'Dashboard su {url}')
-    print('Ctrl-C per chiudere.')
+    print(f'Dashboard at {url}')
+    print('Ctrl-C to close.')
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print('\nChiusa.')
+        print('\nClosed.')
     finally:
         httpd.server_close()
 

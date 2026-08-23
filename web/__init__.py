@@ -1,1 +1,1 @@
-"""Dashboard locale per lanciare i run e vederne i risultati."""
+"""Local dashboard for launching runs and seeing their results."""

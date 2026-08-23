@@ -1,31 +1,32 @@
-# Dipendenze della pipeline di analisi del testo.
+# Dependencies of the text analysis pipeline.
 #
-#   pip install -r scripts/nlp/requirements.txt
+#   pip install -r requirements.txt
 #
-# Lo stadio delle misure testuali deterministiche (text_metrics, aggregate)
-# gira con la sola libreria standard: nulla qui sotto e' necessario per
-# eseguirlo. Le voci servono agli stadi opzionali.
+# The deterministic text measures (text_metrics, aggregate) run on the standard
+# library alone: nothing below is needed for that stage. These entries serve the
+# optional stages.
 
-# Sentiment validato e open source. Senza, text_metrics ripiega sui dizionari
-# di semi e lo segnala nella colonna sentiment_backend.
+# Validated, open-source sentiment. Without it text_metrics falls back to the
+# seed dictionaries and says so in the sentiment_backend column.
 vaderSentiment>=3.3.2
 
-# Rubrica di validazione (scripts/nlp/llm_rubric.py) e client di TopicGPT.
-# Il fornitore della rubrica e' intercambiabile: basta una delle due librerie,
-# quella corrispondente alla chiave che si usa. `openai` serve comunque a
-# TopicGPT, ed e' anche il client dei modelli locali via Ollama.
-# I limiti superiori non sono una scelta nostra: TopicGPT dichiara openai<2 e
-# anthropic<1, e installandolo declassa comunque queste librerie. Dichiararli
-# qui rende l'ambiente identico a prescindere dall'ordine in cui si installa,
-# invece di dipendere da chi arriva per ultimo.
+# Validation rubric (src/llm_rubric.py) and TopicGPT's client.
+# The rubric's provider is interchangeable: only the library matching the key
+# you use is required. `openai` is needed by TopicGPT anyway, and is also the
+# client for local models served through Ollama.
+#
+# The upper bounds are not our choice: TopicGPT declares openai<2 and
+# anthropic<1, and installing it downgrades these libraries regardless.
+# Declaring them here makes the environment identical whatever the install
+# order, instead of depending on whoever comes last.
 openai>=1.54,<2
 pydantic>=2.0
-anthropic>=0.40,<1   # solo se si sceglie Claude come giudice della rubrica
+anthropic>=0.40,<1   # only if you pick Claude as the rubric's judge
 
-# TopicGPT (Pham et al., 2024) non si installa da qui: i file di prompt fanno
-# parte del metodo e stanno nel repository, non nel pacchetto pubblicato.
+# TopicGPT (Pham et al., 2024) is not installed from here: the prompt files are
+# part of the method and live in the repository, not in the published package.
 #   git clone https://github.com/chtmp223/topicGPT.git
 #   pip install ./topicGPT
-# Installare dal repository e non da PyPI: nella release 0.2.7 vLLM e' importato
-# al primo livello e non e' installabile su macOS senza GPU, mentre sul ramo
-# main e' gia' diventato un extra opzionale.
+# Install from the repository rather than PyPI: release 0.2.7 imports vLLM at
+# top level and cannot be installed on macOS without a GPU, while the main
+# branch has already made it an optional extra.

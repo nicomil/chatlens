@@ -1,19 +1,19 @@
 """
-Archivio delle esecuzioni.
+Archive of runs.
 
-`output/` contiene sempre l'ultima esecuzione, a percorsi fissi: e' quello che
-si apre e che si porta in Stata. Ogni esecuzione viene pero' anche copiata in
-`output/runs/<data_ora>/`, cosi' rilanciare non cancella quello che c'era prima.
+`output/` always holds the latest run, at fixed paths: that is what you open and
+what you take into Stata. Every run is also copied to
+`output/runs/<date_time>/`, so that re-running does not erase what came before.
 
-Serve perche' due esecuzioni non producono gli stessi file. Una senza `--llm`
-riscrive i dataset senza le colonne della rubrica: senza archivio, il lavoro
-gia' pagato sparirebbe dai file finali pur restando in cache. Con l'archivio
-resta consultabile la versione precedente, insieme ai parametri con cui era
-stata prodotta.
+This matters because two runs do not produce the same files. One without `--llm`
+rewrites the datasets without the rubric columns: with no archive, work already
+paid for would vanish from the final files even though it survives in the cache.
+With the archive, the previous version stays available together with the
+parameters that produced it.
 
-Viene archiviato solo cio' che serve a rileggere un'esecuzione — i due dataset,
-il rapporto, l'elenco dei topic e i parametri — non le misure intermedie, che
-si rigenerano.
+Only what is needed to re-read a run is archived — the two datasets, the report,
+the topic list and the parameters — not the intermediate measures, which can be
+regenerated.
 """
 
 from __future__ import annotations
@@ -27,17 +27,17 @@ RUN_INFO = 'run.json'
 
 
 def stages_of(args) -> list[str]:
-    """Stadi effettivamente eseguiti, per come sono stati chiesti."""
-    stages = ['misure']
+    """The stages actually run, as they were requested."""
+    stages = ['measures']
     if getattr(args, 'llm', False) and not getattr(args, 'llm_dry_run', False):
-        stages.append('rubrica')
+        stages.append('rubric')
     if getattr(args, 'topics', False) and not getattr(args, 'topicgpt_dry_run', False):
-        stages.append('topic')
+        stages.append('topics')
     return stages
 
 
 def describe(args, summary: dict) -> dict:
-    """Parametri e numeri dell'esecuzione, per poterla riconoscere dopo."""
+    """Parameters and figures of the run, so it can be recognised later."""
     info = dict(
         timestamp=datetime.now().isoformat(timespec='seconds'),
         stem=getattr(args, 'stem', ''),
@@ -46,15 +46,15 @@ def describe(args, summary: dict) -> dict:
         levels=summary.get('levels'),
         failed_stage=(summary.get('failed_stage') or [None])[0],
     )
-    if 'rubrica' in info['stages']:
-        info['rubrica'] = dict(
-            provider=getattr(args, 'llm_provider', None) or 'automatico',
-            models=getattr(args, 'llm_models', None) or 'predefinito',
+    if 'rubric' in info['stages']:
+        info['rubric'] = dict(
+            provider=getattr(args, 'llm_provider', None) or 'automatic',
+            models=getattr(args, 'llm_models', None) or 'default',
             replicates=getattr(args, 'llm_replicates', 1),
             levels=list(getattr(args, 'llm_levels', []) or []),
         )
-    if 'topic' in info['stages']:
-        info['topic'] = dict(
+    if 'topics' in info['stages']:
+        info['topics'] = dict(
             api=getattr(args, 'topicgpt_api', None),
             model=getattr(args, 'topicgpt_model', None),
             unit=getattr(args, 'topicgpt_unit', None),
@@ -65,12 +65,12 @@ def describe(args, summary: dict) -> dict:
 
 
 def save(outdir: Path, stem: str, args, summary: dict) -> Path:
-    """Copia l'esecuzione in una cartella datata. Restituisce il percorso."""
+    """Copy the run into a dated folder. Returns the path."""
     stamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
     run_dir = outdir / 'runs' / stamp
-    # Due esecuzioni possono concludersi nello stesso secondo: senza suffisso
-    # la seconda cancellerebbe la prima, che e' esattamente cio' che l'archivio
-    # deve impedire.
+    # Two runs can finish within the same second: without a suffix the second
+    # would erase the first, which is exactly what the archive exists to
+    # prevent.
     counter = 2
     while run_dir.exists():
         run_dir = outdir / 'runs' / f'{stamp}_{counter}'
@@ -85,10 +85,10 @@ def save(outdir: Path, stem: str, args, summary: dict) -> Path:
         if source.is_file():
             shutil.copy2(source, run_dir / f'report.{suffix}')
 
-    # L'elenco dei topic definisce l'ontologia usata: senza, un'esecuzione con
-    # topic non e' piu' interpretabile a distanza di tempo.
+    # The topic list defines the ontology that was used: without it, a run with
+    # topics is no longer interpretable months later.
     topics = outdir / 'topicgpt' / 'generation_1.md'
-    if topics.is_file() and 'topic' in stages_of(args):
+    if topics.is_file() and 'topics' in stages_of(args):
         shutil.copy2(topics, run_dir / 'topics.md')
 
     info = describe(args, summary)
@@ -98,8 +98,31 @@ def save(outdir: Path, stem: str, args, summary: dict) -> Path:
     return run_dir
 
 
+# Runs archived before the interface was translated carry Italian keys. Reading
+# both spellings costs two lines and keeps an old archive readable, which is the
+# whole point of having one.
+LEGACY_KEYS = {'rubric': 'rubrica', 'topics': 'topic'}
+LEGACY_STAGES = {'misure': 'measures', 'rubrica': 'rubric', 'topic': 'topics'}
+
+
+def _normalise(info: dict) -> dict:
+    for new, old in LEGACY_KEYS.items():
+        if new not in info and old in info:
+            info[new] = info[old]
+        # Old runs wrote 'automatico' where the current ones write 'automatic'
+        # (provider) or 'default' (model).
+        block = info.get(new)
+        if isinstance(block, dict):
+            for field, current in (('provider', 'automatic'), ('models', 'default')):
+                if block.get(field) == 'automatico':
+                    block[field] = current
+    if info.get('stages'):
+        info['stages'] = [LEGACY_STAGES.get(s, s) for s in info['stages']]
+    return info
+
+
 def list_runs(outdir: Path) -> list[dict]:
-    """Esecuzioni archiviate, dalla piu' recente."""
+    """Archived runs, most recent first."""
     runs_dir = outdir / 'runs'
     if not runs_dir.is_dir():
         return []
@@ -109,42 +132,42 @@ def list_runs(outdir: Path) -> list[dict]:
         if not path.is_dir():
             continue
         try:
-            info = json.loads((path / RUN_INFO).read_text(encoding='utf-8'))
+            info = _normalise(json.loads((path / RUN_INFO).read_text(encoding='utf-8')))
         except (OSError, ValueError):
             info = {}
         info['path'] = path
         runs.append(info)
 
-    # Si ordina sull'istante registrato, non sul nome della cartella: i suffissi
-    # delle collisioni non seguono l'ordine alfabetico oltre il nono.
+    # Sorted on the recorded instant rather than the folder name: collision
+    # suffixes do not follow alphabetical order past the ninth.
     runs.sort(key=lambda r: (r.get('timestamp') or '', r['path'].name),
               reverse=True)
     return runs
 
 
 def prune(outdir: Path, keep: int) -> list[Path]:
-    """Rimuove le esecuzioni piu' vecchie, conservando le `keep` piu' recenti.
+    """Remove the oldest runs, keeping the `keep` most recent.
 
-    Restituisce i percorsi rimossi. L'archivio serve a non perdere il lavoro
-    fatto, non a conservare per sempre ogni prova: dopo una sessione di
-    tentativi resta una lunga coda di esecuzioni identiche che non dice nulla.
+    Returns the paths removed. The archive exists so that work already done is
+    not lost, not to keep every trial for ever: after a session of attempts
+    there is a long tail of identical runs that says nothing.
     """
     if keep < 0:
-        raise ValueError('keep non puo essere negativo')
+        raise ValueError('keep cannot be negative')
 
     runs = list_runs(outdir)
-    da_rimuovere = [run['path'] for run in runs[keep:]]
-    for path in da_rimuovere:
-        # Si cancella solo dentro output/runs: un percorso che ne esce
-        # significa che qualcosa e' andato storto, e ci si ferma.
+    to_remove = [run['path'] for run in runs[keep:]]
+    for path in to_remove:
+        # Delete only inside output/runs: a path that escapes it means
+        # something has gone wrong, and we stop.
         path.resolve().relative_to((outdir / 'runs').resolve())
         shutil.rmtree(path)
-    return da_rimuovere
+    return to_remove
 
 
 def render_list(runs) -> str:
     if not runs:
-        return 'Nessuna esecuzione archiviata.'
+        return 'No archived runs.'
 
     lines = []
     for run in runs:
@@ -152,21 +175,22 @@ def render_list(runs) -> str:
         stages = ', '.join(run.get('stages') or ['?'])
         line = f'  {stamp}   {stages}'
         if run.get('failed_stage'):
-            line += f"   [incompleta: {run['failed_stage']}]"
+            line += f"   [incomplete: {run['failed_stage']}]"
         lines.append(line)
         details = []
-        if run.get('rubrica'):
-            r = run['rubrica']
-            repliche = ('1 replica' if r['replicates'] == 1
-                        else f"{r['replicates']} repliche")
+        if run.get('rubric'):
+            r = run['rubric']
+            replicates = ('1 replicate' if r.get('replicates') == 1
+                          else f"{r.get('replicates')} replicates")
             details.append(
-                f"rubrica: {r['provider']}, {repliche}, "
-                f"livelli {'/'.join(r['levels'])}"
+                f"rubric: {r.get('provider')}, {replicates}, "
+                f"levels {'/'.join(r.get('levels') or [])}"
             )
-        if run.get('topic'):
-            t = run['topic']
+        if run.get('topics'):
+            t = run['topics']
             details.append(
-                f"topic: {t['model']} su {t['unit']} -> {t['assign_unit']}"
+                f"topics: {t.get('model')} on {t.get('unit')} -> "
+                f"{t.get('assign_unit')}"
             )
         for detail in details:
             lines.append(f'      {detail}')
