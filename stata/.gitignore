@@ -1,0 +1,4 @@
+# Datasets and logs are produced by the do-files and derive from data that
+# stays local.
+data/
+logs/

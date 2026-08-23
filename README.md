@@ -15,6 +15,7 @@ text_analysis/
 ├── input/            the CSVs exported from oTree  ← put the data here
 ├── output/           everything that gets produced
 ├── src/              the code of the analysis steps
+├── stata/            the do-files that turn the output into tables
 ├── tests/            checks on the tools
 ├── .env              the API keys (never under version control)
 └── requirements.txt
@@ -460,6 +461,22 @@ With stages 2 and 3 active you also get `llm_analytic`, `llm_clout`,
 | `strategic_deception` | promises support to both, then supports no one |
 | `group_valid` | 0 if the triad was interrupted or if even a single member let a timer expire |
 | `group_total_payoff` | the basis for Efficiency, in the theoretical version and in the paid one |
+
+### Analysis in Stata
+
+`stata/` holds five do-files that read `output/datasets/` and produce the
+tables: preparation and labelling, descriptives, treatment effects, the
+language-and-persuasion regressions, and the optional rubric/topics sections.
+
+```
+cd text_analysis/stata
+do 00_master.do
+```
+
+They are documented in `stata/README.md`, which also records the choices behind
+them — clustering on the triad, the main-sample flag, the reference category —
+and states plainly that the language regressions are associations, since the
+treatment is assigned but the language is chosen.
 
 ### Intermediate files
 
