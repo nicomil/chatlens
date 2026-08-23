@@ -14,7 +14,7 @@
 *     everything about the triad that language might otherwise proxy for.
 *==============================================================================
 
-version 16
+version 19
 clear all
 set more off
 estimates clear
@@ -97,20 +97,17 @@ estimates store h_support
 * 4. Tables
 *==============================================================================
 
-capture which esttab
-if _rc {
-    estimates table p_volume p_lang p_treat p_fe h_signal h_support, ///
-        b(%7.4f) se(%7.4f) stats(N r2) varwidth(28)
-}
-else {
-    esttab p_volume p_lang p_treat p_fe, se star(* 0.10 ** 0.05 *** 0.01) ///
-        mtitles("Volume" "Language" "+ treatment" "Triad FE") ///
-        stats(N r2, labels("Observations" "R-squared"))
+etable, estimates(p_volume p_lang p_treat p_fe) column(estimates) ///
+        showstars showstarsnote stars(0.10 "*" 0.05 "**" 0.01 "***") ///
+        cstat(_r_b, nformat(%7.4f)) cstat(_r_se, nformat(%7.4f)) ///
+        title("Persuasion on the sender's language")
+collect export "tables/persuasion_language.html", replace
 
-    esttab h_signal h_support, se star(* 0.10 ** 0.05 *** 0.01) ///
-        mtitles("Signals support" "Is supported | signalled") ///
-        stats(N r2, labels("Observations" "R-squared"))
-}
+etable, estimates(h_signal h_support) column(estimates) ///
+        showstars showstarsnote stars(0.10 "*" 0.05 "**" 0.01 "***") ///
+        cstat(_r_b, nformat(%7.4f)) cstat(_r_se, nformat(%7.4f)) ///
+        title("The two halves of persuasion")
+collect export "tables/persuasion_halves.html", replace
 
 *==============================================================================
 * 5. A caution worth keeping in the log

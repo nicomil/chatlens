@@ -1,7 +1,12 @@
 # Stata analysis
 
-Five do-files that take the pipeline's output and produce the tables. They read
-`../output/datasets/`, so run `python run.py all` first.
+Seven do-files that take the pipeline's output and produce the tables. They
+read `../output/datasets/`, so run `python run.py all` first.
+
+**Read `ANALYSIS_PLAN.md` first.** It states which hypothesis each dependent
+variable tests, how it is built, and which test and regression are used — and
+marks the decisions that need the experimenter's approval before these become
+the paper's tables.
 
 ```
 cd "<...>/text_analysis/stata"
@@ -16,9 +21,11 @@ what it saved.
 |---|---|---|
 | `01_prepare.do` | imports the two CSVs, labels them, builds the sample flags, saves `data/*.dta` | — |
 | `02_descriptives.do` | sample, treatments, game outcomes, behaviour, language | all three |
-| `03_treatment_effects.do` | what the treatment changes | triad, pair, participant |
+| `03_treatment_effects.do` | what the treatment changes, by regression | triad, pair, participant |
 | `04_language_and_persuasion.do` | does the sender's language predict being supported | directed pair |
 | `05_validation_and_topics.do` | dictionaries against the rubric; topics | triad, directed pair |
+| `06_conversation_profile.do` | every characteristic of a conversation on a 1–4 intensity scale | triad, directed pair |
+| `07_nonparametric.do` | the same treatment comparisons without a functional form | triad |
 
 `01_prepare.do` saves three datasets in `data/`:
 
@@ -27,6 +34,10 @@ what it saved.
 | `pairs.dta` | directed pair i→j, six per triad |
 | `participants.dta` | participant |
 | `triads.dta` | triad — the group variables collapsed, so a group payoff of 6 is not counted three times |
+
+`06_conversation_profile.do` adds two more, `profile_pair.dta` and
+`profile_group.dta`, along with the same content as CSV in `tables/` for anyone
+who would rather look at it in Excel.
 
 ## Choices worth knowing about
 
@@ -48,15 +59,23 @@ the levels alphabetically and put `private_no_dwl` second.
 participant writes is not. Section 5 of `04` says so in the log too, so the
 distinction survives being read months later.
 
-**Only Stata 16 syntax** is used (`tabstat`, `tabulate`, `summarize`, `areg`),
-so the files run on an older installation. `esttab` is used when present and
-skipped with a message when not: `ssc install estout` to get the
-publication-ready tables.
+**Stata 19**, and only commands that ship with it: `table`/`collect` for the
+descriptive tables, `etable` for the regression tables. No user-written package
+is needed — in particular not `estout` — and the regression tables export to
+`tables/*.html`, which becomes `.docx` or `.tex` by changing the extension on
+the `collect export` line.
+
+**The triad is the independent unit.** Randomisation happens there, so every
+non-parametric test in `07` is run on the triad-level mean of the variable, not
+on the participant or pair rows: six directed pairs from one conversation are
+not six independent observations, and a rank test has no way of knowing that.
+The regressions keep the finer unit and cluster on the triad instead.
 
 ## What is not here
 
 The specifications follow from the variables the experiment produces, not from
-a pre-registration: there is none in the repository. Before these become the
-paper's tables, the experimenter should confirm which comparisons are the
-hypotheses and which are exploratory, and the exploratory ones should be
-labelled as such.
+a pre-registration: there is none in the repository. `ANALYSIS_PLAN.md` lists
+the hypotheses it reconstructs from the design and marks with ⬜ every choice
+that needs a decision — the hypothesis list itself, the efficiency benchmark,
+the expected directions, the families for the multiple-testing correction, and
+the three choices behind the 1–4 scales.

@@ -8,7 +8,7 @@
 * Baseline (private) is the reference category throughout.
 *==============================================================================
 
-version 16
+version 19
 clear all
 set more off
 
@@ -96,26 +96,18 @@ foreach y in nlp_sent_analytic_100 nlp_sent_clout_100 ///
 *==============================================================================
 * 5. Tables
 *==============================================================================
-* esttab (estout package) makes them publication-ready. It is not part of
-* Stata, so its absence must not stop the do-file: without it the estimates are
-* still all stored and estimates table prints them.
+* etable is part of Stata, so no user-written package is needed. Change the
+* export line to .docx, .tex or .html and the same table lands in the paper.
 
-capture which esttab
-if _rc {
-    display as text _n "estout is not installed: printing with estimates table."
-    display as text "To install it once:  ssc install estout"
-    estimates table coord eff pers_lpm signal support consist deceive, ///
-        b(%7.3f) se(%7.3f) stats(N r2) varwidth(24)
-    estimates table `langnames', b(%7.3f) se(%7.3f) stats(N r2) varwidth(24)
-}
-else {
-    esttab coord eff pers_lpm signal support consist deceive, ///
-        se star(* 0.10 ** 0.05 *** 0.01) ///
-        mtitles("Coordination" "Efficiency" "Persuasion" "Signal" ///
-                "Support" "Consistency" "Deception") ///
-        stats(N r2, labels("Observations" "R-squared"))
+etable, estimates(coord eff pers_lpm signal support consist deceive) ///
+        column(estimates) showstars showstarsnote ///
+        stars(0.10 "*" 0.05 "**" 0.01 "***") ///
+        cstat(_r_b, nformat(%7.3f)) cstat(_r_se, nformat(%7.3f)) ///
+        title("Treatment effects on behaviour")
+collect export "tables/treatment_effects.html", replace
 
-    esttab `langnames', se star(* 0.10 ** 0.05 *** 0.01) ///
-        mtitles("Analytic" "Clout" "Authenticity" "Tone" "Sentiment" "Words") ///
-        stats(N r2, labels("Observations" "R-squared"))
-}
+etable, estimates(`langnames') column(estimates) showstars showstarsnote ///
+        stars(0.10 "*" 0.05 "**" 0.01 "***") ///
+        cstat(_r_b, nformat(%7.3f)) cstat(_r_se, nformat(%7.3f)) ///
+        title("Treatment effects on language")
+collect export "tables/treatment_language.html", replace

@@ -14,13 +14,14 @@
 * the others only read what 01 saved.
 *==============================================================================
 
-version 16
+version 19
 clear all
 set more off
 set linesize 100
 
 capture mkdir "logs"
 capture mkdir "data"
+capture mkdir "tables"
 
 capture log close _all
 log using "logs/analysis.log", replace text
@@ -32,6 +33,8 @@ do 02_descriptives.do
 do 03_treatment_effects.do
 do 04_language_and_persuasion.do
 do 05_validation_and_topics.do
+do 06_conversation_profile.do
+do 07_nonparametric.do
 
 display _n as text "{hline 78}"
 display as text "Done. Full log in logs/analysis.log"
