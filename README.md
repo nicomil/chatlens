@@ -30,29 +30,45 @@ single command.
 `output/` are excluded from version control because they hold Prolific IDs and
 chat texts.
 
+On macOS and Linux:
+
 ```bash
 make setup    # once only: creates the environment and installs the dependencies
 make all      # merges the data and runs the analysis
 ```
 
-`make` on its own lists every command. The main ones:
+On Windows, where `make` is not there, the same two steps are (PowerShell):
 
-| Command | What it does | API key |
-|---|---|---|
-| `make setup` | prepares the project's virtual environment | — |
-| `make keys` | configures the API keys, guided | — |
-| `make all` | merge + automatic measures, a few seconds | **no** |
-| `make merge` / `make analyze` | the two steps separately | no |
-| `make llm` | measures + validation rubric | yes |
-| `make topics` | measures + topics with TopicGPT | yes |
-| `make full` | like `all`, plus rubric and topics | yes |
-| `make dashboard` | opens the dashboard in the browser | — |
-| `make report` | regenerates the readable summary and opens it | — |
-| `make runs` | lists the archived runs | — |
-| `make prune` | keeps the last 2 and deletes the others (`KEEP=n`) | — |
-| `make status` | what is in input, in output and among the keys | — |
-| `make test` / `make check` | checks the tools | — |
-| `make clean` | empties the latest result; archive and cache stay | — |
+```powershell
+py -m venv .venv                                   # once only
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\activate                             # once per terminal window
+python run.py all
+```
+
+After `activate`, `python` is the project's one and every command below works as
+written. Without activating, prefix them with `.venv\Scripts\` — for instance
+`.venv\Scripts\python run.py all`.
+
+`make` on its own lists every command. The main ones, with their Windows
+equivalent:
+
+| Command | Windows (activated venv) | What it does | API key |
+|---|---|---|---|
+| `make setup` | see the block above | prepares the project's virtual environment | — |
+| `make keys` | `python run.py keys` | configures the API keys, guided | — |
+| `make all` | `python run.py all` | merge + automatic measures, a few seconds | **no** |
+| `make merge` / `make analyze` | `python run.py merge` / `python run.py analyze` | the two steps separately | no |
+| `make llm` | `python run.py analyze --llm --llm-replicates 2` | measures + validation rubric | yes |
+| `make topics` | `python run.py analyze --topics --topicgpt-repo <path>` | measures + topics with TopicGPT | yes |
+| `make full` | `python run.py all --llm --llm-replicates 2 --topics --topicgpt-repo <path>` | like `all`, plus rubric and topics | yes |
+| `make dashboard` | `python run.py dashboard` | opens the dashboard in the browser | — |
+| `make report` | `python run.py report` | regenerates the readable summary and opens it | — |
+| `make runs` | `python run.py runs` | lists the archived runs | — |
+| `make prune` | `python run.py runs --prune 2` | keeps the last 2 and deletes the others (`KEEP=n`) | — |
+| `make status` | `python run.py status` | what is in input, in output and among the keys | — |
+| `make test` / `make check` | `python tests/test_merge.py` and the other two | checks the tools | — |
+| `make clean` | see §5 | empties the latest result; archive and cache stay | — |
 
 **`all` and `full` are not synonyms.** `all` means "both *steps*" — merge plus
 analysis — as opposed to `merge` and `analyze` taken singly: it runs only the
@@ -61,12 +77,13 @@ the same and adds the validation rubric and the topics, so it needs a key and
 takes far longer. You start from `all`; you move to `full` once the keys are
 there.
 
-For the less common options: `make analyze ARGS="--llm-replicates 3"`.
+For the less common options: `make analyze ARGS="--llm-replicates 3"`, which on
+Windows is simply `python run.py analyze --llm-replicates 3`.
 
-**Without make** — on Windows, or by preference — the same commands are
-`python run.py <command>`: `run.py all`, `run.py keys`, `run.py status` and so
-on. The Makefile does nothing but call them, after making sure the environment
-exists.
+**The Makefile is a convenience, not a layer.** It does nothing but call
+`python run.py <command>`, after making sure the environment exists. That is why
+every command has a one-to-one Windows equivalent, and why the two roads cannot
+produce different results.
 
 ## Contents
 
@@ -115,9 +132,15 @@ From the project folder, once only:
 make setup
 ```
 
-It creates the virtual environment in `.venv/` and installs the dependencies.
-There is no need to activate it: the Makefile takes care of that. Without make:
-`pip install -r requirements.txt`.
+```powershell
+py -m venv .venv                                   # Windows
+.venv\Scripts\python -m pip install -r requirements.txt
+```
+
+It creates the virtual environment in `.venv/` and installs the dependencies. On
+macOS and Linux there is no need to activate it: the Makefile takes care of
+that. On Windows, activate it once per terminal window with
+`.venv\Scripts\activate`, so that `python` is the project's one.
 
 It installs what is needed for the sentiment and for the API clients. The
 deterministic measures would work without them too, but the sentiment would
@@ -130,8 +153,14 @@ well:
 make topicgpt
 ```
 
+```powershell
+git clone https://github.com/chtmp223/topicGPT.git $HOME\src\topicGPT
+python -m pip install $HOME\src\topicGPT
+```
+
 It clones the repository into `~/src/topicGPT` and installs it; with
-`make topicgpt TOPICGPT_REPO=<path>` you choose where.
+`make topicgpt TOPICGPT_REPO=<path>` you choose where. On Windows the path is
+whatever you cloned into, and it is the one to pass to `--topicgpt-repo`.
 
 Two notes on why it is installed from the repository and not from PyPI: the
 prompt files are part of the method and **are not inside the published
@@ -233,6 +262,10 @@ for a trial run, not for publishable results.
 
 ## 4. The analysis procedure
 
+The `python run.py …` commands in this section are identical on macOS, Windows
+and Linux. On macOS and Linux the shorter `make merge` / `make analyze` /
+`make full` do the same thing.
+
 ### Step 1 — Download the exports from oTree
 
 From the admin interface, **Data** section, two files are needed:
@@ -299,6 +332,9 @@ spread between the two lands in the dataset as an estimate of measurement error.
 python run.py analyze --topics --topicgpt-repo ~/src/topicGPT
 ```
 
+On Windows the repository path is a Windows one, so
+`python run.py analyze --topics --topicgpt-repo $HOME\src\topicGPT`.
+
 **All together:** combine the options of the two commands above.
 
 ---
@@ -310,7 +346,8 @@ Everything under `output/`.
 ### The dashboard
 
 ```bash
-make dashboard
+make dashboard          # macOS / Linux
+python run.py dashboard # Windows, and anywhere else
 ```
 
 It opens `http://127.0.0.1:8765` in the browser: from there you pick the
@@ -351,8 +388,19 @@ make clean           # empties the latest result; archive and cache stay
 make clean-runs      # deletes the whole archive
 ```
 
+The same on Windows (PowerShell). The first two are run.py commands; the last
+two only delete files, so they are plain PowerShell:
+
+```powershell
+python run.py runs
+python run.py runs --prune 2
+Get-ChildItem output -Exclude runs,cache,.gitkeep | Remove-Item -Recurse -Force
+Remove-Item -Recurse -Force output\runs
+```
+
 A session of trials leaves a long tail of near-identical runs: `make prune`
-shortens it while keeping the ones that matter. Each run takes about 800 KB.
+(`python run.py runs --prune 2`) shortens it while keeping the ones that matter.
+Each run takes about 800 KB.
 
 The intermediate measures are not archived: they are regenerated.
 
@@ -367,7 +415,9 @@ self-contained: it opens on a double click and can be sent to someone.
 The sections of the stages not run do not appear. The comparisons between
 treatments are descriptive by choice: on numbers like the pilot's they serve to
 check that the pipeline produces sensible results, not to draw conclusions from.
-To regenerate it without redoing the analysis: `make report`.
+To regenerate it without redoing the analysis: `make report`, or
+`python run.py report` on Windows — then open the `.html` in `output/` with a
+double click.
 
 ### To take into Stata
 
@@ -611,6 +661,13 @@ run locally without any key.
 
 **"The topicgpt_python package is not installed"** — see §2, second part.
 
+**On Windows, `.venv\Scripts\activate` is refused** with a message about the
+execution policy — that is PowerShell blocking scripts, not a problem with the
+project. Either allow them for your own user, once:
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, or skip activation
+entirely and prefix each command with `.venv\Scripts\`, as in
+`.venv\Scripts\python run.py all`.
+
 **"No credentials available" for the rubric** — the message lists the three
 roads: OpenAI, Anthropic or a local model.
 
@@ -628,6 +685,12 @@ present, without going out to the network.
 
 ```bash
 make test
+```
+
+```powershell
+python tests/test_merge.py      # Windows
+python tests/test_analysis.py
+python tests/test_dashboard.py
 ```
 
 They run with no network and no credentials. If they all end with `OK`, the
