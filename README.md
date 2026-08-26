@@ -461,6 +461,22 @@ With stages 2 and 3 active you also get `llm_analytic`, `llm_clout`,
 | `strategic_deception` | promises support to both, then supports no one |
 | `group_valid` | 0 if the triad was interrupted or if even a single member let a timer expire |
 | `group_total_payoff` | the basis for Efficiency, in the theoretical version and in the paid one |
+| `group_outcome_recomputed` | the outcome the stored decisions imply, under the game's rule |
+| `payoff_decision_mismatch` | 1 when the recorded outcome is not reconstructable from those decisions |
+
+**On `payoff_decision_mismatch`.** Normally it is 0. It turns 1 when a
+participant let the Decision page time out *after* someone else had already
+reached the final page: the payoff is computed from a random choice drawn on
+their behalf, and the timeout then overwrites the stored decision with a
+second, independent random draw. The row ends up carrying an outcome its own
+decisions do not produce.
+
+Nothing is corrected, because nothing can be: the replaced choice is not in the
+export. The flag exists so the contradiction is visible in the data instead of
+being found months later and mistaken for corruption. It is empty when the
+triad is incomplete or the outcome has not been computed yet — "not checkable"
+must not read as "checked and fine". On the three collection days it was 1 on a
+single triad out of 262, already excluded by `group_valid == 0`.
 
 ### Analysis in Stata
 

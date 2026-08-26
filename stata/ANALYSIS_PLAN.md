@@ -55,6 +55,14 @@ Three filters, applied together as the `in_sample` flag (README §6):
 They are flags, not deletions: every robustness check on the full sample is one
 `keep if` away.
 
+A fourth flag, `payoff_decision_mismatch`, marks the triads whose recorded
+outcome cannot be reconstructed from their recorded decisions — the result of a
+timeout overwriting a decision after the payoff had already been computed. It
+is not part of the sample definition, because those triads already fail
+`group_valid`; it matters for the robustness checks that keep the full sample,
+where the row would otherwise contradict itself. On the three collection days
+it flagged one triad out of 262.
+
 ⬜ **To approve:** whether the main tables use `in_sample`, with the full sample
 in an appendix, or the reverse.
 

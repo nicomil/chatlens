@@ -454,6 +454,83 @@ def timeout_flag(row) -> int:
     return int(any(hits))
 
 
+def payoff_vector(decisions, no_deadweight_loss=False):
+    """The game's payoff rule, needed to check the export against itself.
+
+    This is a third copy of a rule that already lives in the experiment
+    (`bargaining_tdl_common/utils.py`) and in the test suite. The copy is
+    deliberate — this project must run without the experiment's code — and
+    `PayoffRuleMatchesExperimentTests` pins all of them together over the 27
+    possible choice profiles, so they cannot drift apart in silence.
+
+    Topology: P1.left=P3, P1.right=P2; P2.left=P1, P2.right=P3;
+    P3.left=P2, P3.right=P1.
+    """
+    c1, c2, c3 = decisions
+
+    # Minimal winning coalition: strictly reciprocal support.
+    if c1 == 'Right' and c2 == 'Left':
+        return (3, 3, 0), 'mutual_12'
+    if c2 == 'Right' and c3 == 'Left':
+        return (0, 3, 3), 'mutual_23'
+    if c3 == 'Right' and c1 == 'Left':
+        return (3, 0, 3), 'mutual_31'
+
+    if no_deadweight_loss:
+        # Two support the same third, who in turn supports no one.
+        if c1 == 'NoOne' and c2 == 'Left' and c3 == 'Right':
+            return (6, 0, 0), 'no_dwl_star_1'
+        if c2 == 'NoOne' and c1 == 'Right' and c3 == 'Left':
+            return (0, 6, 0), 'no_dwl_star_2'
+        if c3 == 'NoOne' and c1 == 'Left' and c2 == 'Right':
+            return (0, 0, 6), 'no_dwl_star_3'
+
+    return (0, 0, 0), 'disagreement'
+
+
+def payoff_consistency(members):
+    """Can the recorded outcome be reconstructed from the recorded decisions?
+
+    Usually yes. It fails when a participant let the Decision page time out
+    after someone else had already reached the final page: the payoff is
+    computed from a random choice drawn on their behalf, and the timeout then
+    overwrites the stored decision with a *second*, independent random draw.
+    The row then carries an outcome that its own decisions do not produce.
+
+    Both cases are marked rather than corrected: the choice that was replaced
+    is not in the export, so nothing can be recovered. The flag exists so the
+    contradiction is visible in the data instead of being discovered months
+    later and mistaken for corruption.
+
+    Empty when the triad is incomplete or the outcome has not been computed
+    yet: "not checkable" must not read as "checked and fine".
+    """
+    blank = dict(group_outcome_recomputed='', payoff_decision_mismatch='')
+    if set(members) != {1, 2, 3}:
+        return blank
+
+    decisions = []
+    for pid in (1, 2, 3):
+        choice = (members[pid].get(MAIN + 'player.decision_choice') or '').strip()
+        if choice not in VALID_DECISIONS:
+            return blank
+        decisions.append(choice)
+
+    treatment = (members[1].get(MAIN + 'player.treatment') or '').strip()
+    _payoffs, recomputed = payoff_vector(
+        decisions, no_deadweight_loss=(treatment == 'private_no_dwl')
+    )
+
+    recorded = (members[1].get(MAIN + 'group.group_outcome') or '').strip()
+    if not recorded or recorded == 'pending':
+        return dict(group_outcome_recomputed=recomputed, payoff_decision_mismatch='')
+
+    return dict(
+        group_outcome_recomputed=recomputed,
+        payoff_decision_mismatch=int(recorded != recomputed),
+    )
+
+
 def group_validity(members):
     """Triad validity: one compromised member is enough to invalidate it."""
     dropped = any(
@@ -531,6 +608,7 @@ def build_by_partner(wide_rows, wide_cols, groups, uid_by_code, messages):
 
     for uid, members in sorted(groups.items()):
         validity = group_validity(members)
+        validity.update(payoff_consistency(members))
         facts = {pid: player_facts(row) for pid, row in members.items()}
 
         for pid, row in sorted(members.items()):
@@ -662,6 +740,8 @@ def build_aggregated(wide_rows, wide_cols, groups, uid_by_code, messages):
                 group_complete=0,
                 group_dropped_flag='',
                 group_any_timeout='',
+                group_outcome_recomputed='',
+                payoff_decision_mismatch='',
                 focal_timeout_flag=timeout_flag(row),
             )
             rows.append(record)
@@ -669,6 +749,7 @@ def build_aggregated(wide_rows, wide_cols, groups, uid_by_code, messages):
 
         uid, members = by_code_group[code]
         validity = group_validity(members)
+        validity.update(payoff_consistency(members))
         facts = {pid: player_facts(r) for pid, r in members.items()}
         pid = _int(row.get(MAIN + 'player.id_in_group'))
         me = facts[pid]

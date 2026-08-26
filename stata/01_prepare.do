@@ -90,6 +90,20 @@ label variable persuasion_ij "i persuaded j (S_ij = 1 and A_ji = 1)"
 label variable C_ij          "i's final signal to j is consistent with i's choice"
 label variable group_valid   "Triad complete, not interrupted, no timeout"
 
+* Set when the recorded outcome cannot be reconstructed from the recorded
+* decisions: see text_analysis/README.md. Rare, and already inside the triads
+* that group_valid excludes, but it is the difference between an anomaly and a
+* mystery.
+capture confirm variable payoff_decision_mismatch
+if !_rc {
+    label variable payoff_decision_mismatch ///
+        "Recorded outcome not reconstructable from the stored decisions"
+    quietly count if payoff_decision_mismatch == 1
+    if r(N) > 0 {
+        display as text "Triads with an outcome/decision contradiction: " r(N)
+    }
+}
+
 foreach block in sent recv dyad {
     label variable nlp_`block'_wc            "Words (`block')"
     label variable nlp_`block'_analytic_100  "Analytic, 0-100 (`block')"

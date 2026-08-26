@@ -218,7 +218,13 @@ def run_merge(wide_rows, chat_rows, tmpdir):
 
 
 class PayoffRuleMatchesExperimentTests(unittest.TestCase):
-    """The local copy of the payoff rule must not drift from the original."""
+    """The three copies of the payoff rule must not drift apart.
+
+    The rule lives in the experiment, in this test file, and — since the
+    consistency flag needs it — in the pipeline itself. Three copies is two too
+    many, but the alternative is importing oTree into an analysis project that
+    must run without it. This test is what keeps them a single rule.
+    """
 
     def test_identical_on_all_27_profiles(self):
         reference = _experiment_payoff_rule()
@@ -233,6 +239,83 @@ class PayoffRuleMatchesExperimentTests(unittest.TestCase):
                     reference(decisions, no_dwl),
                     msg=f'profilo {decisions}, no_dwl={no_dwl}',
                 )
+
+    def test_the_pipeline_uses_the_same_rule(self):
+        """The copy inside merge.py, checked against the same 27 profiles."""
+        reference = _experiment_payoff_rule()
+        if reference is None:
+            self.skipTest(
+                "the experiment's code is not reachable: project used on its own"
+            )
+        for decisions in itertools.product(mod.VALID_DECISIONS, repeat=3):
+            for no_dwl in (False, True):
+                self.assertEqual(
+                    mod.payoff_vector(decisions, no_deadweight_loss=no_dwl),
+                    reference(decisions, no_dwl),
+                    msg=f'profilo {decisions}, no_dwl={no_dwl}',
+                )
+
+
+class PayoffConsistencyTests2(unittest.TestCase):
+    """Il payoff registrato deve essere ricostruibile dalle decisioni salvate.
+
+    Quando non lo e', la riga va marcata: la scelta sostituita non e'
+    nell'export e non si recupera, ma la contraddizione deve essere visibile
+    invece di essere scambiata per corruzione dei dati mesi dopo.
+    """
+
+    def _triad(self, decisions, outcome, treatment='private'):
+        rows = [
+            make_player('s1', f'c{pid}', pid, treatment, decisions[pid - 1],
+                        'split_you', 'split_you', 0, group_db_id='7')
+            for pid in (1, 2, 3)
+        ]
+        for row in rows:
+            row[MAIN + 'group.group_outcome'] = outcome
+        return rows
+
+    def test_flag_off_when_outcome_follows_from_the_decisions(self):
+        wide = self._triad(['Right', 'Left', 'NoOne'], 'mutual_12')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _long, by_partner, aggregated = run_merge(wide, [], tmpdir)
+        rows = [r for r in by_partner if r['group_uid']]
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertEqual(row['group_outcome_recomputed'], 'mutual_12')
+            self.assertEqual(row['payoff_decision_mismatch'], '0')
+        for row in (r for r in aggregated if r['group_uid']):
+            self.assertEqual(row['payoff_decision_mismatch'], '0')
+
+    def test_flag_on_when_the_stored_decision_was_overwritten(self):
+        """Il caso vero: esito da coalizione, decisioni da disaccordo."""
+        wide = self._triad(['Right', 'NoOne', 'Left'], 'mutual_12')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _long, by_partner, aggregated = run_merge(wide, [], tmpdir)
+        rows = [r for r in by_partner if r['group_uid']]
+        for row in rows:
+            self.assertEqual(row['group_outcome_recomputed'], 'disagreement')
+            self.assertEqual(row['payoff_decision_mismatch'], '1')
+        for row in (r for r in aggregated if r['group_uid']):
+            self.assertEqual(row['payoff_decision_mismatch'], '1')
+
+    def test_no_dwl_star_is_not_read_as_a_contradiction(self):
+        """Nel trattamento senza deadweight loss lo star e' un esito legittimo."""
+        wide = self._triad(['NoOne', 'Left', 'Right'], 'no_dwl_star_1',
+                           treatment='private_no_dwl')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _long, by_partner, _agg = run_merge(wide, [], tmpdir)
+        for row in (r for r in by_partner if r['group_uid']):
+            self.assertEqual(row['group_outcome_recomputed'], 'no_dwl_star_1')
+            self.assertEqual(row['payoff_decision_mismatch'], '0')
+
+    def test_pending_outcome_leaves_the_flag_empty(self):
+        """Non ancora calcolato non e' la stessa cosa di controllato e a posto."""
+        wide = self._triad(['Right', 'Left', 'NoOne'], 'pending')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _long, by_partner, _agg = run_merge(wide, [], tmpdir)
+        for row in (r for r in by_partner if r['group_uid']):
+            self.assertEqual(row['payoff_decision_mismatch'], '')
+            self.assertEqual(row['group_outcome_recomputed'], 'mutual_12')
 
 
 class TopologyTests(unittest.TestCase):
