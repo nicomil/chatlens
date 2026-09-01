@@ -29,7 +29,8 @@ DEPS := $(VENV)/.deps-installed
 ARGS ?=
 
 .DEFAULT_GOAL := help
-.PHONY: help setup test check lint build clean clean-all dashboard
+.PHONY: help setup test check lint build clean clean-all dashboard docs \
+        docs-serve demo
 
 help: ## List the available commands
 	@echo "chatlens — development"
@@ -64,6 +65,16 @@ check: test ## Tests plus a look at the installed state
 
 dashboard: $(DEPS) ## Open the dashboard on the current folder
 	@$(PY) -m chatlens.cli dashboard $(ARGS)
+
+docs: $(DEPS) ## Regenerate docs/ and mkdocs.yml from README.md
+	@$(PY) scripts/build_docs.py
+
+docs-serve: docs ## Build the docs and serve them locally
+	@$(PIP) install --quiet mkdocs-material
+	@$(VENV)/bin/mkdocs serve
+
+demo: $(DEPS) ## Write a synthetic workspace and analyse it
+	@$(PY) -m chatlens.cli demo $(ARGS)
 
 build: $(DEPS) ## Build the wheel and the source distribution
 	@$(PIP) install --quiet build

@@ -40,3 +40,8 @@ jobs:
         run: |
           chatlens --help
           chatlens status
+
+      # End to end on synthetic data: no credentials, no network, and it is the
+      # first thing a new user runs, so it is the first thing that must work.
+      - name: The demo runs end to end
+        run: chatlens demo ci-demo

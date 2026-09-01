@@ -50,6 +50,17 @@ cd my_experiment                # the folder holding input/
 chatlens all                    # merge + automatic measures
 ```
 
+Nothing to analyse yet? Try it on a synthetic study first — no data of anyone's,
+generated on the spot:
+
+```bash
+chatlens demo
+```
+
+It writes a small four-player bargaining experiment with two treatments, runs
+the whole pipeline over it and leaves you a report to read. It is the same
+procedure you will run on your own data.
+
 `chatlens --help` lists every command. The main ones:
 
 | Command | What it does | API key |
@@ -65,6 +76,7 @@ chatlens all                    # merge + automatic measures
 | `chatlens runs` | lists the archived runs | — |
 | `chatlens runs --prune 2` | keeps the last 2 and deletes the others | — |
 | `chatlens status` | what is in input, in output and among the keys | — |
+| `chatlens demo` | writes a synthetic study and analyses it | — |
 | `chatlens install-topicgpt` | installs TopicGPT (only needed for the topics) | — |
 
 **`all` is both *steps*, not everything.** It means merge plus analysis, as
@@ -73,6 +85,9 @@ measures, needs no key at all and takes a few seconds. Adding `--llm` and
 `--topics` brings in the validation rubric and the topics, which need a key and
 take far longer. You start from `chatlens all`; you add the rest once the keys
 are there.
+
+Full documentation, the same text split into pages:
+<https://nicomil.github.io/chatlens>
 
 ## Contents
 

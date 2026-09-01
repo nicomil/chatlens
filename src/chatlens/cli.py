@@ -163,6 +163,18 @@ def build_parser() -> argparse.ArgumentParser:
                              help='open the dashboard in a browser')
     sp_dash.add_argument('--port', type=int, default=8765)
     sp_dash.add_argument('--no-browser', action='store_true')
+    sp_demo = sub.add_parser(
+        'demo', parents=[common],
+        help='write a synthetic workspace and analyse it, to try the tool')
+    sp_demo.add_argument('directory', type=Path, nargs='?', default=None,
+                         help='where to put it (default: ./chatlens-demo)')
+    sp_demo.add_argument('--no-run', action='store_true',
+                         help='write the files without running the analysis')
+    # The same options as a real run, so `chatlens demo --llm` shows what the
+    # paid stages produce on data nobody has to worry about.
+    add_input_options(sp_demo)
+    add_analysis_options(sp_demo)
+
     sp_tgpt = sub.add_parser(
         'install-topicgpt', parents=[common],
         help='clone and install TopicGPT (needed only for the topics)')
@@ -331,6 +343,51 @@ def cmd_dashboard(args) -> int:
     return 0
 
 
+def cmd_demo(args) -> int:
+    """Write a synthetic study and run the pipeline over it.
+
+    A first step that costs nothing and exposes nobody: the people best placed
+    to judge a research tool are the ones who should not be handed somebody
+    else's participant data in order to do it.
+    """
+    from chatlens.core import demo
+
+    target = Path(args.directory) if args.directory else Path.cwd() / 'chatlens-demo'
+    if target.exists() and any(target.iterdir()):
+        raise SystemExit(
+            f'\n{target} already exists and is not empty.\n'
+            f'  Give another folder, or delete that one: the demo writes its '
+            f'own workspace and will not overwrite yours.\n'
+        )
+
+    made = demo.create(target)
+    print(f'Synthetic workspace in {made["workspace"]}')
+    print(f'  {made["n_groups"]} groups of four, '
+          f'{made["n_participants"]} participants, '
+          f'{made["n_messages"]} messages, 2 treatments')
+    print('  none of it real: generated from a fixed seed')
+    print()
+
+    if args.no_run:
+        print('To analyse it:')
+        print(f'    cd {made["workspace"]}')
+        print('    chatlens all')
+        return 0
+
+    # From here on it is an ordinary run, in the workspace just written.
+    config.use_workspace(made['workspace'])
+    config.use_experiment(experiment.load(config.WORKSPACE))
+    config.ensure_dirs()
+
+    result = cmd_all(args)
+    if result == 0:
+        print()
+        print('That is the whole procedure. On your own data it is the same,')
+        print('with your files in input/ and your columns in experiment.toml.')
+        print(f'    chatlens --workspace {made["workspace"]} dashboard')
+    return result
+
+
 def cmd_install_topicgpt(args) -> int:
     """Clone TopicGPT and install it into the running interpreter.
 
@@ -431,6 +488,7 @@ COMMANDS = {
     'report': cmd_report,
     'runs': cmd_runs,
     'dashboard': cmd_dashboard,
+    'demo': cmd_demo,
     'install-topicgpt': cmd_install_topicgpt,
     'keys': cmd_keys,
     'status': cmd_status,

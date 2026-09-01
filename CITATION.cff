@@ -1,0 +1,51 @@
+cff-version: 1.2.0
+title: "chatlens: text analysis of chat data from behavioural experiments"
+message: "If you use this software in research, please cite it."
+type: software
+authors:
+  - family-names: Milella
+    given-names: Nicola
+repository-code: "https://github.com/nicomil/chatlens"
+abstract: >-
+  chatlens computes language measures, an LLM validation rubric and topic
+  models over the conversations held during a behavioural experiment, and
+  grafts them onto the choice datasets. An adapter turns one experiment's
+  export into a canonical set of message tables; the analysis works from those
+  tables alone, so the same pipeline runs on different studies.
+keywords:
+  - text analysis
+  - experimental economics
+  - content analysis
+  - oTree
+license: MIT
+version: 1.0.0
+
+references:
+  - type: article
+    title: "TopicGPT: A Prompt-based Topic Modeling Framework"
+    authors:
+      - family-names: Pham
+        given-names: Chau Minh
+      - family-names: Hoyle
+        given-names: Alexander
+      - family-names: Sun
+        given-names: Simeng
+      - family-names: Resnik
+        given-names: Philip
+      - family-names: Iyyer
+        given-names: Mohit
+    year: 2024
+    notes: >-
+      The topic stage drives the authors' own implementation; the prompts are
+      part of the method and come from their repository.
+  - type: article
+    title: >-
+      VADER: A Parsimonious Rule-based Model for Sentiment Analysis of Social
+      Media Text
+    authors:
+      - family-names: Hutto
+        given-names: Clayton
+      - family-names: Gilbert
+        given-names: Eric
+    year: 2014
+    notes: "The sentiment backend, used through the vaderSentiment package."

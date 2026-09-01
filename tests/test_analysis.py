@@ -1518,5 +1518,66 @@ class RubricSpecTests(unittest.TestCase):
                          self.spec.DEFAULT_DIMENSIONS)
 
 
+
+class DemoTests(unittest.TestCase):
+    """The first thing a stranger runs. It must work and it must be the same."""
+
+    def setUp(self):
+        from chatlens.core import demo
+        self.demo = demo
+
+    def test_it_writes_a_complete_workspace(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            made = self.demo.create(Path(tmpdir) / 'ws')
+            workspace = made['workspace']
+            self.assertTrue((workspace / 'experiment.toml').is_file())
+            self.assertTrue((workspace / 'input' / 'messages.csv').is_file())
+            self.assertTrue((workspace / 'input' / 'roster.csv').is_file())
+
+    def test_the_configuration_it_writes_is_valid(self):
+        from chatlens.core import experiment
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            made = self.demo.create(Path(tmpdir) / 'ws')
+            exp = experiment.load(made['workspace'])
+        self.assertEqual(exp.adapter, 'generic_chat')
+        self.assertEqual(exp.columns['body'], 'text')
+        self.assertIn('open', exp.treatments)
+
+    def test_the_same_seed_gives_the_same_data(self):
+        """Cited in the docs and used in CI: it cannot drift between machines."""
+        digests = []
+        for _ in range(2):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                made = self.demo.create(Path(tmpdir) / 'ws')
+                digests.append(
+                    (made['workspace'] / 'input' / 'messages.csv')
+                    .read_bytes())
+        self.assertEqual(digests[0], digests[1])
+
+    def test_it_goes_through_the_adapter_and_the_schema(self):
+        from chatlens.adapters import generic_chat
+        from chatlens.core import experiment, schema
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            made = self.demo.create(Path(tmpdir) / 'ws')
+            workspace = made['workspace']
+            exp = experiment.load(workspace)
+            with contextlib.redirect_stdout(io.StringIO()):
+                summary = generic_chat.run(
+                    workspace / 'input' / 'messages.csv',
+                    workspace / 'input' / 'roster.csv',
+                    outdir=workspace / 'output' / 'merged', stem='demo',
+                    columns=exp.columns)
+            with summary['paths']['messages_long'].open(
+                    encoding='utf-8-sig', newline='') as handle:
+                import csv as _csv
+                rows = list(_csv.DictReader(handle))
+            schema.validate_messages(rows)
+        self.assertGreater(len(rows), 200)
+        # Both treatments survive, or the report has nothing to compare.
+        self.assertEqual({r['treatment'] for r in rows}, {'open', 'restricted'})
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

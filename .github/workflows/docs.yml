@@ -1,0 +1,53 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# The site is published to GitHub Pages from the Actions build, so nothing has
+# to be committed to a gh-pages branch by hand.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: python -m pip install mkdocs-material
+
+      # docs/ is generated from README.md and committed. Regenerating here
+      # catches the case where the README changed and the pages did not.
+      - name: The pages match the README
+        run: |
+          python scripts/build_docs.py
+          git diff --exit-code docs mkdocs.yml \
+            || { echo "::error::docs/ is stale — run scripts/build_docs.py and commit"; exit 1; }
+
+      - run: mkdocs build --strict
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
