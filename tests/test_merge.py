@@ -200,7 +200,7 @@ def _run_raw(wide_rows, chat_rows, tmpdir, keep_all=False):
                        keep_all=keep_all)
 
 
-def run_merge(wide_rows, chat_rows, tmpdir):
+def run_merge(wide_rows, chat_rows, tmpdir, pseudonymise=False):
     wide_path = Path(tmpdir) / 'wide.csv'
     chat_path = Path(tmpdir) / 'chat.csv'
     outdir = Path(tmpdir) / 'out'
@@ -219,7 +219,8 @@ def run_merge(wide_rows, chat_rows, tmpdir):
 
     # The summary on stdout would make the test output unreadable.
     with contextlib.redirect_stdout(io.StringIO()):
-        mod.run(wide_path, chat_path, outdir, 't')
+        mod.run(wide_path, chat_path, outdir, 't',
+                pseudonymise=pseudonymise)
 
     def read(name):
         with (outdir / f't_{name}.csv').open(encoding='utf-8-sig', newline='') as handle:
@@ -770,6 +771,69 @@ class OutputHygieneTests(unittest.TestCase):
         for rows in (by_partner, aggregated):
             for column in mod.MTURK_COLS:
                 self.assertNotIn(column, rows[0])
+
+
+
+class PseudonymisationTests(unittest.TestCase):
+    """Identifiers out, analysis untouched."""
+
+    def setUp(self):
+        from chatlens.core import privacy
+        self.privacy = privacy
+
+    def test_it_recognises_the_identifier_columns(self):
+        for column in ('participant.label', 'participant.code',
+                       'participant.prolific_id', 'sender_participant_code',
+                       'partner_participant_code'):
+            self.assertTrue(self.privacy.is_identifier(column), column)
+
+    def test_it_leaves_the_analysis_columns_alone(self):
+        for column in ('participant.treatment', 'focal_id_in_group',
+                       'group_uid', 'persuasion_ij', 'body', 'timestamp'):
+            self.assertFalse(self.privacy.is_identifier(column), column)
+
+    def test_the_same_person_gets_the_same_pseudonym(self):
+        key = b'k' * 64
+        self.assertEqual(self.privacy.pseudonym('abc', key),
+                         self.privacy.pseudonym('abc', key))
+
+    def test_a_different_key_gives_a_different_pseudonym(self):
+        """Otherwise two studies could be linked by anyone holding both."""
+        self.assertNotEqual(self.privacy.pseudonym('abc', b'k' * 64),
+                            self.privacy.pseudonym('abc', b'j' * 64))
+
+    def test_empty_stays_empty(self):
+        """A missing identifier must not become a pseudonym of its own."""
+        self.assertEqual(self.privacy.pseudonym('', b'k' * 64), '')
+
+    def test_the_key_is_created_once_and_reused(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            first = self.privacy.load_or_create_key(Path(tmpdir))
+            second = self.privacy.load_or_create_key(Path(tmpdir))
+            self.assertEqual(first, second)
+            self.assertTrue((Path(tmpdir) / self.privacy.SALT_FILE).is_file())
+
+    def test_the_merge_replaces_the_identifiers_and_nothing_else(self):
+        wide = [
+            make_player('s1', f'c{pid}', pid, 'private',
+                        ('Right', 'Left', 'NoOne')[pid - 1],
+                        'split_you', 'split_you', 0, group_db_id='7')
+            for pid in (1, 2, 3)
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plain = run_merge(wide, [], tmpdir)[2]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hidden = run_merge(wide, [], tmpdir, pseudonymise=True)[2]
+
+        self.assertEqual(len(plain), len(hidden))
+        for before, after in zip(plain, hidden):
+            for column in before:
+                if self.privacy.is_identifier(column):
+                    if before[column]:
+                        self.assertNotEqual(before[column], after[column])
+                        self.assertTrue(after[column].startswith('p_'))
+                else:
+                    self.assertEqual(before[column], after[column], column)
 
 
 if __name__ == '__main__':

@@ -81,15 +81,16 @@ are there.
 1. [What it does, in brief](#1-what-it-does-in-brief)
 2. [Installation](#2-installation)
 3. [API keys](#3-api-keys)
-4. [The analysis procedure](#4-the-analysis-procedure)
-5. [The files produced](#5-the-files-produced)
-6. [Before analysing: three filters](#6-before-analysing-three-filters)
-7. [How the measures are built](#7-how-the-measures-are-built)
-8. [TopicGPT](#8-topicgpt)
-9. [Costs and volumes](#9-costs-and-volumes)
-10. [If something does not add up](#10-if-something-does-not-add-up)
-11. [Checking the tools](#11-checking-the-tools)
-12. [Results on the pilot](#12-results-on-the-pilot)
+4. [Participant data](#4-participant-data)
+5. [The analysis procedure](#5-the-analysis-procedure)
+6. [The files produced](#6-the-files-produced)
+7. [Before analysing: three filters](#7-before-analysing-three-filters)
+8. [How the measures are built](#8-how-the-measures-are-built)
+9. [TopicGPT](#9-topicgpt)
+10. [Costs and volumes](#10-costs-and-volumes)
+11. [If something does not add up](#11-if-something-does-not-add-up)
+12. [Checking the tools](#12-checking-the-tools)
+13. [Results on the pilot](#13-results-on-the-pilot)
 
 ---
 
@@ -280,7 +281,55 @@ for a trial run, not for publishable results.
 
 ---
 
-## 4. The analysis procedure
+## 4. Participant data
+
+The files this produces are **personal data**, and treating them as anything
+else is the mistake worth avoiding at the start rather than explaining later.
+Two things are in them.
+
+**Identifiers.** The oTree export carries the recruitment platform's
+participant id — on Prolific, a value that follows the same person across every
+study they have ever taken part in — and it passes straight through into the
+output. The analysis never uses it: what it needs is to tell participants
+apart, not to know who they are.
+
+```bash
+chatlens merge --pseudonymise
+```
+
+replaces every identifier with a keyed hash. The pseudonyms are stable within a
+workspace, so the same person is the same code across the three tables and
+across a re-run months later; they are not reversible without the key, which
+lives in `output/.pseudonym_key` and must never travel with the data. Delete
+the key and the link is gone for good — which is the point, and also the thing
+to be sure about before you delete it. The flag changes nothing else: every
+number is identical either way.
+
+**The conversations themselves.** These are untouched, and no option changes
+that: they are the object of the analysis. People write their names, their
+towns and their jobs into chat windows, so a pseudonymised dataset is
+pseudonymised, not anonymous. What follows from that:
+
+- `input/` and `output/` are excluded from version control, and should stay so
+  in any workspace you create;
+- the paid stages send the conversations to a third party — OpenAI or Anthropic
+  — which is a disclosure your ethics approval and your participant information
+  sheet have to cover. `--topicgpt-api ollama` runs the topics on a local model
+  instead, and the rubric takes `--llm-provider ollama` for the same reason;
+- the API keys are kept in this machine's configuration directory rather than
+  beside the code, so a key cannot be committed by accident;
+- the dashboard listens on 127.0.0.1 and refuses anything else. It executes
+  processes and has no user accounts: anyone who could reach it could spend
+  your API credit. To drive it from another machine, forward the port over SSH
+  rather than opening it up.
+
+None of this is legal advice, and the obligations depend on where you and your
+participants are. It is the list of what the tool does with the data, so that
+the assessment can be made on facts.
+
+---
+
+## 5. The analysis procedure
 
 The commands in this section are identical on macOS, Windows and Linux, and
 they all act on the current folder unless `--workspace` names another one.
@@ -359,7 +408,7 @@ unusual.
 
 ---
 
-## 5. The files produced
+## 6. The files produced
 
 Everything under `output/`.
 
@@ -523,7 +572,7 @@ are not needed for Stata.
 
 ---
 
-## 6. Before analysing: three filters
+## 7. Before analysing: three filters
 
 **`group_valid == 1`** — excludes the interrupted triads and those where at
 least one member let a timer expire, as agreed. The full sample stays available
@@ -548,7 +597,7 @@ conversation.
 
 ---
 
-## 7. How the measures are built
+## 8. How the measures are built
 
 This section is for whoever writes the paper: it says what is an exact
 replication and what is an approximation.
@@ -624,7 +673,7 @@ is the intended use — but not with LIWC scores published elsewhere.
 
 ---
 
-## 8. TopicGPT
+## 9. TopicGPT
 
 The adapter **does not rewrite the algorithm**: it prepares the input in the
 expected format, invokes the official functions in the order the paper
@@ -679,7 +728,7 @@ at a compatible gateway through `OPENAI_BASE_URL`.
 
 ---
 
-## 9. Costs and volumes
+## 10. Costs and volumes
 
 On the final dataset (~1,557 participants, ~519 triads) the directed pairs will
 be about 3,100 and the groups 519.
@@ -695,9 +744,19 @@ outcome, batch id to be kept; available only with the Anthropic provider).
 These are modest but not negligible figures: it is worth setting a spending cap
 on the provider's dashboard before launching.
 
+The tool has a cap of its own, because the call count is the product of four
+choices — levels, replicates, models, units — and none of them looks expensive
+on its own. Above a thousand calls a run says what it is about to do and, at a
+terminal, waits for a yes; above twenty thousand it stops, since nothing
+legitimate reaches that figure and what does is a typo. `--max-calls N` raises
+the limit when you mean it, `--yes` skips the question. Away from a terminal —
+the dashboard's subprocess, a scheduled job — there is nobody to answer, so a
+run under the limit proceeds with the figure printed and one above it is
+refused.
+
 ---
 
-## 10. If something does not add up
+## 11. If something does not add up
 
 **"Missing file: ..._messages_long.csv"** — the merge was not run:
 `chatlens merge`, or directly `chatlens all`.
@@ -735,7 +794,7 @@ present, without going out to the network.
 
 ---
 
-## 11. Checking the tools
+## 12. Checking the tools
 
 From a source checkout:
 
@@ -767,7 +826,7 @@ language, key loading and provider selection.
 
 ---
 
-## 12. Results on the pilot
+## 13. Results on the pilot
 
 Stage 1 was run on all 311 messages of the pilot of 18 August 2026.
 

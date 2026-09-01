@@ -29,6 +29,12 @@ from pathlib import Path
 
 from chatlens.core import config
 
+def spend_defaults():
+    """Imported late: the help text needs the figures, nothing else does."""
+    from chatlens.core import spend
+    return spend.CONFIRM_ABOVE, spend.REFUSE_ABOVE
+
+
 # Package data: the starting topic list, and the prompt folder it lives in.
 PROMPTS_DIR = Path(__file__).resolve().parent / 'prompts'
 DEFAULT_SEED = PROMPTS_DIR / 'seed_coalition_formation.md'
@@ -60,9 +66,23 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument('--keep-all', action='store_true',
                         help='do not filter: keep the test sessions and anyone '
                              'who was never part of a group')
+        sp.add_argument('--pseudonymise', '--pseudonymize',
+                        action='store_true', dest='pseudonymise',
+                        help='replace participant identifiers with stable '
+                             'keyed hashes in the files produced')
 
     def add_analysis_options(sp):
         sp.add_argument('--verbose', action='store_true')
+
+        # The paid stages charge per call and the count is a product of four
+        # choices, so a typo is expensive in a way the command line does not
+        # show. See core/spend.py for where the numbers come from.
+        sp.add_argument('--max-calls', type=int, default=None,
+                        metavar='N',
+                        help=f'refuse a run needing more than N paid calls '
+                             f'(default {spend_defaults()[1]})')
+        sp.add_argument('--yes', action='store_true',
+                        help='do not ask for confirmation before paid calls')
 
         sp.add_argument('--llm', action='store_true',
                         help='run the validation rubric')
@@ -164,7 +184,8 @@ def cmd_merge(args) -> int:
     print(f'        {chat.name}')
     print()
     summary = merge.run(wide, chat, config.MERGED_DIR, stem,
-                        keep_all=getattr(args, 'keep_all', False))
+                        keep_all=getattr(args, 'keep_all', False),
+                        pseudonymise=getattr(args, 'pseudonymise', False))
     merge.print_summary(summary)
     return 0
 

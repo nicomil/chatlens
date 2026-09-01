@@ -7,6 +7,8 @@ ratings), while no API call is ever made.
     python tests/test_analysis.py
 """
 
+import contextlib
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -1236,6 +1238,50 @@ class ConfigTests(unittest.TestCase):
         self.assertIs(
             self.secrets.is_git_ignored(self.secrets.ENV_FILE), True
         )
+
+
+
+class SpendGuardTests(unittest.TestCase):
+    """The guard between a mistyped option and a three-figure bill."""
+
+    def setUp(self):
+        from chatlens.core import spend
+        self.spend = spend
+
+    def test_a_small_run_goes_through_silently(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.spend.check(10, 'Rubric')
+        self.assertEqual(out.getvalue(), '')
+
+    def test_a_real_workload_is_announced_but_not_blocked(self):
+        """~7,200 calls is the rubric on the full dataset: it must run."""
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.spend.check(7200, 'Rubric')
+        self.assertIn('7 200', out.getvalue())
+        self.assertIn('proceeding', out.getvalue())
+
+    def test_an_absurd_figure_is_refused(self):
+        with self.assertRaises(self.spend.SpendRefused) as raised:
+            self.spend.check(58000, 'Rubric')
+        message = str(raised.exception)
+        self.assertIn('58 000', message)
+        # Refusing is only half of it: say how to go ahead on purpose.
+        self.assertIn('--max-calls', message)
+
+    def test_the_ceiling_can_be_raised_on_purpose(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.spend.check(58000, 'Rubric', refuse_above=100000)
+
+    def test_yes_skips_the_whole_thing(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.spend.check(999999, 'Rubric', assume_yes=True)
+        self.assertEqual(out.getvalue(), '')
+
+    def test_the_breakdown_says_where_the_calls_come_from(self):
+        with self.assertRaises(self.spend.SpendRefused) as raised:
+            self.spend.check(58000, 'Rubric',
+                             breakdown='group 12000 + dyad_directed 46000')
+        self.assertIn('dyad_directed 46000', str(raised.exception))
 
 
 if __name__ == '__main__':

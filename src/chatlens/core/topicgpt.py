@@ -154,8 +154,7 @@ def check_installation(repo_path: Path) -> None:
     if importlib.util.find_spec('topicgpt_python') is None:
         raise TopicGPTUnavailable(
             'The topicgpt_python package is not installed.\n'
-            '  git clone https://github.com/chtmp223/topicGPT.git\n'
-            '  pip install ./topicGPT'
+            '  chatlens install-topicgpt'
         )
 
     missing = [name for name in PROMPT_FILES.values() if not (repo_path / name).is_file()]
@@ -163,8 +162,8 @@ def check_installation(repo_path: Path) -> None:
         raise TopicGPTUnavailable(
             f'Prompt files missing under {repo_path}: {", ".join(missing)}.\n'
             'The prompts are part of the method and live in the repository, not '
-            'in the installed package: clone the repository and pass '
-            '--topicgpt-repo.'
+            'in the installed package: run "chatlens install-topicgpt", or '
+            'pass --topicgpt-repo if you already have a clone.'
         )
 
 

@@ -209,5 +209,139 @@ class LogReadingTests(unittest.TestCase):
         self.assertEqual(state['lines'][-1], '899')
 
 
+
+class ServerAuthorisationTests(unittest.TestCase):
+    """The dashboard executes processes: reaching it must not be easy.
+
+    These start the real handler on a free port, because the checks live in the
+    headers and nothing below the HTTP layer would exercise them.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server
+        import threading as _threading
+
+        from chatlens.web import server as srv
+
+        cls.srv = srv
+        srv.TOKEN = 'test-token-not-guessable'
+        cls.httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0),
+                                                    srv.Handler)
+        cls.port = cls.httpd.server_address[1]
+        srv.BOUND = ('127.0.0.1', cls.port)
+        cls.thread = _threading.Thread(target=cls.httpd.serve_forever,
+                                       daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def request(self, method, path, headers=None, body=None):
+        import http.client
+
+        conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+        head = {'Host': f'127.0.0.1:{self.port}'}
+        head.update(headers or {})
+        if body is not None:
+            head.setdefault('Content-Type',
+                            'application/x-www-form-urlencoded')
+        conn.request(method, path, body=body, headers=head)
+        response = conn.getresponse()
+        payload = response.read()
+        conn.close()
+        return response, payload
+
+    # --- the token --------------------------------------------------------
+
+    def test_page_without_the_token_is_refused(self):
+        response, _ = self.request('GET', '/')
+        self.assertEqual(response.status, 403)
+
+    def test_the_opening_url_carries_the_token_and_leaves_a_cookie(self):
+        response, _ = self.request('GET', f'/?t={self.srv.TOKEN}')
+        self.assertEqual(response.status, 200)
+        cookie = response.getheader('Set-Cookie') or ''
+        self.assertIn(self.srv.COOKIE_NAME, cookie)
+        # Never sent on a cross-site request: that is the point of it.
+        self.assertIn('SameSite=Strict', cookie)
+        self.assertIn('HttpOnly', cookie)
+
+    def test_the_cookie_alone_is_enough_afterwards(self):
+        response, _ = self.request(
+            'GET', '/log',
+            {'Cookie': f'{self.srv.COOKIE_NAME}={self.srv.TOKEN}'})
+        self.assertEqual(response.status, 200)
+
+    def test_a_wrong_token_is_refused(self):
+        response, _ = self.request(
+            'GET', '/log', {'Cookie': f'{self.srv.COOKIE_NAME}=wrong'})
+        self.assertEqual(response.status, 403)
+
+    # --- DNS rebinding ----------------------------------------------------
+
+    def test_a_foreign_host_header_is_refused(self):
+        """The browser puts the attacker's domain in Host: that is the tell."""
+        response, _ = self.request(
+            'GET', f'/?t={self.srv.TOKEN}', {'Host': 'evil.example.com'})
+        self.assertEqual(response.status, 403)
+
+    # --- cross-site writes ------------------------------------------------
+
+    def test_a_post_from_another_site_is_refused(self):
+        response, _ = self.request(
+            'POST', '/run',
+            {'Cookie': f'{self.srv.COOKIE_NAME}={self.srv.TOKEN}',
+             'Origin': 'https://evil.example.com'},
+            body='command=all')
+        self.assertEqual(response.status, 403)
+        self.assertFalse(self.srv.runner.running)
+
+    def test_a_post_marked_cross_site_is_refused(self):
+        response, _ = self.request(
+            'POST', '/run',
+            {'Cookie': f'{self.srv.COOKIE_NAME}={self.srv.TOKEN}',
+             'Sec-Fetch-Site': 'cross-site'},
+            body='command=all')
+        self.assertEqual(response.status, 403)
+        self.assertFalse(self.srv.runner.running)
+
+    def test_a_post_without_any_token_is_refused(self):
+        response, _ = self.request('POST', '/estimate', body='command=all')
+        self.assertEqual(response.status, 403)
+
+    def test_a_post_from_this_page_goes_through(self):
+        """The estimate, not the run: it must not cost anything to test."""
+        response, _ = self.request(
+            'POST', '/estimate',
+            {'Cookie': f'{self.srv.COOKIE_NAME}={self.srv.TOKEN}',
+             'Origin': f'http://127.0.0.1:{self.port}',
+             'Sec-Fetch-Site': 'same-origin'},
+            body='command=all')
+        self.assertEqual(response.status, 200)
+
+    # --- headers ----------------------------------------------------------
+
+    def test_every_page_carries_a_content_security_policy(self):
+        response, _ = self.request('GET', f'/?t={self.srv.TOKEN}')
+        policy = response.getheader('Content-Security-Policy') or ''
+        self.assertIn("script-src 'self'", policy)
+        self.assertIn("frame-ancestors 'none'", policy)
+
+
+class BindingTests(unittest.TestCase):
+    def test_a_public_address_is_refused_with_a_way_out(self):
+        from chatlens.web import server as srv
+
+        with self.assertRaises(SystemExit) as raised:
+            srv.serve(host='0.0.0.0', port=8765, open_browser=False)
+        message = str(raised.exception)
+        self.assertIn('Refusing to listen', message)
+        # Refusing is only half of it: say what to do instead.
+        self.assertIn('ssh', message)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

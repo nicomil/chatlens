@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 from . import aggregate as agg  # noqa: E402
-from . import archive, config, llm_rubric, report, topicgpt  # noqa: E402
+from . import archive, config, llm_rubric, report, spend, topicgpt  # noqa: E402
 
 
 def read_csv(path: Path) -> list[dict]:
@@ -81,6 +81,11 @@ def run_llm_stage(features, transcripts_by_level, args) -> None:
     models = [m.strip() for m in (args.llm_models or '').split(',') if m.strip()]
     if not models:
         models = [llm_rubric.default_model_for(provider)]
+
+    # Every level is assembled first so that the total can be checked before a
+    # single call is made. Checking level by level would ask about the first
+    # and then quietly spend on the other three.
+    units_by_level = {}
     for level in args.llm_levels:
         units = llm_rubric.build_units(
             features[level], level, transcripts_by_level[level]
@@ -88,7 +93,20 @@ def run_llm_stage(features, transcripts_by_level, args) -> None:
         if not units:
             print(f'  {level}: no transcript to score')
             continue
+        units_by_level[level] = units
 
+    if not args.llm_dry_run and units_by_level:
+        per_unit = len(models) * args.llm_replicates
+        spend.check(
+            sum(len(u) for u in units_by_level.values()) * per_unit,
+            'Validation rubric',
+            refuse_above=getattr(args, 'max_calls', None) or spend.REFUSE_ABOVE,
+            assume_yes=getattr(args, 'yes', False),
+            breakdown=' + '.join(f'{lv} {len(u) * per_unit}'
+                                 for lv, u in units_by_level.items()),
+        )
+
+    for level, units in units_by_level.items():
         if args.llm_dry_run:
             print(f'  {level}: {len(units)} units; preview of the first request')
             print(llm_rubric.dry_run_payload(units, models[0]))
@@ -145,6 +163,18 @@ def run_topics_stage(messages, args):
         assignment_documents = topicgpt.build_documents(messages, assign_unit)
         print(f'  documents for assignment: '
               f'{len(assignment_documents)} ({assign_unit})')
+
+    if not args.topicgpt_dry_run:
+        # TopicGPT queries once per document, in two phases: induction over the
+        # first set, assignment over the second.
+        planned = len(documents) + len(assignment_documents or documents)
+        spend.check(
+            planned, 'TopicGPT',
+            refuse_above=getattr(args, 'max_calls', None) or spend.REFUSE_ABOVE,
+            assume_yes=getattr(args, 'yes', False),
+            breakdown=f'induction {len(documents)} + assignment '
+                      f'{len(assignment_documents or documents)}',
+        )
 
     if args.topicgpt_dry_run:
         outdir = config.topics_dir(args.stem)

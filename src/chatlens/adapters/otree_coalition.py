@@ -49,6 +49,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from chatlens.core import privacy
+
 # --- Game constants, aligned with bargaining_tdl_common/utils.py -----------
 
 TOPOLOGY = {
@@ -873,12 +875,16 @@ def write_csv(path: Path, rows):
 
 
 def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
-        keep_all: bool = False) -> dict:
+        keep_all: bool = False, pseudonymise: bool = False) -> dict:
     """Step 1: merge choices and chat, and build the experiment's variables.
 
     By default only real participants who were part of a triad are kept (see
     `select_participants`). With ``keep_all`` nothing is filtered: that is for
     inspecting the raw data, not for analysing it.
+
+    With ``pseudonymise`` the participant identifiers are replaced by keyed
+    hashes on the way out. It happens after everything is computed, so no
+    variable depends on it and the numbers are the same either way.
 
     Returns a summary with the paths produced and the figures to check.
     """
@@ -917,18 +923,26 @@ def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
         chat_aggregated=outdir / f'{stem}_chat_aggregated.csv',
     )
 
+    by_partner = build_by_partner(
+        wide_rows, wide_cols, groups, uid_by_code, messages)
+    aggregated = build_aggregated(
+        wide_rows, wide_cols, groups, uid_by_code, messages)
+
+    # Last of all, so that nothing computed above can depend on it: the
+    # numbers are the same whether or not the identifiers are replaced.
+    pseudonymised = []
+    if pseudonymise:
+        key = privacy.load_or_create_key(outdir.parent)
+        for table in (messages, by_partner, aggregated):
+            pseudonymised = privacy.pseudonymise_rows(table, key) or pseudonymised
+
     write_csv(paths['messages_long'], messages)
-    write_csv(
-        paths['chat_by_partner'],
-        build_by_partner(wide_rows, wide_cols, groups, uid_by_code, messages),
-    )
-    write_csv(
-        paths['chat_aggregated'],
-        build_aggregated(wide_rows, wide_cols, groups, uid_by_code, messages),
-    )
+    write_csv(paths['chat_by_partner'], by_partner)
+    write_csv(paths['chat_aggregated'], aggregated)
 
     summary = dict(
         paths=paths,
+        pseudonymised=pseudonymised,
         n_input=len(all_rows),
         n_participants=len(wide_rows),
         n_grouped=len(uid_by_code),
@@ -972,6 +986,14 @@ def print_summary(summary: dict) -> None:
     if summary['n_messages_resolved'] != expected:
         print('  WARNING: not every message could be traced back to a '
               'participant; see the warnings below.')
+    if summary.get('pseudonymised'):
+        columns = summary['pseudonymised']
+        print(f'Identifiers replaced   : {len(columns)} columns '
+              f'({", ".join(columns[:3])}'
+              f'{", ..." if len(columns) > 3 else ""})')
+        print('  the key is in output/.pseudonym_key: it must not travel with '
+              'the data')
+
     print()
     for path in summary['paths'].values():
         print(f'  {path}')
