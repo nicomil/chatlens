@@ -22,6 +22,11 @@ from chatlens.core import lexicons, text_metrics  # noqa: E402
 from chatlens.core import topicgpt as topicgpt_runner  # noqa: E402
 
 
+# The system prompt as it was written by hand, before the dimensions became
+# a declaration. Frozen here on purpose: see RubricSpecTests.
+LEGACY_SYSTEM_PROMPT = 'You are a research assistant coding transcripts for a behavioural economics experiment. Three participants play a coalition-formation game and exchange short private chat messages before deciding whom to support.\n\nYou rate a transcript on four constructs, each on a 0-100 scale. Use the full range: 50 is the midpoint for an unremarkable transcript of this kind, not a default answer. Rate only what the text shows; never infer from what you imagine happened outside the transcript.\n\nANALYTICAL THINKING (analytic)\nFormal, logical, hierarchical reasoning versus narrative, here-and-now, informal language. High: reasoning about payoffs, conditions, consequences, structured argument. Low: greetings, reactions, unstructured chatter.\n\nCLOUT (clout)\nThe confidence and social status the writer projects. High: speaks with authority, focuses on the other person and on the group, makes offers and proposals, appears to lead the exchange. Low: tentative, self-focused, anxious, deferential, hedging.\n\nAUTHENTICITY (authenticity)\nHow spontaneous and personally honest the language reads. High: unguarded, self-disclosing, admits uncertainty or self-interest openly. Low: guarded, strategic, distanced, impression-managing, evasive.\n\nEMOTIONAL TONE (tone)\nEmotional valence. Above 50: positive, warm, friendly. Below 50: negative, hostile, anxious. Exactly 50: neutral or no emotional content.\n\nAlso record whether the transcript contains an explicit commitment to support someone, and whether it contains an explicit request for support.\n\nIf the transcript is empty or contains no usable language, return 50 for every scale and set insufficient_text to true.'
+
+
 class TokenizerTests(unittest.TestCase):
     def test_contractions_stay_whole(self):
         self.assertEqual(
@@ -499,7 +504,7 @@ class ProviderSelectionTests(unittest.TestCase):
     def test_json_instruction_names_every_field(self):
         """The OpenAI-compatible path describes the schema in the prompt."""
         instruction = self.llm._json_instruction()
-        for field in self.llm.SCALE_FIELDS + self.llm.FLAG_FIELDS:
+        for field in self.llm.scale_fields() + self.llm.flag_fields():
             self.assertIn(field, instruction, msg=field)
 
 
@@ -1439,6 +1444,78 @@ class AdapterRegistryTests(unittest.TestCase):
     def test_an_unknown_name_is_refused(self):
         with self.assertRaises(ValueError):
             self.adapters.load('nope')
+
+
+
+class RubricSpecTests(unittest.TestCase):
+    """The dimensions are declared once and the three forms are generated."""
+
+    def setUp(self):
+        from chatlens.core import rubric_spec
+        self.spec = rubric_spec
+
+    def test_the_generated_prompt_matches_the_one_written_by_hand(self):
+        """Pinned deliberately: the rubric cache is keyed on the prompt text.
+
+        Regenerating a prompt that differs by so much as a space would throw
+        away every rating already paid for. If this test fails, the change was
+        either intended — and the cache goes with it — or a slip.
+        """
+        prompt = self.spec.build_system_prompt(self.spec.DEFAULT_DIMENSIONS)
+        self.assertEqual(prompt, LEGACY_SYSTEM_PROMPT)
+
+    def test_the_prompt_describes_every_scale(self):
+        prompt = self.spec.build_system_prompt(self.spec.DEFAULT_DIMENSIONS)
+        for name in self.spec.scales(self.spec.DEFAULT_DIMENSIONS):
+            self.assertIn(f'({name})', prompt)
+
+    def test_the_model_has_a_field_for_every_dimension(self):
+        model = self.spec.build_model(self.spec.DEFAULT_DIMENSIONS)
+        fields = set(model.model_fields)
+        for name in self.spec.scales(self.spec.DEFAULT_DIMENSIONS):
+            self.assertIn(name, fields)
+        for name in self.spec.flags(self.spec.DEFAULT_DIMENSIONS):
+            self.assertIn(name, fields)
+        self.assertIn('rationale', fields)
+
+    def test_the_three_forms_cannot_drift_apart(self):
+        """The point of the registry: prompt, schema and columns agree."""
+        dimensions = self.spec.from_config([
+            dict(name='aggression', label='AGGRESSIVENESS', kind='scale',
+                 summary='How forcefully the writer pushes their claim, 0-100',
+                 high='ultimatums, refusal to move', low='concessions'),
+            dict(name='mentions_deadline', kind='flag',
+                 summary='The text refers to the time limit',
+                 clause='refers to the time limit'),
+        ])
+        prompt = self.spec.build_system_prompt(dimensions, 'Two players bargain.')
+        model = self.spec.build_model(dimensions)
+
+        self.assertIn('AGGRESSIVENESS (aggression)', prompt)
+        self.assertIn('Two players bargain.', prompt)
+        self.assertIn('refers to the time limit', prompt)
+        self.assertIn('one construct', prompt)          # one scale, not four
+        self.assertEqual(self.spec.scales(dimensions), ('aggression',))
+        self.assertEqual(self.spec.flags(dimensions),
+                         ('mentions_deadline', 'insufficient_text'))
+        self.assertIn('aggression', model.model_fields)
+        self.assertIn('mentions_deadline', model.model_fields)
+        # The one dimension no experiment may drop: without it an empty
+        # transcript scores 50 across the board and looks like a reading.
+        self.assertIn('insufficient_text', model.model_fields)
+
+    def test_a_dimension_without_a_name_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.spec.from_config([dict(kind='scale', summary='x')])
+
+    def test_an_unknown_kind_is_refused(self):
+        with self.assertRaises(ValueError) as raised:
+            self.spec.from_config([dict(name='x', kind='slider')])
+        self.assertIn('scale', str(raised.exception))
+
+    def test_no_declaration_means_the_defaults(self):
+        self.assertEqual(self.spec.from_config([]),
+                         self.spec.DEFAULT_DIMENSIONS)
 
 
 if __name__ == '__main__':

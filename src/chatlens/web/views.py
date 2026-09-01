@@ -23,26 +23,35 @@ MODELS_RUBRIC = ['', 'gpt-4o', 'gpt-4.1', 'gpt-5.6-terra', 'gpt-5.6-luna',
 MODELS_TOPIC = ['gpt-4o', 'gpt-4.1']
 LEVELS = ['group', 'dyad_directed', 'dyad', 'sender_group']
 
+def _noun() -> str:
+    """What this experiment calls a group. See core/experiment.py."""
+    experiment = getattr(config, 'EXPERIMENT', None)
+    return experiment.group_noun if experiment else 'group'
+
+
 # What each unit of analysis means. These are the terms that appear everywhere
 # in the data, and without an explanation at hand they cannot be chosen
 # knowingly.
-LEVEL_LABELS = {
-    'group': ('Group', "the triad's whole conversation"),
-    'dyad_directed': ('Directed pair', 'who writes to whom, one direction'),
-    'dyad': ('Pair', 'two people, both directions'),
-    'sender_group': ('Person', 'everything one person wrote'),
-}
+def level_labels() -> dict:
+    return {
+        'group': ('Group', f"the {_noun()}'s whole conversation"),
+        'dyad_directed': ('Directed pair', 'who writes to whom, one direction'),
+        'dyad': ('Pair', 'two people, both directions'),
+        'sender_group': ('Person', 'everything one person wrote'),
+    }
 
-LEVEL_HELP = {
-    'group': "The whole triad's conversation: every message exchanged between "
-             'the three participants. It is the unit with the most text.',
-    'dyad_directed': 'The messages one person sends to another, in a single '
-                     'direction. It is the unit of persuasion: who speaks '
-                     'matters.',
-    'dyad': 'The conversation between two people, in both directions.',
-    'sender_group': 'Everything one person wrote in the group, whoever it was '
-                    'addressed to.',
-}
+
+def level_help() -> dict:
+    return {
+        'group': f"The whole {_noun()}'s conversation: every message exchanged "
+                 f'between its members. It is the unit with the most text.',
+        'dyad_directed': 'The messages one person sends to another, in a '
+                         'single direction. It is the unit of persuasion: who '
+                         'speaks matters.',
+        'dyad': 'The conversation between two people, in both directions.',
+        'sender_group': f'Everything one person wrote in the {_noun()}, '
+                        f'whoever it was addressed to.',
+    }
 
 OPTION_HELP = {
     'llm': 'Has a language model score the same conversations against an '
@@ -167,7 +176,9 @@ def _e(text) -> str:
 
 def status_panel() -> str:
     rows = []
-    for kind, pattern in config.INPUT_PATTERNS.items():
+    for role, pattern in config.INPUT_PATTERNS.items():
+        if pattern is None:
+            continue            # optional input: nothing to be missing
         matches = sorted(config.INPUT_DIR.glob(pattern))
         if matches:
             for match in matches:
@@ -198,9 +209,9 @@ def _options(values, selected='') -> str:
 
 
 def _level_checkbox(level: str, checked: bool) -> str:
-    name, subtitle = LEVEL_LABELS[level]
+    name, subtitle = level_labels()[level]
     return (
-        f'<label class="lev" data-tip="{_e(LEVEL_HELP[level])}">'
+        f'<label class="lev" data-tip="{_e(level_help()[level])}">'
         f'<input type="checkbox" name="llm_level" value="{level}"'
         f'{" checked" if checked else ""}>'
         f'<span class="lev-t"><b>{_e(name)}</b>'
@@ -211,7 +222,7 @@ def _level_checkbox(level: str, checked: bool) -> str:
 def _level_options(selected: str) -> str:
     return ''.join(
         f'<option value="{lv}"{" selected" if lv == selected else ""}>'
-        f'{_e(LEVEL_LABELS[lv][0])} — {_e(LEVEL_LABELS[lv][1])}</option>'
+        f'{_e(level_labels()[lv][0])} — {_e(level_labels()[lv][1])}</option>'
         for lv in LEVELS
     )
 
@@ -562,7 +573,7 @@ def _params_table(run: dict) -> str:
 
     add('Messages analysed', run.get('n_messages', '—'))
     for level, count in (run.get('levels') or {}).items():
-        name = LEVEL_LABELS.get(level, (level, ''))[0]
+        name = level_labels().get(level, (level, ''))[0]
         add(f'Units · {name}', count)
 
     rubric = run.get('rubric') or {}
@@ -577,9 +588,9 @@ def _params_table(run: dict) -> str:
     if topics:
         add('Topics · model', topics.get('model', '—'))
         add('Topics · discovers by reading',
-            LEVEL_LABELS.get(topics.get('unit'), (topics.get('unit'), ''))[0])
+            level_labels().get(topics.get('unit'), (topics.get('unit'), ''))[0])
         add('Topics · attributes to',
-            LEVEL_LABELS.get(topics.get('assign_unit'),
+            level_labels().get(topics.get('assign_unit'),
                              (topics.get('assign_unit'), ''))[0])
         add('Topics · seed', Path(topics.get('seed') or '—').name)
 
@@ -649,11 +660,22 @@ def after_run() -> str:
 
 
 def page() -> str:
+    # Whichever required input is there: the roles depend on the adapter, and
+    # asking for 'wide' by name broke on every experiment that is not ours.
     dataset = '—'
-    try:
-        dataset = config.find_input('wide').name
-    except config.InputError:
-        pass
+    for role, pattern in config.INPUT_PATTERNS.items():
+        if pattern is None:
+            continue
+        try:
+            dataset = config.find_input(role).name
+            break
+        except config.InputError:
+            continue
+
+    # The experiment's name where it has one, and always the file: they answer
+    # different questions, but printing the filename twice answers neither.
+    experiment = getattr(config, 'EXPERIMENT', None)
+    named = experiment.name if experiment and experiment.name else ''
 
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -664,6 +686,7 @@ def page() -> str:
 </head><body>
 <header>
   <h1>Text analysis</h1>
+  {f'<span class="muted">{_e(named)}</span>' if named else ''}
   <span class="muted">{_e(dataset)}</span>
 </header>
 

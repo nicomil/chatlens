@@ -157,6 +157,8 @@ def use_experiment(experiment) -> None:
         experiment.treatments = dict(getattr(module, 'TREATMENT_LABELS', {}))
     if experiment.group_noun == 'group':
         experiment.group_noun = getattr(module, 'GROUP_NOUN', 'group')
+        experiment.group_target = getattr(
+            module, 'GROUP_TARGET', f'everyone in the {experiment.group_noun}')
 
     patterns = adapters.inputs(experiment.adapter)
     # The workspace may rename its own files; roles it does not mention keep

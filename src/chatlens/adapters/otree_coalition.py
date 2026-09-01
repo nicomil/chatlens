@@ -63,6 +63,9 @@ OPTIONS = ('keep_all',)
 # overrides both; without one these are what gets printed, so the project this
 # grew out of reads exactly as it did before.
 GROUP_NOUN = 'triad'
+# The rubric's wording for the group level, kept verbatim so that ratings
+# cached before this was configurable are still valid.
+GROUP_TARGET = 'all three participants'
 TREATMENT_LABELS = {
     'private': 'Baseline (private)',
     'public': 'Public communication',
@@ -92,7 +95,12 @@ MTURK_COLS = {
     'session.mturk_HITGroupId',
 }
 
-CHANNEL_RE = re.compile(r'^(?P<prefix>.*)-(?P<group>\d+)_(?P<a>\d)_(?P<b>\d)$')
+# oTree names a private channel <prefix>-<group>_<a>_<b>. The two member
+# ids take + rather than a single digit: with one digit the pattern simply
+# stopped matching at a group of ten, and the messages vanished without a
+# word rather than being reported as unresolvable.
+CHANNEL_RE = re.compile(
+    r'^(?P<prefix>.*)-(?P<group>\d+)_(?P<a>\d+)_(?P<b>\d+)$')
 
 
 # --- Utilities -------------------------------------------------------------

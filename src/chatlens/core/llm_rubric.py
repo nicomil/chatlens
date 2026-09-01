@@ -31,12 +31,13 @@ number a few hundred and the synchronous mode is enough.
 
 from __future__ import annotations
 
-import functools
 import json
 import os
 import statistics
 import time
 from dataclasses import dataclass
+
+from . import rubric_spec
 
 # The rubric does not depend on a specific provider: what it needs is a model
 # that follows instructions and returns JSON. Three backends are therefore
@@ -70,40 +71,45 @@ OLLAMA_BASE_URL = 'http://localhost:11434/v1'
 
 DEFAULT_MODEL = PROVIDERS['anthropic']['default_model']
 
-SYSTEM_PROMPT = """You are a research assistant coding transcripts for a \
-behavioural economics experiment. Three participants play a coalition-formation \
-game and exchange short private chat messages before deciding whom to support.
+def dimensions() -> tuple:
+    """What this workspace's rubric measures.
 
-You rate a transcript on four constructs, each on a 0-100 scale. Use the full \
-range: 50 is the midpoint for an unremarkable transcript of this kind, not a \
-default answer. Rate only what the text shows; never infer from what you \
-imagine happened outside the transcript.
+    Declared once in rubric_spec and, where a workspace says otherwise, in its
+    experiment.toml. Everything the rubric needs — the prompt, the schema, the
+    column names — is generated from this one list, so the three cannot drift
+    apart the way they used to.
+    """
+    from . import config
 
-ANALYTICAL THINKING (analytic)
-Formal, logical, hierarchical reasoning versus narrative, here-and-now, \
-informal language. High: reasoning about payoffs, conditions, consequences, \
-structured argument. Low: greetings, reactions, unstructured chatter.
+    experiment = config.EXPERIMENT
+    if experiment is None:
+        return rubric_spec.DEFAULT_DIMENSIONS
+    try:
+        return rubric_spec.from_config(experiment.rubric_dimensions)
+    except ValueError as exc:
+        raise SystemExit(f'\nIn experiment.toml: {exc}\n') from None
 
-CLOUT (clout)
-The confidence and social status the writer projects. High: speaks with \
-authority, focuses on the other person and on the group, makes offers and \
-proposals, appears to lead the exchange. Low: tentative, self-focused, \
-anxious, deferential, hedging.
 
-AUTHENTICITY (authenticity)
-How spontaneous and personally honest the language reads. High: unguarded, \
-self-disclosing, admits uncertainty or self-interest openly. Low: guarded, \
-strategic, distanced, impression-managing, evasive.
+def rubric_context() -> str:
+    from . import config
 
-EMOTIONAL TONE (tone)
-Emotional valence. Above 50: positive, warm, friendly. Below 50: negative, \
-hostile, anxious. Exactly 50: neutral or no emotional content.
+    experiment = config.EXPERIMENT
+    if experiment is not None and experiment.rubric_context:
+        return experiment.rubric_context
+    return rubric_spec.DEFAULT_CONTEXT
 
-Also record whether the transcript contains an explicit commitment to support \
-someone, and whether it contains an explicit request for support.
 
-If the transcript is empty or contains no usable language, return 50 for every \
-scale and set insufficient_text to true."""
+def system_prompt() -> str:
+    return rubric_spec.build_system_prompt(dimensions(), rubric_context())
+
+
+def scale_fields() -> tuple:
+    return rubric_spec.scales(dimensions())
+
+
+def flag_fields() -> tuple:
+    return rubric_spec.flags(dimensions())
+
 
 USER_TEMPLATE = """Transcript ({unit}), {n_messages} message(s), \
 treatment "{treatment}":
@@ -115,49 +121,14 @@ treatment "{treatment}":
 Rate the language of {target} in this transcript."""
 
 
-@functools.lru_cache(maxsize=1)
 def rubric_model():
-    """Output schema of the rubric.
+    """Output schema of the rubric, built from the declared dimensions.
 
     Built on demand because pydantic is needed only at this stage: the
-    deterministic measures in `text_metrics` must stay runnable with no external
-    dependency at all.
+    deterministic measures in `text_metrics` must stay runnable with no
+    external dependency at all.
     """
-    try:
-        from pydantic import BaseModel, Field
-    except ImportError as exc:  # pragma: no cover - dipende dall'ambiente
-        raise RuntimeError(
-            'The rubric needs pydantic and the chosen provider client.\n'
-            '  pip install -r requirements.txt'
-        ) from exc
-
-    class RubricScores(BaseModel):
-        """Rubric scores for a single transcript."""
-
-        analytic: int = Field(ge=0, le=100, description='Analytical thinking, 0-100')
-        clout: int = Field(ge=0, le=100, description='Confidence and social status, 0-100')
-        authenticity: int = Field(ge=0, le=100, description='Spontaneous honesty, 0-100')
-        tone: int = Field(ge=0, le=100, description='Emotional tone, 50 = neutral')
-        contains_support_commitment: bool = Field(
-            description='The text explicitly promises support to someone'
-        )
-        contains_support_request: bool = Field(
-            description='The text explicitly asks someone for support'
-        )
-        insufficient_text: bool = Field(
-            description='True when the transcript carries too little language to rate'
-        )
-        rationale: str = Field(
-            description='One sentence, at most 25 words, justifying the ratings'
-        )
-
-    return RubricScores
-
-
-SCALE_FIELDS = ('analytic', 'clout', 'authenticity', 'tone')
-FLAG_FIELDS = (
-    'contains_support_commitment', 'contains_support_request', 'insufficient_text',
-)
+    return rubric_spec.build_model(dimensions())
 
 
 @dataclass
@@ -177,11 +148,20 @@ def build_units(features_rows, level: str, transcript_lookup) -> list[RubricUnit
     from .aggregate import LEVEL_KEYS
 
     keys = LEVEL_KEYS[level]
+    # What the prompt calls the people being rated. The group level is the
+    # only one that depends on how many there are, so the experiment says it;
+    # the coalition adapter keeps "all three participants", which is what the
+    # cached ratings were produced against.
+    from . import config
+
+    experiment = config.EXPERIMENT
+    everyone = (experiment.group_target if experiment
+                else 'all three participants')
     targets = {
         'dyad_directed': 'the sender',
         'dyad': 'both participants',
         'sender_group': 'the sender',
-        'group': 'all three participants',
+        'group': everyone,
     }
     units = []
     for row in features_rows:
@@ -220,7 +200,7 @@ def _request_params(unit: RubricUnit, model: str) -> dict:
         # input cost on large corpora.
         system=[{
             'type': 'text',
-            'text': SYSTEM_PROMPT,
+            'text': system_prompt(),
             'cache_control': {'type': 'ephemeral'},
         }],
         thinking={'type': 'adaptive'},
@@ -230,15 +210,15 @@ def _request_params(unit: RubricUnit, model: str) -> dict:
 
 
 def _empty_scores() -> dict:
-    scores = {field: None for field in SCALE_FIELDS}
-    scores.update({field: None for field in FLAG_FIELDS})
+    scores = {field: None for field in scale_fields()}
+    scores.update({field: None for field in flag_fields()})
     scores['rationale'] = ''
     return scores
 
 
 def _scores_from_parsed(parsed, model: str) -> dict:
-    result = {field: getattr(parsed, field) for field in SCALE_FIELDS}
-    result.update({field: int(getattr(parsed, field)) for field in FLAG_FIELDS})
+    result = {field: getattr(parsed, field) for field in scale_fields()}
+    result.update({field: int(getattr(parsed, field)) for field in flag_fields()})
     result['rationale'] = parsed.rationale
     result['error'] = ''
     result['model'] = model
@@ -408,8 +388,8 @@ def _json_instruction() -> str:
     validation happens locally with pydantic anyway, which is the check that
     matters.
     """
-    fields = ', '.join(f'"{f}": integer 0-100' for f in SCALE_FIELDS)
-    flags = ', '.join(f'"{f}": true/false' for f in FLAG_FIELDS)
+    fields = ', '.join(f'"{f}": integer 0-100' for f in scale_fields())
+    flags = ', '.join(f'"{f}": true/false' for f in flag_fields())
     return (
         '\n\nRespond with a single JSON object and nothing else, with exactly '
         f'these keys: {fields}, {flags}, "rationale": string of at most 25 words.'
@@ -423,7 +403,7 @@ def _score_openai_compatible(client, unit: RubricUnit, model: str,
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {'role': 'system', 'content': SYSTEM_PROMPT + _json_instruction()},
+                {'role': 'system', 'content': system_prompt() + _json_instruction()},
                 {'role': 'user', 'content': _user_message(unit)},
             ],
             response_format={'type': 'json_object'},
@@ -458,7 +438,7 @@ def unit_signature(unit: RubricUnit, models, replicates: int) -> str:
 
     material = '\x00'.join([
         unit.unit, unit.transcript, unit.treatment, unit.target,
-        ','.join(sorted(models)), str(replicates), SYSTEM_PROMPT,
+        ','.join(sorted(models)), str(replicates), system_prompt(),
     ])
     return hashlib.sha256(material.encode('utf-8')).hexdigest()[:32]
 
@@ -556,13 +536,13 @@ def _summarize(unit: RubricUnit, judgements) -> dict:
     row = dict(zip(LEVEL_KEYS[unit.unit], unit.key))
     valid = [j for j in judgements if not j.get('error')]
 
-    for field in SCALE_FIELDS:
+    for field in scale_fields():
         values = [j[field] for j in valid if j.get(field) is not None]
         row[f'llm_{field}'] = round(statistics.mean(values), 3) if values else ''
         row[f'llm_{field}_sd'] = (
             round(statistics.stdev(values), 3) if len(values) > 1 else ''
         )
-    for field in FLAG_FIELDS:
+    for field in flag_fields():
         values = [j[field] for j in valid if j.get(field) is not None]
         # Majority across ratings; ties resolve to 0.
         row[f'llm_{field}'] = int(sum(values) * 2 > len(values)) if values else ''
@@ -644,8 +624,8 @@ def collect_batch(batch_id: str, units, poll_seconds: int = 60, progress=None):
         except Exception:  # noqa: BLE001 - response does not match the schema
             by_unit[index].append(dict(_empty_scores(), error='unparseable'))
             continue
-        row = {field: getattr(payload, field) for field in SCALE_FIELDS}
-        row.update({field: int(getattr(payload, field)) for field in FLAG_FIELDS})
+        row = {field: getattr(payload, field) for field in scale_fields()}
+        row.update({field: int(getattr(payload, field)) for field in flag_fields()})
         row['rationale'] = payload.rationale
         row['error'] = ''
         row['model'] = message.model

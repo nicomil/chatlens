@@ -1,0 +1,19 @@
+[experiment]
+name    = "Ultimatum with pre-play chat"
+adapter = "generic_chat"
+
+[input]
+messages     = "chat_log*.csv"
+participants = "roster*.csv"
+
+[columns]
+group     = "team"
+sender    = "from_seat"
+receiver  = "to_seat"
+body      = "text"
+timestamp = "sent_at"
+treatment = "condition"
+
+[treatments]
+anonymous = "Anonymous offers"
+named     = "Named offers"

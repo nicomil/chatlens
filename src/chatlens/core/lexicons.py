@@ -165,7 +165,15 @@ NEGATIVE_EMOTION = {
 } | SWEAR
 
 # Markers of the game's own language: not part of LIWC, but a useful
-# descriptive check on the strategic content of the chat.
+# descriptive check on the strategic content of the chat. This is the one list
+# here that belongs to a particular experiment rather than to English, so a
+# workspace can replace it:
+#
+#     [lexicons]
+#     commitment = ["offer", "accept", "reject", "deadline"]
+#
+# Everything else — function words, pronouns, emotion — is the language, and
+# replacing it would not mean anything.
 GAME_COMMITMENT = {
     'support', 'supports', 'supporting', 'supported', 'back', 'backing',
     'choose', 'choosing', 'chose', 'pick', 'picking', 'picked', 'vote',
@@ -208,3 +216,24 @@ CATEGORIES = {
     'negemo': NEGATIVE_EMOTION,
     'commitment': GAME_COMMITMENT,
 }
+
+# Which categories a workspace may override, and why only these.
+CONFIGURABLE = ('commitment',)
+
+
+def categories(overrides=None) -> dict:
+    """The categories in force, with any the workspace replaced.
+
+    An unknown name is refused rather than ignored: a lexicon silently not
+    applied is the kind of thing that is noticed after the analysis is written
+    up, if at all.
+    """
+    active = dict(CATEGORIES)
+    for name, words in (overrides or {}).items():
+        if name not in CONFIGURABLE:
+            raise ValueError(
+                f'The lexicon "{name}" cannot be replaced. '
+                f'Replaceable: {", ".join(CONFIGURABLE)}. '
+                f'The others are the English language, not this experiment.')
+        active[name] = {str(w).strip().lower() for w in words if str(w).strip()}
+    return active

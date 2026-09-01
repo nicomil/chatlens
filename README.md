@@ -11,13 +11,11 @@ begins. An **adapter** turns one experiment's export into the canonical message
 tables; the **core** — measures, rubric, topics, aggregation, report — works
 from those tables alone and never reads a raw export itself.
 
-One adapter exists today, `adapters/otree_coalition`, written for a
-three-player coalition-formation game in oTree: group size, treatment names and
-payoff rule are still written into it. Running another experiment therefore
-means writing an adapter of your own against that same contract, which is a
-small module; making it a matter of configuration instead is the next piece of
-work. The core, the dashboard and everything downstream are already
-experiment-agnostic.
+Two adapters ship with it. `generic_chat` needs no code at all where the
+export is already one message per row: the column names go in a configuration
+file. `otree_coalition` is the worked example of the other kind, written for a
+three-player coalition game in oTree, where the groups, the channels and the
+choices all have to be reconstructed. See §5 for how to run your own study.
 
 ## The three things to know
 
@@ -82,15 +80,16 @@ are there.
 2. [Installation](#2-installation)
 3. [API keys](#3-api-keys)
 4. [Participant data](#4-participant-data)
-5. [The analysis procedure](#5-the-analysis-procedure)
-6. [The files produced](#6-the-files-produced)
-7. [Before analysing: three filters](#7-before-analysing-three-filters)
-8. [How the measures are built](#8-how-the-measures-are-built)
-9. [TopicGPT](#9-topicgpt)
-10. [Costs and volumes](#10-costs-and-volumes)
-11. [If something does not add up](#11-if-something-does-not-add-up)
-12. [Checking the tools](#12-checking-the-tools)
-13. [Results on the pilot](#13-results-on-the-pilot)
+5. [Your own experiment](#5-your-own-experiment)
+6. [The analysis procedure](#6-the-analysis-procedure)
+7. [The files produced](#7-the-files-produced)
+8. [Before analysing: three filters](#8-before-analysing-three-filters)
+9. [How the measures are built](#9-how-the-measures-are-built)
+10. [TopicGPT](#10-topicgpt)
+11. [Costs and volumes](#11-costs-and-volumes)
+12. [If something does not add up](#12-if-something-does-not-add-up)
+13. [Checking the tools](#13-checking-the-tools)
+14. [Results on the pilot](#14-results-on-the-pilot)
 
 ---
 
@@ -329,7 +328,119 @@ the assessment can be made on facts.
 
 ---
 
-## 5. The analysis procedure
+## 5. Your own experiment
+
+The project is split where the reusable part ends and the experiment-specific
+part begins.
+
+```
+your export
+     │
+     ▼
+  ADAPTER          knows your columns, your group size, your game
+     │
+     ▼
+  THREE TABLES     messages_long · chat_by_partner · chat_aggregated
+     │             the contract, written down in core/schema.py
+     ▼
+  CORE             measures · rubric · topics · aggregation · report
+```
+
+The core never reads a raw export. It reads the three tables and nothing else,
+which is what lets it run on a study it has never seen.
+
+### The usual case: a configuration file
+
+If your export is already one message per row — a group, a sender, a recipient,
+a text — no code is needed. Put an `experiment.toml` at the root of the
+workspace:
+
+```toml
+[experiment]
+name       = "Ultimatum with pre-play chat"
+adapter    = "generic_chat"
+group_noun = "team"          # what the report calls a group; default "group"
+
+[input]
+messages     = "chat_log*.csv"
+participants = "roster*.csv"       # optional: joined onto the participant table
+
+[columns]
+group     = "team"
+sender    = "from_seat"
+receiver  = "to_seat"
+body      = "text"
+timestamp = "sent_at"              # epoch seconds or ISO 8601, either works
+treatment = "condition"
+
+[treatments]                       # how the report names them, and their order
+anonymous = "Anonymous offers"
+named     = "Named offers"
+```
+
+Then the usual `chatlens all`. `chatlens status` shows which adapter is active
+and which files it is looking for.
+
+Group size is whatever your data says: nothing in the core counts the members,
+so three or nine aggregate the same way. The one real assumption is that a
+message has **one sender and one recipient** — a message to the whole group has
+no directed pair to belong to. Those rows are counted and reported rather than
+attributed to somebody; if your chat is group-wide, write one row per recipient
+before running.
+
+### Measuring something else
+
+The rubric's dimensions are declared, not hard-coded, and the prompt, the
+output schema and the column names are all generated from that one declaration.
+To measure something your experiment cares about:
+
+```toml
+[rubric]
+context = "Two participants bargain over how to divide a sum of money."
+
+[[rubric.dimensions]]
+name    = "aggression"
+label   = "AGGRESSIVENESS"
+kind    = "scale"                  # 0-100; "flag" for true/false
+summary = "How forcefully the writer pushes their own claim, 0-100"
+high    = "ultimatums, threats to walk away, refusal to move"
+low     = "concessions, hedging, invitations to find a middle ground"
+```
+
+Declaring any dimension replaces the default four, so list every one you want.
+`insufficient_text` is always added: without it an empty transcript scores 50
+across the board and reads like a real measurement.
+
+One dictionary can be replaced the same way — `commitment`, the only word list
+in the project that belongs to a particular game rather than to English:
+
+```toml
+[lexicons]
+commitment = ["offer", "accept", "reject", "deadline", "final"]
+```
+
+### When the export is not that shape
+
+Some exports need real reconstruction — who was in which group, what a channel
+name means, what a choice was relative to a seating order. That is a Python
+module in `adapters/`, and `adapters/otree_coalition.py` is the worked example:
+it does all of the above for a three-player coalition game in oTree. An adapter
+needs `INPUTS`, `OPTIONS`, `run()` and `print_summary()`; `core/schema.py`
+states exactly what `run()` has to produce, and says so in an error message
+naming the missing column if it does not.
+
+### A limitation worth knowing before you start
+
+The dictionary-based measures are **English only**. The tokeniser matches a-z
+and the word lists are English. On a conversation in another language the
+volume measures still mean something, while analytic, clout, authenticity and
+tone read near zero and mean nothing at all. There is no partial credit: another
+language needs its own lexicons. The rubric and the topics, being model-based,
+do not have this limitation.
+
+---
+
+## 6. The analysis procedure
 
 The commands in this section are identical on macOS, Windows and Linux, and
 they all act on the current folder unless `--workspace` names another one.
@@ -408,7 +519,7 @@ unusual.
 
 ---
 
-## 6. The files produced
+## 7. The files produced
 
 Everything under `output/`.
 
@@ -572,7 +683,7 @@ are not needed for Stata.
 
 ---
 
-## 7. Before analysing: three filters
+## 8. Before analysing: three filters
 
 **`group_valid == 1`** — excludes the interrupted triads and those where at
 least one member let a timer expire, as agreed. The full sample stays available
@@ -597,7 +708,7 @@ conversation.
 
 ---
 
-## 8. How the measures are built
+## 9. How the measures are built
 
 This section is for whoever writes the paper: it says what is an exact
 replication and what is an approximation.
@@ -673,7 +784,7 @@ is the intended use — but not with LIWC scores published elsewhere.
 
 ---
 
-## 9. TopicGPT
+## 10. TopicGPT
 
 The adapter **does not rewrite the algorithm**: it prepares the input in the
 expected format, invokes the official functions in the order the paper
@@ -728,7 +839,7 @@ at a compatible gateway through `OPENAI_BASE_URL`.
 
 ---
 
-## 10. Costs and volumes
+## 11. Costs and volumes
 
 On the final dataset (~1,557 participants, ~519 triads) the directed pairs will
 be about 3,100 and the groups 519.
@@ -756,7 +867,7 @@ refused.
 
 ---
 
-## 11. If something does not add up
+## 12. If something does not add up
 
 **"Missing file: ..._messages_long.csv"** — the merge was not run:
 `chatlens merge`, or directly `chatlens all`.
@@ -772,6 +883,19 @@ the one you need, or point at it with `--chat <path>`.
 run locally without any key.
 
 **"The topicgpt_python package is not installed"** — see §2, second part.
+
+**"... is missing columns the analysis cannot do without"** — the adapter did
+not produce one of the columns the core needs. The message names it, says what
+it is for and lists what is present; §5 and `core/schema.py` have the full
+contract.
+
+**"does not have the columns the configuration names"** — with `generic_chat`,
+the names under `[columns]` in `experiment.toml` do not match the export's
+header. The message lists the header, so it is usually a matter of copying the
+right name across.
+
+**Every language measure is near zero** — the dictionaries are English only.
+See the end of §5.
 
 **On Windows, `chatlens` is not found after installing** — the folder uv puts
 its tools in is not on `PATH` yet. `uv tool update-shell` adds it; open a new
@@ -794,7 +918,7 @@ present, without going out to the network.
 
 ---
 
-## 12. Checking the tools
+## 13. Checking the tools
 
 From a source checkout:
 
@@ -826,7 +950,7 @@ language, key loading and provider selection.
 
 ---
 
-## 13. Results on the pilot
+## 14. Results on the pilot
 
 Stage 1 was run on all 311 messages of the pilot of 18 August 2026.
 

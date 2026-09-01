@@ -72,12 +72,19 @@ class Experiment:
         # What the report calls a group of participants. "Triad" is right for
         # three players and reads as a bug for any other number.
         self.group_noun = str(block.get('group_noun') or 'group').strip()
+        # How the rubric's prompt refers to everyone in a group.
+        self.group_target = str(
+            block.get('group_target')
+            or f'everyone in the {self.group_noun}').strip()
 
         self.input = dict(data.get('input') or {})
         self.columns = {**DEFAULT_COLUMNS, **(data.get('columns') or {})}
 
         # Order matters: it is the order the report puts the sections in.
         self.treatments = dict(data.get('treatments') or {})
+
+        # Only 'commitment' can be replaced; see core/lexicons.py.
+        self.lexicons = dict(data.get('lexicons') or {})
 
         rubric = data.get('rubric') or {}
         self.rubric_dimensions = rubric.get('dimensions')

@@ -39,13 +39,35 @@ import math
 import re
 from collections import Counter
 
+from . import lexicons
 from .lexicons import CATEGORIES, is_adverb
 
 # Tokenisation keeps words with internal apostrophes (don't, i'm) whole, so
 # contracted forms stay recognisable to the dictionaries.
+#
+# English only, and deliberately visible as such: the pattern matches a-z, and
+# the dictionaries below are English word lists. On a conversation in another
+# language the volume measures (messages, characters) still mean something,
+# while every dictionary-based index — analytic, clout, authenticity, tone —
+# reads near zero and means nothing at all. There is no partial credit here:
+# another language needs its own lexicons, not a wider regex.
 TOKEN_RE = re.compile(r"[a-z]+(?:'[a-z]+)*", re.IGNORECASE)
 
 COUNT_KEYS = sorted(set(CATEGORIES) | {'adverb'})
+
+
+def _active_categories() -> dict:
+    """The lexicons in force, including anything the workspace replaced."""
+    from . import config
+
+    experiment = getattr(config, 'EXPERIMENT', None)
+    overrides = getattr(experiment, 'lexicons', None) if experiment else None
+    if not overrides:
+        return CATEGORIES
+    try:
+        return lexicons.categories(overrides)
+    except ValueError as exc:
+        raise SystemExit(f'\nIn experiment.toml, [lexicons]: {exc}\n') from None
 
 
 def tokenize(text: str) -> list[str]:
@@ -60,9 +82,10 @@ def count_categories(text: str) -> dict:
     counts both as an auxiliary and as a negation, exactly as in LIWC.
     """
     tokens = tokenize(text)
+    active = _active_categories()
     counts = {key: 0 for key in COUNT_KEYS}
     for token in tokens:
-        for name, vocabulary in CATEGORIES.items():
+        for name, vocabulary in active.items():
             if token in vocabulary:
                 counts[name] += 1
         if is_adverb(token):
