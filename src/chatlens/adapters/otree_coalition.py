@@ -968,7 +968,6 @@ def run(wide: Path, chat: Path, outdir: Path, stem: str,
 
     summary = dict(
         paths=paths,
-        pseudonymised=pseudonymised,
         n_input=len(all_rows),
         n_participants=len(wide_rows),
         n_grouped=len(uid_by_code),
@@ -982,6 +981,8 @@ def run(wide: Path, chat: Path, outdir: Path, stem: str,
         n_messages_resolved=len(messages),
         warnings=warnings + anomalies,
     )
+    if pseudonymised:
+        summary['pseudonymised'] = pseudonymised
 
     # Written to file, so the report can be regenerated without redoing the
     # merge.
