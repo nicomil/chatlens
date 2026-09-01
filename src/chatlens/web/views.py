@@ -15,8 +15,8 @@ import html
 import re
 from pathlib import Path
 
-from src import archive, config
-from web.runner import runner
+from chatlens.core import archive, config
+from chatlens.web.runner import runner
 
 MODELS_RUBRIC = ['', 'gpt-4o', 'gpt-4.1', 'gpt-5.6-terra', 'gpt-5.6-luna',
                  'gpt-5.6-sol', 'claude-opus-5', 'llama3']
@@ -399,8 +399,12 @@ def log_head() -> str:
     when = _e(state['started'] or '') + (f' → {_e(finished)}' if finished else '')
     command = state['command']
     # The whole command is long and repeats options already chosen in the
-    # form: show it compact, in full on hover.
-    short = command.replace('python run.py ', '').split(' --topicgpt-repo')[0]
+    # form: show it compact, in full on hover. The workspace and the TopicGPT
+    # repository are absolute paths that would take up most of the line and
+    # say nothing the header does not already show.
+    short = command.replace('python -m chatlens.cli ', 'chatlens ')
+    short = re.sub(r' --workspace \S+', '', short)
+    short = short.split(' --topicgpt-repo')[0]
     return (f'<div id="loghead" class="loghead">{badge}'
             f'<code title="{_e(command)}">{_e(short)}</code>'
             f'<span class="muted when">{when}</span></div>')

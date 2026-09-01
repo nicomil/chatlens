@@ -1,90 +1,80 @@
-# Chat text analysis
+# chatlens
 
-A self-contained project: it extracts from the experiment's conversations the
-**topics** (with TopicGPT, Pham et al. 2024) and the **language measures** —
-volume, emotional tone, sentiment, analytical thinking, Clout, Authenticity —
-at the pair and group level, and grafts them onto the choice datasets.
+Text analysis of the conversations held during a behavioural experiment. It
+extracts the **topics** (with TopicGPT, Pham et al. 2024) and the **language
+measures** — volume, emotional tone, sentiment, analytical thinking, Clout,
+Authenticity — at the pair and group level, and grafts them onto the choice
+datasets, ready for Stata or R.
 
-It does not depend on the experiment's code: it can be copied elsewhere and
-keeps working. Its only ties are the two CSVs in `input/`.
+The code is split where the reusable part ends and the experiment-specific part
+begins. An **adapter** turns one experiment's export into the canonical message
+tables; the **core** — measures, rubric, topics, aggregation, report — works
+from those tables alone and never reads a raw export itself.
+
+One adapter exists today, `adapters/otree_coalition`, written for a
+three-player coalition-formation game in oTree: group size, treatment names and
+payoff rule are still written into it. Running another experiment therefore
+means writing an adapter of your own against that same contract, which is a
+small module; making it a matter of configuration instead is the next piece of
+work. The core, the dashboard and everything downstream are already
+experiment-agnostic.
+
+## The three things to know
+
+**Everything happens in a workspace**: an ordinary folder of yours holding
+`input/` and `output/`. Commands act on the current directory unless
+`--workspace` says otherwise, so the usual way to work is to change into the
+experiment's folder and run the command there. Two experiments are two folders,
+and they never touch each other's results.
 
 ```
-text_analysis/
-├── Makefile          the main commands
-├── run.py            the actual entry point
-├── input/            the CSVs exported from oTree  ← put the data here
-├── output/           everything that gets produced
-├── src/              the code of the analysis steps
-├── stata/            the do-files that turn the output into tables
-├── tests/            checks on the tools
-├── .env              the API keys (never under version control)
-└── requirements.txt
+my_experiment/          <- the workspace
+├── input/              the CSVs exported from oTree  ← put the data here
+└── output/             everything that gets produced
 ```
-
-## The two things to know
 
 **Input files are not passed on the command line.** You drop them in `input/`
 and they are recognised by name. That is why the procedure comes down to a
-single command.
+single command, and also why `input/` must hold nothing else.
 
-**Everything needed lives in this folder**, keys included: `input/` and
-`output/` are excluded from version control because they hold Prolific IDs and
-chat texts.
+**Nothing sensitive leaves your machine, and nothing sensitive is kept next to
+the code.** `input/` and `output/` hold participant identifiers and chat texts;
+the API keys live in this machine's configuration directory, outside any
+repository, so they cannot be committed by mistake.
 
-On macOS and Linux:
+## Quick start
+
+The same three lines on macOS, Windows and Linux:
 
 ```bash
-make setup    # once only: creates the environment and installs the dependencies
-make all      # merges the data and runs the analysis
+uv tool install chatlens        # once only
+cd my_experiment                # the folder holding input/
+chatlens all                    # merge + automatic measures
 ```
 
-On Windows, where `make` is not there, the same two steps are (PowerShell):
+`chatlens --help` lists every command. The main ones:
 
-```powershell
-py -m venv .venv                                   # once only
-.venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\activate                             # once per terminal window
-python run.py all
-```
+| Command | What it does | API key |
+|---|---|---|
+| `chatlens all` | merge + automatic measures, a few seconds | **no** |
+| `chatlens merge` / `chatlens analyze` | the two steps separately | no |
+| `chatlens keys` | configures the API keys, guided | — |
+| `chatlens analyze --llm --llm-replicates 2` | measures + validation rubric | yes |
+| `chatlens analyze --topics` | measures + topics with TopicGPT | yes |
+| `chatlens all --llm --topics` | everything: rubric and topics included | yes |
+| `chatlens dashboard` | opens the dashboard in the browser | — |
+| `chatlens report` | regenerates the readable summary | — |
+| `chatlens runs` | lists the archived runs | — |
+| `chatlens runs --prune 2` | keeps the last 2 and deletes the others | — |
+| `chatlens status` | what is in input, in output and among the keys | — |
+| `chatlens install-topicgpt` | installs TopicGPT (only needed for the topics) | — |
 
-After `activate`, `python` is the project's one and every command below works as
-written. Without activating, prefix them with `.venv\Scripts\` — for instance
-`.venv\Scripts\python run.py all`.
-
-`make` on its own lists every command. The main ones, with their Windows
-equivalent:
-
-| Command | Windows (activated venv) | What it does | API key |
-|---|---|---|---|
-| `make setup` | see the block above | prepares the project's virtual environment | — |
-| `make keys` | `python run.py keys` | configures the API keys, guided | — |
-| `make all` | `python run.py all` | merge + automatic measures, a few seconds | **no** |
-| `make merge` / `make analyze` | `python run.py merge` / `python run.py analyze` | the two steps separately | no |
-| `make llm` | `python run.py analyze --llm --llm-replicates 2` | measures + validation rubric | yes |
-| `make topics` | `python run.py analyze --topics --topicgpt-repo <path>` | measures + topics with TopicGPT | yes |
-| `make full` | `python run.py all --llm --llm-replicates 2 --topics --topicgpt-repo <path>` | like `all`, plus rubric and topics | yes |
-| `make dashboard` | `python run.py dashboard` | opens the dashboard in the browser | — |
-| `make report` | `python run.py report` | regenerates the readable summary and opens it | — |
-| `make runs` | `python run.py runs` | lists the archived runs | — |
-| `make prune` | `python run.py runs --prune 2` | keeps the last 2 and deletes the others (`KEEP=n`) | — |
-| `make status` | `python run.py status` | what is in input, in output and among the keys | — |
-| `make test` / `make check` | `python tests/test_merge.py` and the other two | checks the tools | — |
-| `make clean` | see §5 | empties the latest result; archive and cache stay | — |
-
-**`all` and `full` are not synonyms.** `all` means "both *steps*" — merge plus
-analysis — as opposed to `merge` and `analyze` taken singly: it runs only the
-automatic measures, needs no key at all and takes a few seconds. `full` does
-the same and adds the validation rubric and the topics, so it needs a key and
-takes far longer. You start from `all`; you move to `full` once the keys are
-there.
-
-For the less common options: `make analyze ARGS="--llm-replicates 3"`, which on
-Windows is simply `python run.py analyze --llm-replicates 3`.
-
-**The Makefile is a convenience, not a layer.** It does nothing but call
-`python run.py <command>`, after making sure the environment exists. That is why
-every command has a one-to-one Windows equivalent, and why the two roads cannot
-produce different results.
+**`all` is both *steps*, not everything.** It means merge plus analysis, as
+opposed to `merge` and `analyze` taken singly: it runs only the automatic
+measures, needs no key at all and takes a few seconds. Adding `--llm` and
+`--topics` brings in the validation rubric and the topics, which need a key and
+take far longer. You start from `chatlens all`; you add the rest once the keys
+are there.
 
 ## Contents
 
@@ -121,55 +111,84 @@ to validate the measures and to extract the topics.
 provider: if OpenAI is already in use for TopicGPT, the same key covers that
 stage too.
 
-All the code of the analysis steps lives in `src/`; the entry point is `run.py`.
+The code lives in `src/chatlens/`: `core/` for the analysis steps, `adapters/`
+for the experiment-specific part, `web/` for the dashboard.
 
 ---
 
 ## 2. Installation
 
-From the project folder, once only:
+One command, the same on macOS, Windows and Linux:
 
 ```bash
-make setup
+uv tool install chatlens
+```
+
+[uv](https://docs.astral.sh/uv/) is a single binary and installs Python itself
+if the machine has none, which is why this works on a Windows laptop with
+nothing set up. If uv is not there yet:
+
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 ```powershell
-py -m venv .venv                                   # Windows
-.venv\Scripts\python -m pip install -r requirements.txt
+# Windows
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-It creates the virtual environment in `.venv/` and installs the dependencies. On
-macOS and Linux there is no need to activate it: the Makefile takes care of
-that. On Windows, activate it once per terminal window with
-`.venv\Scripts\activate`, so that `python` is the project's one.
+`pipx install chatlens` works just as well if you already use pipx, and so does
+`pip install chatlens` inside a virtual environment of your own.
 
-It installs what is needed for the sentiment and for the API clients. The
-deterministic measures would work without them too, but the sentiment would
-fall back on a poorer version, declaring it in the `sentiment_backend` column.
-
-**Only if the topics are needed**, TopicGPT's repository has to be cloned as
-well:
+This installs what the deterministic measures and the dashboard need. The
+optional stages ask for more:
 
 ```bash
-make topicgpt
+uv tool install "chatlens[llm]"      # + the validation rubric
+uv tool install "chatlens[all]"      # + everything
 ```
+
+Check it arrived:
+
+```bash
+chatlens --help
+chatlens status        # run inside the folder holding your data
+```
+
+### Only if you need the topics
+
+TopicGPT is installed separately, because the prompt files are part of the
+method and **are not inside the published package**; release 0.2.7 on PyPI also
+imports vLLM at the top level, a dependency that does not install on macOS
+without a GPU, whereas the `main` branch has already made it optional.
+
+```bash
+chatlens install-topicgpt
+```
+
+It clones the official repository into this machine's application data
+directory and installs it, then checks that the prompt files really arrived.
+With `--repo <path>` you choose where it goes; to point the analysis at a copy
+you already have, set `CHATLENS_TOPICGPT_REPO=<path>` or pass
+`--topicgpt-repo <path>`.
+
+### Working on the code rather than using it
+
+```bash
+git clone https://github.com/nicomil/chatlens.git
+cd chatlens
+make setup      # editable install in .venv/, every extra included
+make test
+```
+
+On Windows, where `make` is absent:
 
 ```powershell
-git clone https://github.com/chtmp223/topicGPT.git $HOME\src\topicGPT
-python -m pip install $HOME\src\topicGPT
+py -m venv .venv
+.venv\Scripts\python -m pip install -e ".[llm,topics]"
+.venv\Scripts\python tests\test_merge.py
 ```
-
-It clones the repository into `~/src/topicGPT` and installs it; with
-`make topicgpt TOPICGPT_REPO=<path>` you choose where. On Windows the path is
-whatever you cloned into, and it is the one to pass to `--topicgpt-repo`.
-
-Two notes on why it is installed from the repository and not from PyPI: the
-prompt files are part of the method and **are not inside the published
-package**; and release 0.2.7 on PyPI imports vLLM at the top level, a dependency
-that does not install on macOS without a GPU, whereas the `main` branch has
-already made it optional.
-
----
 
 ## 3. API keys
 
@@ -183,7 +202,7 @@ already made it optional.
 A single command, identical on macOS, Windows and Linux:
 
 ```bash
-python run.py keys
+chatlens keys
 ```
 
 It asks for the keys one at a time. While you paste them **the text does not
@@ -216,11 +235,11 @@ Once that is done nothing else is needed: the pipeline loads them on every run.
 ### Commands for checking
 
 ```bash
-python run.py status        # what is configured, without touching anything
-python run.py keys          # reconfigure or verify the keys
+chatlens status        # what is configured, without touching anything
+chatlens keys          # reconfigure or verify the keys
 ```
 
-`run.py status` never prints the keys, only whether they are there.
+`chatlens status` never prints the keys, only whether they are there.
 
 ### Which provider gets used
 
@@ -263,9 +282,8 @@ for a trial run, not for publishable results.
 
 ## 4. The analysis procedure
 
-The `python run.py …` commands in this section are identical on macOS, Windows
-and Linux. On macOS and Linux the shorter `make merge` / `make analyze` /
-`make full` do the same thing.
+The commands in this section are identical on macOS, Windows and Linux, and
+they all act on the current folder unless `--workspace` names another one.
 
 ### Step 1 — Download the exports from oTree
 
@@ -284,7 +302,7 @@ others.
 ### Step 2 — Merge choices and chat
 
 ```bash
-python run.py merge
+chatlens merge
 ```
 
 This is where the experiment's variables already get built: persuasion,
@@ -315,13 +333,13 @@ not traced back to a participant.
 **Automatic measures only** — no key needed, a few seconds:
 
 ```bash
-python run.py analyze
+chatlens analyze
 ```
 
 **With the validation rubric:**
 
 ```bash
-python run.py analyze --llm --llm-replicates 2
+chatlens analyze --llm --llm-replicates 2
 ```
 
 `--llm-replicates 2` has every text scored twice in independent calls, so the
@@ -330,11 +348,12 @@ spread between the two lands in the dataset as an estimate of measurement error.
 **With the topics:**
 
 ```bash
-python run.py analyze --topics --topicgpt-repo ~/src/topicGPT
+chatlens analyze --topics
 ```
 
 On Windows the repository path is a Windows one, so
-`python run.py analyze --topics --topicgpt-repo $HOME\src\topicGPT`.
+`chatlens analyze --topics --topicgpt-repo <path>` if it lives somewhere
+unusual.
 
 **All together:** combine the options of the two commands above.
 
@@ -347,15 +366,14 @@ Everything under `output/`.
 ### The dashboard
 
 ```bash
-make dashboard          # macOS / Linux
-python run.py dashboard # Windows, and anywhere else
+chatlens dashboard
 ```
 
 It opens `http://127.0.0.1:8765` in the browser: from there you pick the
 options, launch the run and watch the log advance live, with the report embedded
 in the page and the list of archived runs.
 
-It is the same `run.py` running underneath: the dashboard does nothing that
+It is the same command running underneath: the dashboard does nothing that
 cannot be done from the command line, and the two paths cannot diverge.
 
 Three choices worth knowing about:
@@ -383,24 +401,23 @@ rewrites the datasets **without** the rubric's columns, and with no archive that
 work would vanish from the final files while still sitting in the cache.
 
 ```bash
-make runs            # lists the runs, with each one's stages and parameters
-make prune KEEP=2    # keeps the 2 most recent and deletes the others
-make clean           # empties the latest result; archive and cache stay
-make clean-runs      # deletes the whole archive
+chatlens runs             # lists the runs, with each one's stages and parameters
+chatlens runs --prune 2   # keeps the 2 most recent and deletes the others
 ```
 
-The same on Windows (PowerShell). The first two are run.py commands; the last
-two only delete files, so they are plain PowerShell:
+To clear results by hand, delete `output/` — or the single dataset's folder
+inside it. Nothing there is needed to run again: it is all regenerated from
+`input/`.
 
 ```powershell
-python run.py runs
-python run.py runs --prune 2
+chatlens runs
+chatlens runs --prune 2
 Get-ChildItem output -Exclude runs,cache,.gitkeep | Remove-Item -Recurse -Force
 Remove-Item -Recurse -Force output\runs
 ```
 
-A session of trials leaves a long tail of near-identical runs: `make prune`
-(`python run.py runs --prune 2`) shortens it while keeping the ones that matter.
+A session of trials leaves a long tail of near-identical runs:
+`chatlens runs --prune 2` shortens it while keeping the ones that matter.
 Each run takes about 800 KB.
 
 The intermediate measures are not archived: they are regenerated.
@@ -416,8 +433,8 @@ self-contained: it opens on a double click and can be sent to someone.
 The sections of the stages not run do not appear. The comparisons between
 treatments are descriptive by choice: on numbers like the pilot's they serve to
 check that the pipeline produces sensible results, not to draw conclusions from.
-To regenerate it without redoing the analysis: `make report`, or
-`python run.py report` on Windows — then open the `.html` in `output/` with a
+To regenerate it without redoing the analysis: `chatlens report` — then open
+the `.html` in `output/` with a
 double click.
 
 ### To take into Stata
@@ -480,16 +497,19 @@ single triad out of 262, already excluded by `group_valid == 0`.
 
 ### Analysis in Stata
 
-`stata/` holds five do-files that read `output/datasets/` and produce the
-tables: preparation and labelling, descriptives, treatment effects, the
-language-and-persuasion regressions, and the optional rubric/topics sections.
+`examples/coalition_formation/stata/` holds seven do-files that read
+`output/datasets/` and produce the tables: preparation and labelling,
+descriptives, treatment effects, the language-and-persuasion regressions, the
+1–4 conversation profiles, the non-parametric tests and the optional
+rubric/topics sections. They were written for the coalition-formation
+experiment, and are as good a starting point as any for another one.
 
 ```
-cd text_analysis/stata
+cd examples/coalition_formation/stata
 do 00_master.do
 ```
 
-They are documented in `stata/README.md`, which also records the choices behind
+They are documented in that folder's `README.md`, which also records the choices behind
 them — clustering on the triad, the main-sample flag, the reference category —
 and states plainly that the language regressions are associations, since the
 treatment is assigned but the language is chosen.
@@ -680,7 +700,7 @@ on the provider's dashboard before launching.
 ## 10. If something does not add up
 
 **"Missing file: ..._messages_long.csv"** — the merge was not run:
-`python run.py merge`, or directly `python run.py all`.
+`chatlens merge`, or directly `chatlens all`.
 
 **"No all_apps_wide*.csv file in input/"** — the export was not put in `input/`,
 or it has a different name from the one oTree produces.
@@ -694,12 +714,13 @@ run locally without any key.
 
 **"The topicgpt_python package is not installed"** — see §2, second part.
 
-**On Windows, `.venv\Scripts\activate` is refused** with a message about the
-execution policy — that is PowerShell blocking scripts, not a problem with the
-project. Either allow them for your own user, once:
-`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, or skip activation
-entirely and prefix each command with `.venv\Scripts\`, as in
-`.venv\Scripts\python run.py all`.
+**On Windows, `chatlens` is not found after installing** — the folder uv puts
+its tools in is not on `PATH` yet. `uv tool update-shell` adds it; open a new
+terminal afterwards. Working from a source checkout instead, PowerShell may
+refuse `.venv\Scripts\activate` over its execution policy: either allow scripts
+for your own user once with
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, or skip activation and
+prefix each command with `.venv\Scripts\`.
 
 **"No credentials available" for the rubric** — the message lists the three
 roads: OpenAI, Anthropic or a local model.
@@ -708,22 +729,24 @@ roads: OpenAI, Anthropic or a local model.
 the rubric's request; `--topicgpt-dry-run` only writes TopicGPT's input file.
 Neither contacts any service.
 
-**I want to check that the keys work.** `python run.py keys` verifies them again
-by contacting the services; `python run.py status` says only which ones are
+**I want to check that the keys work.** `chatlens keys` verifies them again
+by contacting the services; `chatlens status` says only which ones are
 present, without going out to the network.
 
 ---
 
 ## 11. Checking the tools
 
+From a source checkout:
+
 ```bash
 make test
 ```
 
 ```powershell
-python tests/test_merge.py      # Windows
-python tests/test_analysis.py
-python tests/test_dashboard.py
+.venv\Scripts\python tests\test_merge.py      # Windows
+.venv\Scripts\python tests\test_analysis.py
+.venv\Scripts\python tests\test_dashboard.py
 ```
 
 They run with no network and no credentials. If they all end with `OK`, the

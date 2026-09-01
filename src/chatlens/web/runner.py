@@ -15,9 +15,8 @@ import subprocess
 import sys
 import threading
 from datetime import datetime
-from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+from chatlens.core import config
 
 # Allowed values. Everything arriving from the browser is checked against these
 # lists: anything absent is ignored, not passed to the command.
@@ -44,7 +43,11 @@ def _pick(form, field, default=''):
 
 def build_command(form) -> list[str]:
     """Turn the form into arguments, one by one and only from known values."""
-    argv = [sys.executable, 'run.py', _pick(form, 'command', 'all')]
+    # `-m chatlens.cli` rather than a script path: once installed there is no
+    # run.py to point at, and the module is found wherever pip put it.
+    argv = [sys.executable, '-m', 'chatlens.cli',
+            _pick(form, 'command', 'all'),
+            '--workspace', str(config.WORKSPACE)]
 
     if form.get('llm'):
         argv.append('--llm')
@@ -63,7 +66,7 @@ def build_command(form) -> list[str]:
     if form.get('topics'):
         argv += [
             '--topics',
-            '--topicgpt-repo', str(Path.home() / 'src' / 'topicGPT'),
+            '--topicgpt-repo', str(config.topicgpt_repo()),
             '--topicgpt-model', _pick(form, 'topicgpt_model', 'gpt-4o'),
             '--topicgpt-unit', _pick(form, 'topicgpt_unit', 'group'),
             '--topicgpt-assign-unit',
@@ -120,7 +123,7 @@ class Runner:
             self._returncode = None
             self._process = subprocess.Popen(
                 argv,
-                cwd=str(PROJECT_ROOT),
+                cwd=str(config.WORKSPACE),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

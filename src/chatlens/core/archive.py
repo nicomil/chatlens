@@ -87,7 +87,11 @@ def save(outdir: Path, stem: str, args, summary: dict) -> Path:
 
     # The topic list defines the ontology that was used: without it, a run with
     # topics is no longer interpretable months later.
-    topics = outdir / 'topicgpt' / 'generation_1.md'
+    # Scoped by dataset since two experiments may share one workspace;
+    # the unscoped path is still read so that older runs stay legible.
+    topics = outdir / 'topicgpt' / stem / 'generation_1.md'
+    if not topics.is_file():
+        topics = outdir / 'topicgpt' / 'generation_1.md'
     if topics.is_file() and 'topics' in stages_of(args):
         shutil.copy2(topics, run_dir / 'topics.md')
 

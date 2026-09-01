@@ -1,6 +1,5 @@
-"""Text analysis for the bargaining_tdl experiment.
+"""Everything that does not depend on which experiment produced the data.
 
-Modules:
 - ``text_metrics`` / ``lexicons``: deterministic LIWC-style measures, volume
   and sentiment. No mandatory external dependency.
 - ``llm_rubric``: a second, independent measurement of the same constructs
@@ -10,5 +9,6 @@ Modules:
   and grafting onto the experiment datasets.
 - ``report`` / ``archive``: readable summary of a run, and its archived copy.
 
-The entry point is ``run.py`` at the project root.
+These modules consume the canonical tables produced by an adapter; they never
+read an experiment's raw export themselves.
 """

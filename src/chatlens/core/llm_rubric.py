@@ -299,7 +299,7 @@ def resolve_provider(preferred: str | None = None) -> str:
         if env_key and not os.environ.get(env_key, '').strip():
             raise SystemExit(
                 f"\nProvider '{preferred}' requires {env_key}, which is not "
-                f'set.\n  python run.py keys\n'
+                f'set.\n  chatlens keys\n'
             )
         return preferred
 
@@ -312,7 +312,7 @@ def resolve_provider(preferred: str | None = None) -> str:
         '  - set OPENAI_API_KEY (the same key TopicGPT uses), or\n'
         '  - set ANTHROPIC_API_KEY, or\n'
         '  - start a local model: ollama pull llama3\n\n'
-        '  python run.py keys\n'
+        '  chatlens keys\n'
     )
 
 

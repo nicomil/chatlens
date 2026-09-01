@@ -36,7 +36,7 @@ therefore reconstructed from ``participant.part1_group_id`` when present
 the same identifier.
 
 Usage (from the project entry point):
-    python run.py merge
+    chatlens merge
 """
 
 from __future__ import annotations

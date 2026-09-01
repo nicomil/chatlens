@@ -1,4 +1,4 @@
-"""Tests for src/merge.py.
+"""Tests for the oTree coalition-formation adapter.
 
 They run on synthetic data written to temporary files: neither the database
 nor a real export is needed. The strongest check is the consistency property
@@ -15,13 +15,15 @@ import csv
 import importlib.util
 import io
 import itertools
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+# Runs from a source checkout without installing: the package is under src/.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
 
 def custom_calculate_payoff_vector(decisions, no_deadweight_loss=False):
@@ -58,7 +60,15 @@ def custom_calculate_payoff_vector(decisions, no_deadweight_loss=False):
     return (0, 0, 0), 'disagreement'
 
 
-EXPERIMENT_UTILS = PROJECT_ROOT.parent / 'bargaining_tdl_common' / 'utils.py'
+# The experiment's own source, when it is reachable. Since this project was
+# split off into a repository of its own it no longer sits beside it, so the
+# location is given by an environment variable; without it the comparison is
+# skipped, which is what happens for anyone who is not us.
+EXPERIMENT_UTILS = Path(
+    os.environ.get('CHATLENS_EXPERIMENT_UTILS')
+    or PROJECT_ROOT.parent / 'communication_coalition_formation'
+    / 'bargaining_tdl_common' / 'utils.py'
+)
 
 
 def _experiment_payoff_rule():
@@ -95,8 +105,9 @@ def _experiment_payoff_rule():
 
 
 def _load_module():
-    path = Path(__file__).resolve().parent.parent / 'src' / 'merge.py'
-    spec = importlib.util.spec_from_file_location('merge', path)
+    path = (PROJECT_ROOT / 'src' / 'chatlens' / 'adapters'
+            / 'otree_coalition.py')
+    spec = importlib.util.spec_from_file_location('otree_coalition', path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

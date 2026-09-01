@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chatlens"
+version = "1.0.0"
+description = "Text analysis of chat data from behavioural experiments"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Nicola Milella", email = "nicombk@gmail.com" }]
+keywords = [
+    "text analysis", "experimental economics", "oTree", "chat",
+    "content analysis", "LIWC", "topic modelling",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing :: Linguistic",
+]
+
+# The deterministic measures and the dashboard run on the standard library
+# alone. Only the sentiment backend is a hard dependency, because falling back
+# to the seed dictionaries changes the numbers and that should be a choice, not
+# an accident of installation.
+dependencies = [
+    "vaderSentiment>=3.3.2",
+]
+
+[project.optional-dependencies]
+# The validation rubric. The upper bounds are not our choice: TopicGPT declares
+# openai<2 and anthropic<1, and installing it downgrades these libraries
+# whatever we ask for. Declaring them here makes the environment identical
+# regardless of install order.
+llm = [
+    "openai>=1.54,<2",
+    "pydantic>=2.0",
+    "anthropic>=0.40,<1",
+]
+# TopicGPT itself is not installed from here: the prompt files are part of the
+# method and live in the repository, not in the published package.
+#     chatlens install-topicgpt
+topics = [
+    "openai>=1.54,<2",
+]
+all = [
+    "chatlens[llm,topics]",
+]
+
+[project.scripts]
+chatlens = "chatlens.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/nicomil/chatlens"
+Documentation = "https://nicomil.github.io/chatlens"
+Source = "https://github.com/nicomil/chatlens"
+Issues = "https://github.com/nicomil/chatlens/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chatlens"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/chatlens", "tests", "examples", "README.md", "LICENSE"]

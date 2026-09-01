@@ -1,15 +1,17 @@
-# API keys: never under version control.
+# API keys. They now live in this machine's configuration directory, but a
+# workspace may still keep its own file, and a checkout is often used as one.
 .env
 
-# Data: the inputs are oTree exports with Prolific IDs and chat texts, the
-# outputs derive from them. They stay local.
-input/*
-!input/.gitkeep
-output/*
-!output/.gitkeep
+# Data. Inputs are experiment exports with participant identifiers and chat
+# text; outputs derive from them. They stay local, always.
+input/
+output/
 
-# The project's virtual environment.
+# Virtual environments and build artefacts.
 .venv/
+dist/
+build/
+*.egg-info/
 
 __pycache__/
 *.py[cod]

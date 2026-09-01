@@ -18,9 +18,9 @@ Stata, plus the intermediate feature files for checking.
 
 Examples (from the project entry point)
 ---------------------------------------
-    python run.py analyze                          automatic measures
-    python run.py analyze --llm --llm-replicates 2 + validation rubric
-    python run.py analyze --topics --topicgpt-repo ~/src/topicGPT
+    chatlens analyze                          automatic measures
+    chatlens analyze --llm --llm-replicates 2 + validation rubric
+    chatlens analyze --topics
 """
 
 from __future__ import annotations
@@ -114,7 +114,8 @@ def run_llm_stage(features, transcripts_by_level, args) -> None:
                 if done % 25 == 0 or done == total:
                     print(f'    {level}: {done}/{total}', flush=True)
 
-            cache_path = Path(args.outdir) / 'cache' / f'rubrica_{level}.jsonl'
+            cache_path = (config.cache_dir(args.stem)
+                          / f'rubrica_{level}.jsonl')
             scored, reused = llm_rubric.score_units(
                 units, models=models, replicates=args.llm_replicates,
                 progress=progress, provider=provider, cache_path=cache_path,
@@ -146,7 +147,7 @@ def run_topics_stage(messages, args):
               f'{len(assignment_documents)} ({assign_unit})')
 
     if args.topicgpt_dry_run:
-        outdir = Path(args.outdir) / 'topicgpt'
+        outdir = config.topics_dir(args.stem)
         outdir.mkdir(parents=True, exist_ok=True)
         path = outdir / 'topicgpt_input.jsonl'
         topicgpt.write_jsonl(path, documents)
@@ -156,7 +157,7 @@ def run_topics_stage(messages, args):
     try:
         corrected = topicgpt.run_topicgpt(
             documents=documents,
-            outdir=Path(args.outdir) / 'topicgpt',
+            outdir=config.topics_dir(args.stem),
             repo_path=repo,
             api=args.topicgpt_api,
             model=args.topicgpt_model,
@@ -237,7 +238,7 @@ def preflight(args) -> None:
 def run(args) -> dict:
     """Step 2: text measures, rubric and topics over the merged files.
 
-    `args` is the namespace built by run.py, passed through as it is so the
+    `args` is the namespace built by the CLI, passed through as it is so the
     option list is not duplicated in two places.
     """
     merged_dir = Path(args.merged_dir)
@@ -251,7 +252,7 @@ def run(args) -> dict:
         if not path.is_file():
             raise SystemExit(
                 f'Missing file: {path}\n'
-                f'  Run the merge step first:  python run.py merge'
+                f'  Run the merge step first:  chatlens merge'
             )
 
     preflight(args)

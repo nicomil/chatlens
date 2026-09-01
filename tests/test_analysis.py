@@ -1,4 +1,4 @@
-"""Tests for the text analysis (src/).
+"""Tests for the text analysis (chatlens.core).
 
 They need no credentials, no network and no optional dependencies: the LLM
 rubric is exercised on its pure parts (building the prompt and combining the
@@ -11,10 +11,12 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Runs from a source checkout without installing: the package is under src/.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
-from src import aggregate as agg  # noqa: E402
-from src import lexicons, text_metrics, topicgpt as topicgpt_runner  # noqa: E402
+from chatlens.core import aggregate as agg  # noqa: E402
+from chatlens.core import lexicons, text_metrics  # noqa: E402
+from chatlens.core import topicgpt as topicgpt_runner  # noqa: E402
 
 
 class TokenizerTests(unittest.TestCase):
@@ -362,7 +364,7 @@ class LLMRubricPureTests(unittest.TestCase):
     """The parts of the rubric that never touch the network."""
 
     def setUp(self):
-        from src import llm_rubric
+        from chatlens.core import llm_rubric
         self.llm = llm_rubric
 
     def test_units_skip_empty_transcripts(self):
@@ -438,7 +440,7 @@ class ProviderSelectionTests(unittest.TestCase):
 
     def setUp(self):
         import os
-        from src import llm_rubric
+        from chatlens.core import llm_rubric
         self.llm = llm_rubric
         self.os = os
         self._saved = {
@@ -503,7 +505,7 @@ class RubricCacheTests(unittest.TestCase):
 
     def _setup(self):
         import os
-        from src import llm_rubric
+        from chatlens.core import llm_rubric
         self.llm = llm_rubric
         self.os = os
         os.environ['OPENAI_API_KEY'] = 'sk-fake'
@@ -673,7 +675,7 @@ class PreflightTests(unittest.TestCase):
 
     def setUp(self):
         import os
-        from src import llm_rubric, pipeline
+        from chatlens.core import llm_rubric, pipeline
         self.pipeline = pipeline
         self.llm = llm_rubric
         self.os = os
@@ -778,7 +780,7 @@ class PartialResultsTests(unittest.TestCase):
         import csv as _csv
         import io
         import tempfile
-        from src import pipeline
+        from chatlens.core import pipeline
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = Path(tmpdir) / 'output'
@@ -828,7 +830,7 @@ class PartialResultsTests(unittest.TestCase):
         import contextlib
         import io
         import tempfile
-        from src import pipeline
+        from chatlens.core import pipeline
 
         self.os.environ.pop('OPENAI_API_KEY', None)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -848,7 +850,7 @@ class PartialResultsTests(unittest.TestCase):
         import contextlib
         import io
         import tempfile
-        from src import pipeline
+        from chatlens.core import pipeline
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = Path(tmpdir) / 'output'
@@ -904,7 +906,7 @@ class ReportTests(unittest.TestCase):
 
     def test_works_without_any_optional_stage(self):
         import tempfile
-        from src import report
+        from chatlens.core import report
 
         aggregated, by_partner = self._minimal()
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -922,7 +924,7 @@ class ReportTests(unittest.TestCase):
     def test_group_variables_are_not_counted_once_per_member(self):
         """Triad variables repeat on every row: they must be deduplicated."""
         import tempfile
-        from src import report
+        from chatlens.core import report
 
         aggregated, by_partner = self._minimal()
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -937,7 +939,7 @@ class ReportTests(unittest.TestCase):
 
     def test_optional_sections_appear_when_their_data_is_there(self):
         import tempfile
-        from src import report
+        from chatlens.core import report
 
         aggregated, by_partner = self._minimal()
         for row in aggregated:
@@ -960,7 +962,7 @@ class ReportTests(unittest.TestCase):
 
     def test_html_is_self_contained_and_escaped(self):
         import tempfile
-        from src import report
+        from chatlens.core import report
 
         aggregated, by_partner = self._minimal()
         aggregated[0]['group_outcome'] = '<script>alert(1)</script>'
@@ -975,7 +977,7 @@ class ReportTests(unittest.TestCase):
 
     def test_empty_values_do_not_crash(self):
         import tempfile
-        from src import report
+        from chatlens.core import report
 
         aggregated, by_partner = self._minimal()
         for row in aggregated:
@@ -1008,7 +1010,7 @@ class ArchiveTests(unittest.TestCase):
                                             encoding='utf-8')
 
     def test_stages_reflect_what_was_actually_run(self):
-        from src import archive
+        from chatlens.core import archive
 
         self.assertEqual(archive.stages_of(self._args()), ['measures'])
         self.assertEqual(
@@ -1021,7 +1023,7 @@ class ArchiveTests(unittest.TestCase):
 
     def test_a_second_run_does_not_erase_the_first(self):
         import tempfile
-        from src import archive
+        from chatlens.core import archive
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = Path(tmpdir)
@@ -1041,7 +1043,7 @@ class ArchiveTests(unittest.TestCase):
     def test_same_second_collision_is_resolved(self):
         """Two runs can finish within the same second."""
         import tempfile
-        from src import archive
+        from chatlens.core import archive
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = Path(tmpdir)
@@ -1053,7 +1055,7 @@ class ArchiveTests(unittest.TestCase):
     def test_parameters_are_recorded_so_runs_can_be_told_apart(self):
         import json as _json
         import tempfile
-        from src import archive
+        from chatlens.core import archive
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = Path(tmpdir)
@@ -1072,7 +1074,7 @@ class ArchiveTests(unittest.TestCase):
         """The collision suffixes do not follow alphabetical order."""
         import json as _json
         import tempfile
-        from src import archive
+        from chatlens.core import archive
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = Path(tmpdir)
@@ -1088,7 +1090,7 @@ class ArchiveTests(unittest.TestCase):
 
     def test_unreadable_run_does_not_break_the_listing(self):
         import tempfile
-        from src import archive
+        from chatlens.core import archive
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = Path(tmpdir)
@@ -1118,7 +1120,7 @@ class PruneTests(unittest.TestCase):
 
     def test_keeps_the_most_recent(self):
         import tempfile
-        from src import archive
+        from chatlens.core import archive
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = self._archive(tmpdir, 5)
@@ -1130,7 +1132,7 @@ class PruneTests(unittest.TestCase):
 
     def test_is_idempotent(self):
         import tempfile
-        from src import archive
+        from chatlens.core import archive
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = self._archive(tmpdir, 3)
@@ -1139,7 +1141,7 @@ class PruneTests(unittest.TestCase):
 
     def test_keeping_more_than_there_are_removes_nothing(self):
         import tempfile
-        from src import archive
+        from chatlens.core import archive
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = self._archive(tmpdir, 2)
@@ -1148,7 +1150,7 @@ class PruneTests(unittest.TestCase):
 
     def test_negative_is_refused(self):
         import tempfile
-        from src import archive
+        from chatlens.core import archive
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = self._archive(tmpdir, 2)
@@ -1159,7 +1161,7 @@ class PruneTests(unittest.TestCase):
     def test_only_touches_the_archive(self):
         """It deletes inside output/runs and nowhere else."""
         import tempfile
-        from src import archive
+        from chatlens.core import archive
 
         with tempfile.TemporaryDirectory() as tmpdir:
             outdir = self._archive(tmpdir, 3)
@@ -1174,7 +1176,7 @@ class ConfigTests(unittest.TestCase):
     """API keys and paths: they must be predictable and never surprise."""
 
     def setUp(self):
-        from src import config
+        from chatlens.core import config
         self.secrets = config
 
     def test_parses_the_forms_people_actually_write(self):
@@ -1226,7 +1228,7 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             self.secrets.require_key('OPENAI_API_KEY')
         message = str(ctx.exception)
-        self.assertIn('run.py keys', message)
+        self.assertIn('chatlens keys', message)
         self.assertIn('TopicGPT', message)
 
     def test_secrets_file_is_git_ignored(self):

@@ -3,7 +3,7 @@ Configure the pipeline's API keys.
 
 One command, identical on macOS, Windows and Linux:
 
-    python run.py keys
+    chatlens keys
 
 It asks for the keys (input stays hidden), saves them in `.env` in the project
 folder, checks that git really ignores that file and — on request — contacts the
@@ -40,7 +40,15 @@ GITIGNORE_LINE = '.env'
 
 
 def ensure_gitignored(path: Path) -> bool:
-    """Check git ignores the file; if not, offer to add the line."""
+    """Check git ignores the file; if not, offer to add the line.
+
+    Only meaningful for a key file inside the workspace. The one in the
+    configuration directory cannot be committed by accident, so there is
+    nothing to verify and nothing to warn about.
+    """
+    if path == config.user_env_file():
+        return True
+
     ignored = config.is_git_ignored(path)
     if ignored:
         return True
@@ -64,15 +72,20 @@ def ensure_gitignored(path: Path) -> bool:
 
 def write_secrets(path: Path, values: dict) -> None:
     lines = [
-        '# API keys for the text-analysis pipeline.',
+        '# API keys for chatlens.',
         '# Local file: never put it under version control.',
-        '# Regenerate with: python run.py keys',
+        '# Regenerate with: chatlens keys',
         '',
     ]
     lines += [f'{key}={value}' for key, value in sorted(values.items()) if value]
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     if os.name == 'posix':
+        # Restrict the directory too: on a shared machine a readable parent
+        # gives away the file's existence and lets it be replaced.
         path.chmod(0o600)
+        if path.parent == config.user_config_dir():
+            path.parent.chmod(0o700)
 
 
 def _masked(value: str) -> str:
@@ -137,15 +150,19 @@ def run_checks(values: dict) -> bool:
 def print_status() -> None:
     path = config.ENV_FILE
     config.load_env(path)
-    ignored = config.is_git_ignored(path)
-    ignored_label = {
-        True: 'yes',
-        False: 'NO — needs fixing, the repository is public',
-        None: 'not verifiable',
-    }[ignored]
     print(f'Key file    : {path}')
     print(f'  exists    : {"yes" if path.is_file() else "no"}')
-    print(f'  git ignores it: {ignored_label}')
+    if path == config.user_env_file():
+        print('  location  : configuration directory, outside any repository')
+    else:
+        ignored = config.is_git_ignored(path)
+        ignored_label = {
+            True: 'yes',
+            False: 'NO — needs fixing before any commit',
+            None: 'not verifiable',
+        }[ignored]
+        print(f'  location  : inside the workspace')
+        print(f'  git ignores it: {ignored_label}')
     print()
     for name, purpose, present in config.key_status():
         print(f'  {"present" if present else "absent "}  {name:22s} {purpose}')
@@ -204,7 +221,7 @@ def main(argv=None):
     print()
     if ok:
         print('All set. The pipeline will load the keys by itself:')
-        print('    python run.py all --llm --topics')
+        print('    chatlens all --llm --topics')
     else:
         print('Some checks did not pass: see the messages above.')
         print('The keys are saved anyway; re-run with --check once fixed.')

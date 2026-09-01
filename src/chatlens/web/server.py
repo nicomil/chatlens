@@ -1,7 +1,7 @@
 """
 Local dashboard for launching runs and seeing their results.
 
-    python run.py dashboard        (or: make dashboard)
+    chatlens dashboard
 
 It listens on 127.0.0.1 only: this is a desktop tool, not a service. It executes
 processes, so it must not be reachable from the network, and command arguments
@@ -21,12 +21,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-
-from src import config  # noqa: E402
-from web import views  # noqa: E402
-from web.runner import build_command, runner  # noqa: E402
+from chatlens.core import config
+from chatlens.web import views
+from chatlens.web.runner import build_command, runner
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
 

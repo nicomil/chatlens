@@ -13,10 +13,11 @@ import unittest
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+# Runs from a source checkout without installing: the package is under src/.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
-from web import views  # noqa: E402
-from web.runner import Runner, build_command  # noqa: E402
+from chatlens.web import views  # noqa: E402
+from chatlens.web.runner import Runner, build_command  # noqa: E402
 
 
 class FormWiringTests(unittest.TestCase):
@@ -66,11 +67,22 @@ class CommandBuildingTests(unittest.TestCase):
 
     def test_minimal_command(self):
         argv = build_command({'command': ['all']})
-        self.assertEqual(argv[1:], ['run.py', 'all'])
+        # The module, not a script path: once installed there is no run.py.
+        self.assertEqual(argv[1:3], ['-m', 'chatlens.cli'])
+        self.assertEqual(argv[3], 'all')
+
+    def test_the_workspace_is_passed_on_explicitly(self):
+        """The child must analyse the same folder the dashboard is showing."""
+        from chatlens.core import config
+
+        argv = build_command({'command': ['all']})
+        self.assertIn('--workspace', argv)
+        self.assertEqual(argv[argv.index('--workspace') + 1],
+                         str(config.WORKSPACE))
 
     def test_unknown_command_falls_back_instead_of_passing_through(self):
         argv = build_command({'command': ['rm -rf /']})
-        self.assertEqual(argv[2], 'all')
+        self.assertEqual(argv[3], 'all')
 
     def test_injected_values_are_discarded(self):
         argv = build_command({
@@ -103,7 +115,7 @@ class ArchiveViewTests(unittest.TestCase):
     """The archive is an index: from one row you reach all of that run."""
 
     def _a_run(self):
-        from src import archive, config
+        from chatlens.core import archive, config
 
         runs = archive.list_runs(config.OUTPUT_DIR)
         if not runs:
@@ -113,7 +125,7 @@ class ArchiveViewTests(unittest.TestCase):
     def test_every_row_opens_its_own_run(self):
         import re
 
-        from src import archive, config
+        from chatlens.core import archive, config
 
         panel = views.runs_panel()
         if not archive.list_runs(config.OUTPUT_DIR):
@@ -144,7 +156,7 @@ class ArchiveViewTests(unittest.TestCase):
 
     def test_failure_is_stated_not_implied(self):
         """An incomplete run must say so in words, not only with a colour."""
-        from src import archive, config
+        from chatlens.core import archive, config
 
         failed = [r for r in archive.list_runs(config.OUTPUT_DIR)
                   if r.get('failed_stage')]
