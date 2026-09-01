@@ -8,10 +8,18 @@ language measures and — where present — rubric and topics.
 Sections for stages that did not run do not appear: a summary listing empty
 boxes is harder to read than a shorter one.
 
-The report is descriptive by choice. At a triad count like the pilot's any
+The report is descriptive by choice. At a group count like the pilot's any
 comparison between treatments would be noise, so no tests are shown: the
 per-treatment figures are there to see that the pipeline produced something
 sensible, not to draw conclusions from.
+
+Two layers. The sections every experiment has — coverage, language, rubric,
+topics, data quality — are always built. The ones that belong to a particular
+game — outcomes, behavioural variables, group validity — appear only where
+their columns do, because an empty "Valid triads: 0 of 40" reads as a failure
+rather than as a section that does not apply. The wording follows suit: what
+the report calls a group comes from the experiment, since "triad" is right for
+three players and wrong for any other number.
 """
 
 from __future__ import annotations
@@ -23,11 +31,25 @@ import statistics
 from datetime import datetime
 from pathlib import Path
 
-TREATMENT_LABELS = {
-    'private': 'Baseline (private)',
-    'public': 'Public communication',
-    'private_no_dwl': 'Slacker (no deadweight loss)',
-}
+def _experiment():
+    """The workspace's experiment, or a blank one outside a run."""
+    from . import config, experiment
+    return config.EXPERIMENT or experiment.Experiment()
+
+
+def _labels() -> dict:
+    """Treatment name -> the name to print. Empty when nothing was declared."""
+    return _experiment().treatments
+
+
+def _noun(plural=False) -> str:
+    """What the experiment calls a group of participants.
+
+    "Triad" is right for three players and wrong for anything else, and a
+    report that calls four people a triad reads as a bug in the tool.
+    """
+    word = _experiment().group_noun
+    return f'{word}s' if plural else word
 
 
 # --- Reading and statistics ------------------------------------------------
@@ -87,13 +109,14 @@ def _by_treatment(rows):
     groups = {}
     for row in rows:
         groups.setdefault(row.get('treatment', ''), []).append(row)
-    order = [t for t in TREATMENT_LABELS if t in groups]
-    order += [t for t in groups if t not in TREATMENT_LABELS]
+    labels = _labels()
+    order = [t for t in labels if t in groups]
+    order += [t for t in groups if t not in labels]
     return [(t, groups[t]) for t in order]
 
 
 def _triads(rows):
-    """One representative row per triad: group variables repeat on each."""
+    """One representative row per group: group variables repeat on each row."""
     seen = {}
     for row in rows:
         uid = row.get('group_uid')
@@ -139,7 +162,7 @@ def _coverage(aggregated, by_partner, merge_summary) -> dict:
     per_treatment = [
         dict(
             treatment=t,
-            label=TREATMENT_LABELS.get(t, t or '—'),
+            label=_labels().get(t, t or '—'),
             n_triads=len(_triads(rows)),
             n_participants=len(rows),
         )
@@ -149,7 +172,8 @@ def _coverage(aggregated, by_partner, merge_summary) -> dict:
         n_participants=len(aggregated),
         n_triads=len(triads),
         n_pairs=len(by_partner),
-        n_valid_triads=sum(1 for r in triads if r.get('group_valid') == '1'),
+        n_valid_triads=(sum(1 for r in triads if r.get('group_valid') == '1')
+                        if _has_column(aggregated, 'group_valid') else None),
         per_treatment=per_treatment,
         dropped=merge_summary.get('dropped') or {},
         n_input=merge_summary.get('n_input'),
@@ -159,13 +183,24 @@ def _coverage(aggregated, by_partner, merge_summary) -> dict:
     )
 
 
+# The columns each game section is built on. Absent, the section does not
+# belong to this experiment and printing an empty one would be worse than
+# printing nothing: "Valid triads: 0 of 40" reads as a failure, not as a
+# section that does not apply.
+OUTCOME_COLUMNS = ('group_coordinate', 'group_outcome', 'focal_decision')
+BEHAVIOUR_COLUMNS = ('persuasion_ij', 'S_ij', 'cc_i')
+
+
 def _outcomes(aggregated) -> dict:
+    if not any(_has_data(aggregated, c) for c in OUTCOME_COLUMNS):
+        return {}
+
     rows = []
     for treatment, participants in _by_treatment(aggregated):
         triads = _triads(participants)
         coordinated = [r for r in triads if r.get('group_coordinate') == '1']
         rows.append(dict(
-            label=TREATMENT_LABELS.get(treatment, treatment or '—'),
+            label=_labels().get(treatment, treatment or '—'),
             n_triads=len(triads),
             coordination=_pct(len(coordinated), len(triads)),
             mean_group_payoff=_mean(
@@ -193,6 +228,10 @@ def _outcomes(aggregated) -> dict:
 
 
 def _behaviour(aggregated, by_partner) -> dict:
+    if not (any(_has_data(by_partner, c) for c in BEHAVIOUR_COLUMNS)
+            or any(_has_data(aggregated, c) for c in BEHAVIOUR_COLUMNS)):
+        return {}
+
     rows = []
     pairs_by_treatment = dict(_by_treatment(by_partner))
     for treatment, participants in _by_treatment(aggregated):
@@ -200,7 +239,7 @@ def _behaviour(aggregated, by_partner) -> dict:
         persuasion = [_num(p.get('persuasion_ij')) for p in pairs]
         signals = [_num(p.get('S_ij')) for p in pairs]
         rows.append(dict(
-            label=TREATMENT_LABELS.get(treatment, treatment or '—'),
+            label=_labels().get(treatment, treatment or '—'),
             n_pairs=len(pairs),
             support_signals=_mean(signals),
             persuasion=_mean(persuasion),
@@ -212,8 +251,8 @@ def _behaviour(aggregated, by_partner) -> dict:
 
 
 LANGUAGE_METRICS = [
-    ('nlp_group_wc', 'Words per triad', 0),
-    ('nlp_group_n_messages', 'Messages per triad', 1),
+    ('nlp_group_wc', 'Words per {noun}', 0),
+    ('nlp_group_n_messages', 'Messages per {noun}', 1),
     ('nlp_group_analytic_100', 'Analytic', 1),
     ('nlp_group_clout_100', 'Clout', 1),
     ('nlp_group_authenticity_100', 'Authenticity', 1),
@@ -227,6 +266,7 @@ def _language(aggregated) -> dict:
         return {}
     metrics = []
     for column, label, digits in LANGUAGE_METRICS:
+        label = label.format(noun=_noun())
         if not _has_column(aggregated, column):
             continue
         per_treatment = []
@@ -235,7 +275,7 @@ def _language(aggregated) -> dict:
             per_treatment.append(_median(_num(r.get(column)) for r in triads))
         metrics.append(dict(label=label, digits=digits, values=per_treatment))
     return dict(
-        labels=[TREATMENT_LABELS.get(t, t or '—')
+        labels=[_labels().get(t, t or '—')
                 for t, _ in _by_treatment(aggregated)],
         metrics=metrics,
     )
@@ -306,7 +346,7 @@ def _topics(by_partner, aggregated) -> dict:
                 if topic:
                     local[topic] = local.get(topic, 0) + 1
         per_treatment.append(dict(
-            label=TREATMENT_LABELS.get(treatment, treatment or '—'),
+            label=_labels().get(treatment, treatment or '—'),
             counts=local,
         ))
 
@@ -323,10 +363,12 @@ def _quality(aggregated, by_partner) -> dict:
     triads = _triads(aggregated)
     notes = []
 
-    invalid = [r for r in triads if r.get('group_valid') != '1']
+    invalid = ([r for r in triads if r.get('group_valid') != '1']
+               if _has_column(aggregated, 'group_valid') else [])
     if invalid:
-        subject = (f'1 triad out of {len(triads)} has' if len(invalid) == 1
-                   else f'{len(invalid)} triads out of {len(triads)} have')
+        noun, plural = _noun(), _noun(True)
+        subject = (f'1 {noun} out of {len(triads)} has' if len(invalid) == 1
+                   else f'{len(invalid)} {plural} out of {len(triads)} have')
         notes.append(
             f'{subject} at least one member excluded for inactivity or cut '
             f'short: they stay in the dataset, but the main analyses should be '
@@ -337,8 +379,8 @@ def _quality(aggregated, by_partner) -> dict:
         flagged = [r for r in triads
                    if r.get('nlp_group_low_language_flag') == '1']
         if flagged:
-            subject = ('1 triad contains' if len(flagged) == 1
-                       else f'{len(flagged)} triads contain')
+            subject = (f'1 {_noun()} contains' if len(flagged) == 1
+                       else f'{len(flagged)} {_noun(True)} contain')
             notes.append(
                 f'{subject} text that does not look like language: the language '
                 f'indices should not be read on those units.'
@@ -361,7 +403,8 @@ def _quality(aggregated, by_partner) -> dict:
 
     if len(triads) < 60:
         notes.append(
-            f'With {len(triads)} triads the comparisons between treatments are '
+            f'With {len(triads)} {_noun(True)} the comparisons between '
+            f'treatments are '
             f'descriptive: the figures serve to check that the pipeline '
             f'produces sensible results, not to draw conclusions from.'
         )
@@ -394,15 +437,17 @@ def render_markdown(data: dict) -> str:
 
     rows = [
         ['Participants analysed', cov['n_participants']],
-        ['Triads', cov['n_triads']],
-        ['Valid triads', f"{cov['n_valid_triads']} of {cov['n_triads']}"],
-        ['Directed pairs', cov['n_pairs']],
+        [_noun(True).capitalize(), cov['n_triads']],
     ]
+    if cov.get('n_valid_triads') is not None:
+        rows.append([f'Valid {_noun(True)}',
+                     f"{cov['n_valid_triads']} of {cov['n_triads']}"])
+    rows.append(['Directed pairs', cov['n_pairs']])
     if cov.get('n_messages') is not None:
         rows.append(['Messages analysed', cov['n_messages']])
     parts.append(_md_table(['', 'Value'], rows))
 
-    if cov['dropped']:
+    if cov['dropped'] and 'never_grouped' in cov['dropped']:
         parts += ['', f"Of the {cov['n_input']} participants in the export, "
                       f"{cov['dropped'].get('never_grouped', 0)} were excluded "
                       f"as never grouped and "
@@ -410,38 +455,41 @@ def render_markdown(data: dict) -> str:
                       f"Prolific identifier (test sessions)."]
 
     parts += ['', _md_table(
-        ['Treatment', 'Triads', 'Participants'],
+        ['Treatment', _noun(True).capitalize(), 'Participants'],
         [[t['label'], t['n_triads'], t['n_participants']]
          for t in cov['per_treatment']],
     )]
 
     out = data['outcomes']
-    parts += ['', '## Game outcomes', '', _md_table(
-        ['Treatment', 'Triads', 'Coordination', 'Group payoff',
-         'Individual payoff'],
-        [[r['label'], r['n_triads'], r['coordination'],
-          _fmt(r['mean_group_payoff']), _fmt(r['mean_individual_payoff'])]
-         for r in out['per_treatment']],
-    )]
-    parts += ['', 'Outcomes: ' + ', '.join(f'{k} ({v})'
-                                           for k, v in out['outcome_distribution'])]
-    parts += ['', 'Final choices: ' + ', '.join(f'{k} ({v})'
-                                                for k, v in out['decisions'])]
+    if out:
+        parts += ['', '## Game outcomes', '', _md_table(
+            ['Treatment', _noun(True).capitalize(), 'Coordination',
+             'Group payoff', 'Individual payoff'],
+            [[r['label'], r['n_triads'], r['coordination'],
+              _fmt(r['mean_group_payoff']), _fmt(r['mean_individual_payoff'])]
+             for r in out['per_treatment']],
+        )]
+        parts += ['', 'Outcomes: ' + ', '.join(
+            f'{k} ({v})' for k, v in out['outcome_distribution'])]
+        parts += ['', 'Final choices: ' + ', '.join(
+            f'{k} ({v})' for k, v in out['decisions'])]
 
     beh = data['behaviour']
-    parts += ['', '## Behavioural variables', '', _md_table(
-        ['Treatment', 'Pairs', 'Support signals', 'Persuasion',
-         'Choice-signal consistency', 'Strategic deception'],
-        [[r['label'], r['n_pairs'], _fmt(r['support_signals']),
-          _fmt(r['persuasion']), _fmt(r['consistency']), _fmt(r['deception'])]
-         for r in beh['per_treatment']],
-    )]
-    parts += ['', 'The first two columns are proportions over directed pairs, '
-                  'the last two are means over participants.']
+    if beh:
+        parts += ['', '## Behavioural variables', '', _md_table(
+            ['Treatment', 'Pairs', 'Support signals', 'Persuasion',
+             'Choice-signal consistency', 'Strategic deception'],
+            [[r['label'], r['n_pairs'], _fmt(r['support_signals']),
+              _fmt(r['persuasion']), _fmt(r['consistency']),
+              _fmt(r['deception'])]
+             for r in beh['per_treatment']],
+        )]
+        parts += ['', 'The first two columns are proportions over directed '
+                      'pairs, the last two are means over participants.']
 
     lang = data['language']
     if lang:
-        parts += ['', '## Language (medians per triad)', '', _md_table(
+        parts += ['', f'## Language (medians per {_noun()})', '', _md_table(
             [''] + lang['labels'],
             [[m['label']] + [_fmt(v, m['digits']) for v in m['values']]
              for m in lang['metrics']],
@@ -552,13 +600,17 @@ def render_html(data: dict) -> str:
     beh = data['behaviour']
 
     cards = [
-        (cov['n_triads'], 'triads'),
+        (cov['n_triads'], _noun(True)),
         (cov['n_participants'], 'participants'),
         (cov['n_pairs'], 'directed pairs'),
     ]
     if cov.get('n_messages') is not None:
         cards.append((cov['n_messages'], 'messages'))
-    cards.append((f"{cov['n_valid_triads']}/{cov['n_triads']}", 'valid triads'))
+    # Only where validity is a notion this experiment has: otherwise the card
+    # would read 0/40 and look like a failure.
+    if cov.get('n_valid_triads') is not None:
+        cards.append((f"{cov['n_valid_triads']}/{cov['n_triads']}",
+                      f'valid {_noun(True)}'))
 
     body = [
         f"<h1>Text analysis — {html.escape(data['stem'])}</h1>",
@@ -571,7 +623,7 @@ def render_html(data: dict) -> str:
         '</div>',
     ]
 
-    if cov['dropped']:
+    if cov['dropped'] and 'never_grouped' in cov['dropped']:
         body.append(
             f"<p class=\"caption\">Of the {cov['n_input']} participants in the "
             f"export, {cov['dropped'].get('never_grouped', 0)} were excluded as "
@@ -579,33 +631,37 @@ def render_html(data: dict) -> str:
             f"having no Prolific identifier (test sessions).</p>")
 
     body += ['<h2>Coverage</h2>', _html_table(
-        ['Treatment', 'Triads', 'Participants'],
+        ['Treatment', _noun(True).capitalize(), 'Participants'],
         [[t['label'], t['n_triads'], t['n_participants']]
          for t in cov['per_treatment']])]
 
-    body += ['<h2>Game outcomes</h2>', _html_table(
-        ['Treatment', 'Triads', 'Coordination', 'Group payoff',
-         'Individual payoff'],
-        [[r['label'], r['n_triads'], r['coordination'],
-          _fmt(r['mean_group_payoff']), _fmt(r['mean_individual_payoff'])]
-         for r in out['per_treatment']])]
-    body.append('<p class="caption">Outcomes: ' + html.escape(
-        ', '.join(f'{k} ({v})' for k, v in out['outcome_distribution'])) +
-        '<br>Final choices: ' + html.escape(
-        ', '.join(f'{k} ({v})' for k, v in out['decisions'])) + '</p>')
+    if out:
+        body += ['<h2>Game outcomes</h2>', _html_table(
+            ['Treatment', _noun(True).capitalize(), 'Coordination',
+             'Group payoff',
+             'Individual payoff'],
+            [[r['label'], r['n_triads'], r['coordination'],
+              _fmt(r['mean_group_payoff']), _fmt(r['mean_individual_payoff'])]
+             for r in out['per_treatment']])]
+        body.append('<p class="caption">Outcomes: ' + html.escape(
+            ', '.join(f'{k} ({v})' for k, v in out['outcome_distribution'])) +
+            '<br>Final choices: ' + html.escape(
+            ', '.join(f'{k} ({v})' for k, v in out['decisions'])) + '</p>')
 
-    body += ['<h2>Behavioural variables</h2>', _html_table(
-        ['Treatment', 'Pairs', 'Support signals', 'Persuasion',
-         'Consistency', 'Strategic deception'],
-        [[r['label'], r['n_pairs'], _fmt(r['support_signals']),
-          _fmt(r['persuasion']), _fmt(r['consistency']), _fmt(r['deception'])]
-         for r in beh['per_treatment']]),
-        '<p class="caption">The first two columns are proportions over '
-        'directed pairs, the last two are means over participants.</p>']
+    if beh:
+        body += ['<h2>Behavioural variables</h2>', _html_table(
+            ['Treatment', 'Pairs', 'Support signals', 'Persuasion',
+             'Consistency', 'Strategic deception'],
+            [[r['label'], r['n_pairs'], _fmt(r['support_signals']),
+              _fmt(r['persuasion']), _fmt(r['consistency']),
+              _fmt(r['deception'])]
+             for r in beh['per_treatment']]),
+            '<p class="caption">The first two columns are proportions over '
+            'directed pairs, the last two are means over participants.</p>']
 
     lang = data['language']
     if lang:
-        body += ['<h2>Language (medians per triad)</h2>', _html_table(
+        body += [f'<h2>Language (medians per {_noun()})</h2>', _html_table(
             [''] + lang['labels'],
             [[m['label']] + [_fmt(v, m['digits']) for v in m['values']]
              for m in lang['metrics']])]

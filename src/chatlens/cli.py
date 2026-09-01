@@ -27,7 +27,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from chatlens.core import config
+from chatlens.core import config, experiment
 
 def spend_defaults():
     """Imported late: the help text needs the figures, nothing else does."""
@@ -59,10 +59,18 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest='command', required=True)
 
     def add_input_options(sp):
+        sp.add_argument('--input', action='append', default=[],
+                        metavar='ROLE=PATH',
+                        help='point a role at a file instead of looking for it '
+                             'in input/; repeatable. The roles are the ones '
+                             'the adapter declares (chatlens status lists '
+                             'them)')
+        # The two the oTree adapter uses, kept as shorthand because they are
+        # what every existing instruction says.
         sp.add_argument('--wide', type=Path, default=None,
-                        help='all_apps_wide export, if not the one in input/')
+                        help='shorthand for --input wide=<path>')
         sp.add_argument('--chat', type=Path, default=None,
-                        help='ChatMessages export, if not the one in input/')
+                        help='shorthand for --input chat=<path>')
         sp.add_argument('--keep-all', action='store_true',
                         help='do not filter: keep the test sessions and anyone '
                              'who was never part of a group')
@@ -169,24 +177,91 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def resolve_dataset(args) -> tuple[Path, Path, str]:
-    """Locate the exports and the prefix of the files produced."""
-    wide = config.find_input('wide', args.wide)
-    chat = config.find_input('chat', args.chat)
-    return wide, chat, config.dataset_stem(wide)
+def resolve_inputs(args) -> dict:
+    """Locate every file the active adapter asks for.
+
+    A role whose pattern is None is optional: absent, it is simply not there,
+    and the adapter is told so rather than being handed a path that does not
+    exist.
+    """
+    overrides = {}
+    for item in getattr(args, 'input', None) or []:
+        role, _, path = item.partition('=')
+        if not path:
+            raise SystemExit(
+                f'\n--input wants ROLE=PATH, not "{item}".\n'
+                f'  Roles for this adapter: '
+                f'{", ".join(config.INPUT_PATTERNS)}\n'
+            )
+        overrides[role.strip()] = Path(path).expanduser()
+    for role in ('wide', 'chat'):
+        given = getattr(args, role, None)
+        if given is not None:
+            overrides[role] = given
+
+    unknown = set(overrides) - set(config.INPUT_PATTERNS)
+    if unknown:
+        raise SystemExit(
+            f'\nThis adapter has no input called '
+            f'{", ".join(sorted(unknown))}.\n'
+            f'  Roles: {", ".join(config.INPUT_PATTERNS)}\n'
+        )
+
+    paths = {}
+    for role, pattern in config.INPUT_PATTERNS.items():
+        try:
+            paths[role] = config.find_input(role, overrides.get(role))
+        except config.InputError:
+            if pattern is None and role not in overrides:
+                paths[role] = None      # optional and not there: fine
+                continue
+            raise
+    return paths
+
+
+def dataset_stem(paths: dict) -> str:
+    """The prefix of everything produced: the first required input's name."""
+    for role, pattern in config.INPUT_PATTERNS.items():
+        if pattern is not None and paths.get(role):
+            return config.dataset_stem(paths[role])
+    first = next((p for p in paths.values() if p), None)
+    return config.dataset_stem(first) if first else 'dataset'
+
+
+def resolve_dataset(args) -> tuple[dict, str]:
+    """The adapter's input files, and the stem derived from them."""
+    paths = resolve_inputs(args)
+    return paths, dataset_stem(paths)
 
 
 def cmd_merge(args) -> int:
-    from chatlens.adapters import otree_coalition as merge
+    from chatlens import adapters
 
-    wide, chat, stem = resolve_dataset(args)
-    print(f'Input:  {wide.name}')
-    print(f'        {chat.name}')
+    experiment = config.EXPERIMENT
+    adapter = adapters.load(experiment.adapter)
+    paths, stem = resolve_dataset(args)
+
+    print(f'Experiment: {experiment.describe()}')
+    print('Input:')
+    for role, path in paths.items():
+        print(f'  {role:<14} {path.name if path else "(absent)"}')
     print()
-    summary = merge.run(wide, chat, config.MERGED_DIR, stem,
-                        keep_all=getattr(args, 'keep_all', False),
-                        pseudonymise=getattr(args, 'pseudonymise', False))
-    merge.print_summary(summary)
+
+    # Only what this adapter understands: an option it never declared would be
+    # a silent no-op, which is the kind of thing that wastes an afternoon.
+    options = {name: getattr(args, name)
+               for name in getattr(adapter, 'OPTIONS', ())
+               if hasattr(args, name)}
+    if 'columns' in getattr(adapter, 'OPTIONS', ()):
+        options['columns'] = experiment.columns
+
+    summary = adapter.run(
+        **{role: path for role, path in paths.items()},
+        outdir=config.MERGED_DIR, stem=stem,
+        pseudonymise=getattr(args, 'pseudonymise', False),
+        **options,
+    )
+    adapter.print_summary(summary)
     return 0
 
 
@@ -196,7 +271,7 @@ def cmd_analyze(args) -> int:
     if getattr(args, 'topics', False) and not args.topicgpt_repo:
         args.topicgpt_repo = str(config.topicgpt_repo())
 
-    _wide, _chat, stem = resolve_dataset(args)
+    _paths, stem = resolve_dataset(args)
     args.merged_dir = config.MERGED_DIR
     args.outdir = config.OUTPUT_DIR
     args.stem = stem
@@ -216,7 +291,7 @@ def cmd_all(args) -> int:
 def cmd_report(args) -> int:
     from chatlens.core import report
 
-    _wide, _chat, stem = resolve_dataset(args)
+    _paths, stem = resolve_dataset(args)
     paths = report.write(config.OUTPUT_DIR, stem)
     print('Readable summary:')
     for path in paths:
@@ -313,15 +388,19 @@ def cmd_keys(_args) -> int:
 
 def cmd_status(_args) -> int:
     print(f'Workspace : {config.WORKSPACE}')
+    print(f'Experiment: {config.EXPERIMENT.describe()}')
     print()
-    print('Input:')
-    for kind, pattern in config.INPUT_PATTERNS.items():
+    print('Input (the roles this adapter asks for):')
+    for role, pattern in config.INPUT_PATTERNS.items():
+        if pattern is None:
+            print(f'  optional {role}')
+            continue
         matches = sorted(config.INPUT_DIR.glob(pattern))
         if not matches:
-            print(f'  missing  {pattern}')
+            print(f'  missing  {role:<14} {pattern}')
         for match in matches:
             size = match.stat().st_size // 1024
-            print(f'  present  {match.name} ({size} KB)')
+            print(f'  present  {role:<14} {match.name} ({size} KB)')
 
     print()
     print('Output:')
@@ -363,6 +442,10 @@ def main(argv=None) -> int:
     # First of all, because every path below is read from the workspace.
     config.use_workspace(
         config.resolve_workspace(getattr(args, 'workspace', None)))
+    try:
+        config.use_experiment(experiment.load(config.WORKSPACE))
+    except experiment.ConfigError as exc:
+        raise SystemExit(f'\n{exc}\n') from None
     config.ensure_dirs()
     config.load_env()
     try:

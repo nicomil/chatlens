@@ -46,6 +46,8 @@ import re
 import sys
 from pathlib import Path
 
+from . import schema
+
 # TopicGPT's assignment response format: "[1] Name: description".
 TOPIC_RE = re.compile(r"\[(\d)\]\s*([\w\s\-'\&]+)")
 
@@ -227,7 +229,7 @@ def build_documents(messages, unit: str = 'dyad_directed') -> list[dict]:
 
     documents = []
     for key, bucket in sorted(buckets.items()):
-        bucket.sort(key=lambda m: float(m.get('timestamp') or 0))
+        bucket.sort(key=lambda m: schema.parse_timestamp(m.get('timestamp')) or 0.0)
         lines = [
             f"{m.get('sender_color', '?')} to {m.get('receiver_color', '?')}: "
             f"{m.get('body', '')}"

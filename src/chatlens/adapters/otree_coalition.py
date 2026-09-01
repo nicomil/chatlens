@@ -51,6 +51,24 @@ from pathlib import Path
 
 from chatlens.core import privacy
 
+# What this adapter needs from the workspace's input/ folder, and the options
+# it understands beyond the common ones. See adapters/__init__.py.
+INPUTS = {
+    'wide': 'all_apps_wide*.csv',
+    'chat': 'ChatMessages*.csv',
+}
+OPTIONS = ('keep_all',)
+
+# The report's vocabulary for this experiment. A workspace's experiment.toml
+# overrides both; without one these are what gets printed, so the project this
+# grew out of reads exactly as it did before.
+GROUP_NOUN = 'triad'
+TREATMENT_LABELS = {
+    'private': 'Baseline (private)',
+    'public': 'Public communication',
+    'private_no_dwl': 'Slacker (no deadweight loss)',
+}
+
 # --- Game constants, aligned with bargaining_tdl_common/utils.py -----------
 
 TOPOLOGY = {
@@ -874,7 +892,7 @@ def write_csv(path: Path, rows):
             writer.writerow(row)
 
 
-def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
+def run(wide: Path, chat: Path, outdir: Path, stem: str,
         keep_all: bool = False, pseudonymise: bool = False) -> dict:
     """Step 1: merge choices and chat, and build the experiment's variables.
 
@@ -888,8 +906,8 @@ def run(wide_path: Path, chat_path: Path, outdir: Path, stem: str,
 
     Returns a summary with the paths produced and the figures to check.
     """
-    wide_cols, all_rows = load_wide(wide_path)
-    chat_rows = load_chat(chat_path)
+    wide_cols, all_rows = load_wide(wide)
+    chat_rows = load_chat(chat)
 
     if keep_all:
         wide_rows, dropped = all_rows, {}

@@ -30,7 +30,8 @@ import sys
 from pathlib import Path
 
 from . import aggregate as agg  # noqa: E402
-from . import archive, config, llm_rubric, report, spend, topicgpt  # noqa: E402
+from . import archive, config, llm_rubric, report, schema, spend  # noqa: E402
+from . import topicgpt  # noqa: E402
 
 
 def read_csv(path: Path) -> list[dict]:
@@ -49,7 +50,7 @@ def build_transcripts(messages, level: str) -> dict:
 
     transcripts = {}
     for key, bucket in buckets.items():
-        bucket.sort(key=lambda m: float(m.get('timestamp') or 0))
+        bucket.sort(key=lambda m: schema.parse_timestamp(m.get('timestamp')) or 0.0)
         transcripts[key] = '\n'.join(
             f"{m.get('sender_color', '?')} -> {m.get('receiver_color', '?')}: "
             f"{m.get('body', '')}"
@@ -288,7 +289,21 @@ def run(args) -> dict:
     preflight(args)
 
     messages = agg.read_messages(messages_path)
+    try:
+        absent = schema.validate_messages(messages, messages_path.name)
+        schema.fill_derived(messages)
+        for path, keys in ((by_partner_path, schema.BY_PARTNER_KEYS),
+                           (aggregated_path, schema.AGGREGATED_KEYS)):
+            schema.validate_join_keys(agg.read_messages(path), keys, path.name)
+    except schema.SchemaError as exc:
+        # A contract violation, not a crash: say which column and why.
+        raise SystemExit(f'\n{exc}\n') from None
+
     print(f'Messages read: {len(messages)}')
+    if absent:
+        # Not an error. Some measures simply will not exist, and silently
+        # producing empty columns would be the worse outcome.
+        print(f'  optional columns absent: {", ".join(absent)}')
 
     print('Text measures...')
     enriched = agg.analyze_messages(messages)

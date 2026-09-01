@@ -23,6 +23,7 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 
+from . import schema
 from .text_metrics import (
     COUNT_KEYS,
     analyze_message,
@@ -80,7 +81,8 @@ def aggregate_level(messages: list[dict], level: str) -> list[dict]:
         row['n_messages'] = len(bucket)
         row['mean_words_per_message'] = counts['wc'] / len(bucket) if bucket else 0.0
 
-        timestamps = sorted(float(m['timestamp']) for m in bucket if m.get('timestamp'))
+        stamps = (schema.parse_timestamp(m.get('timestamp')) for m in bucket)
+        timestamps = sorted(t for t in stamps if t is not None)
         row['first_timestamp'] = timestamps[0] if timestamps else ''
         row['last_timestamp'] = timestamps[-1] if timestamps else ''
         row['duration_seconds'] = (

@@ -836,5 +836,112 @@ class PseudonymisationTests(unittest.TestCase):
                     self.assertEqual(before[column], after[column], column)
 
 
+
+class GenericAdapterTests(unittest.TestCase):
+    """An export that is already one message per row needs no code."""
+
+    COLUMNS = {'group': 'team', 'sender': 'from_seat', 'receiver': 'to_seat',
+               'body': 'text', 'timestamp': 'sent_at', 'treatment': 'condition'}
+
+    def setUp(self):
+        from chatlens.adapters import generic_chat
+        self.adapter = generic_chat
+
+    def _export(self, tmpdir, rows, columns=None):
+        path = Path(tmpdir) / 'chat.csv'
+        names = list(columns or ('team', 'condition', 'from_seat', 'to_seat',
+                                 'sent_at', 'text'))
+        with path.open('w', encoding='utf-8', newline='') as handle:
+            writer = csv.DictWriter(handle, fieldnames=names)
+            writer.writeheader()
+            writer.writerows(rows)
+        return path
+
+    def _rows(self):
+        return [
+            dict(team='g1', condition='ctrl', from_seat=1, to_seat=2,
+                 sent_at='2026-08-11T10:00:00', text='hello there'),
+            dict(team='g1', condition='ctrl', from_seat=2, to_seat=1,
+                 sent_at='2026-08-11T10:01:00', text='hello back'),
+            dict(team='g1', condition='ctrl', from_seat=3, to_seat=1,
+                 sent_at='2026-08-11T10:02:00', text='and me'),
+        ]
+
+    def _run(self, tmpdir, rows, **kw):
+        path = self._export(tmpdir, rows)
+        outdir = Path(tmpdir) / 'out'
+        with contextlib.redirect_stdout(io.StringIO()):
+            summary = self.adapter.run(path, None, outdir=outdir, stem='t',
+                                       columns=self.COLUMNS, **kw)
+        def read(name):
+            with (outdir / f't_{name}.csv').open(encoding='utf-8-sig',
+                                                 newline='') as handle:
+                return list(csv.DictReader(handle))
+        return summary, read
+
+    def test_it_produces_the_three_canonical_tables(self):
+        from chatlens.core import schema
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary, read = self._run(tmpdir, self._rows())
+            self.assertEqual(
+                set(summary['paths']),
+                {'messages_long', 'chat_by_partner', 'chat_aggregated'})
+            messages = read('messages_long')
+            self.assertEqual(len(messages), 3)
+            schema.validate_messages(messages)          # raises if wrong
+            schema.validate_join_keys(read('chat_by_partner'),
+                                      schema.BY_PARTNER_KEYS, 'by_partner')
+            schema.validate_join_keys(read('chat_aggregated'),
+                                      schema.AGGREGATED_KEYS, 'aggregated')
+
+    def test_group_size_is_whatever_the_data_says(self):
+        """Nothing in the core counts the members; four is as good as three."""
+        rows = self._rows() + [
+            dict(team='g1', condition='ctrl', from_seat=4, to_seat=2,
+                 sent_at='2026-08-11T10:03:00', text='fourth seat here'),
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _summary, read = self._run(tmpdir, rows)
+            seats = {r['focal_id_in_group'] for r in read('chat_aggregated')}
+        self.assertEqual(seats, {'1', '2', '3', '4'})
+
+    def test_a_message_with_no_recipient_is_counted_not_invented(self):
+        rows = self._rows()
+        rows.append(dict(team='g1', condition='ctrl', from_seat=1, to_seat='',
+                         sent_at='2026-08-11T10:04:00', text='everyone listen'))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary, read = self._run(tmpdir, rows)
+            self.assertEqual(len(read('messages_long')), 3)
+        self.assertEqual(summary['skipped']['no_receiver'], 1)
+        # And it says so, rather than leaving the count quietly short.
+        self.assertTrue(any('recipient' in w for w in summary['warnings']))
+
+    def test_a_wrong_column_name_says_what_is_actually_there(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._export(tmpdir, self._rows())
+            with self.assertRaises(self.adapter.AdapterError) as raised:
+                self.adapter.run(path, None, outdir=Path(tmpdir) / 'out',
+                                 stem='t',
+                                 columns={**self.COLUMNS, 'body': 'message'})
+        message = str(raised.exception)
+        self.assertIn('message', message)
+        self.assertIn('Present:', message)
+        self.assertIn('experiment.toml', message)
+
+    def test_the_dyad_key_agrees_in_both_directions(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _summary, read = self._run(tmpdir, self._rows())
+            keys = {r['dyad_key'] for r in read('messages_long')
+                    if {r['sender_id_in_group'],
+                        r['receiver_id_in_group']} == {'1', '2'}}
+        self.assertEqual(keys, {'1-2'})
+
+    def test_pseudonymisation_works_here_too(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary, _read = self._run(tmpdir, self._rows(), pseudonymise=True)
+        self.assertIsInstance(summary['pseudonymised'], list)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

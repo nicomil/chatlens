@@ -10,6 +10,7 @@ ratings), while no API call is ever made.
 import contextlib
 import io
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -1282,6 +1283,162 @@ class SpendGuardTests(unittest.TestCase):
             self.spend.check(58000, 'Rubric',
                              breakdown='group 12000 + dyad_directed 46000')
         self.assertIn('dyad_directed 46000', str(raised.exception))
+
+
+
+class SchemaTests(unittest.TestCase):
+    """The contract between an adapter and the core."""
+
+    def setUp(self):
+        from chatlens.core import schema
+        self.schema = schema
+
+    def _rows(self, **overrides):
+        row = {'group_uid': 'g1', 'sender_id_in_group': '1',
+               'receiver_id_in_group': '2', 'body': 'hello'}
+        row.update(overrides)
+        return [row]
+
+    def test_a_complete_table_passes(self):
+        self.assertEqual(self.schema.validate_messages(self._rows()),
+                         sorted(self.schema.MESSAGES_OPTIONAL,
+                                key=list(self.schema.MESSAGES_OPTIONAL).index))
+
+    def test_a_missing_column_says_which_and_what_for(self):
+        rows = self._rows()
+        del rows[0]['receiver_id_in_group']
+        with self.assertRaises(self.schema.SchemaError) as raised:
+            self.schema.validate_messages(rows)
+        message = str(raised.exception)
+        self.assertIn('receiver_id_in_group', message)
+        # Not just the name: what the column is for, and what is present.
+        self.assertIn('who it was addressed to', message)
+        self.assertIn('Present:', message)
+
+    def test_a_column_present_but_blank_is_caught(self):
+        """Worse than absent: it looks like data."""
+        with self.assertRaises(self.schema.SchemaError) as raised:
+            self.schema.validate_messages(self._rows(body=''))
+        self.assertIn('empty on every row', str(raised.exception))
+
+    def test_an_empty_table_is_caught(self):
+        with self.assertRaises(self.schema.SchemaError):
+            self.schema.validate_messages([])
+
+    def test_the_dyad_key_does_not_depend_on_direction(self):
+        self.assertEqual(self.schema.dyad_key(3, 1), self.schema.dyad_key(1, 3))
+
+    def test_the_dyad_key_is_filled_in_when_absent(self):
+        rows = self._rows()
+        self.schema.fill_derived(rows)
+        self.assertEqual(rows[0]['dyad_key'], '1-2')
+
+    def test_join_keys_are_checked(self):
+        with self.assertRaises(self.schema.SchemaError) as raised:
+            self.schema.validate_join_keys(
+                [{'group_uid': 'g1'}], self.schema.BY_PARTNER_KEYS, 'table')
+        self.assertIn('focal_id_in_group', str(raised.exception))
+
+
+class TimestampTests(unittest.TestCase):
+    """oTree writes epoch seconds; most other tools write ISO 8601."""
+
+    def setUp(self):
+        from chatlens.core import schema
+        self.parse = schema.parse_timestamp
+
+    def test_epoch_seconds(self):
+        self.assertEqual(self.parse('1755500000.5'), 1755500000.5)
+
+    def test_iso_8601(self):
+        self.assertIsNotNone(self.parse('2026-08-11T18:47:00'))
+
+    def test_iso_8601_with_a_zulu_suffix(self):
+        self.assertIsNotNone(self.parse('2026-08-11T18:47:00Z'))
+
+    def test_ordering_survives_the_conversion(self):
+        earlier = self.parse('2026-08-11T18:47:00')
+        later = self.parse('2026-08-11T19:00:00')
+        self.assertLess(earlier, later)
+
+    def test_nonsense_is_none_not_a_crash(self):
+        """A single unreadable stamp must not take the whole run down."""
+        for value in ('', None, 'yesterday', 'n/a'):
+            self.assertIsNone(self.parse(value))
+
+
+class ExperimentConfigTests(unittest.TestCase):
+    """experiment.toml, and what a workspace without one gets."""
+
+    def setUp(self):
+        from chatlens.core import experiment
+        self.experiment = experiment
+
+    def test_no_file_means_the_coalition_defaults(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            exp = self.experiment.load(Path(tmpdir))
+        self.assertEqual(exp.adapter, 'otree_coalition')
+        self.assertFalse(exp.configured)
+
+    def test_a_file_is_read(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / 'experiment.toml').write_text(
+                '[experiment]\n'
+                'name = "Ultimatum"\n'
+                'adapter = "generic_chat"\n'
+                'group_noun = "team"\n'
+                '\n[columns]\ngroup = "team_id"\n'
+                '\n[treatments]\nctrl = "Control"\n',
+                encoding='utf-8')
+            exp = self.experiment.load(Path(tmpdir))
+        self.assertEqual(exp.adapter, 'generic_chat')
+        self.assertEqual(exp.group_noun, 'team')
+        self.assertEqual(exp.columns['group'], 'team_id')
+        self.assertEqual(exp.label('ctrl'), 'Control')
+        # A column it does not mention keeps the default.
+        self.assertEqual(exp.columns['body'], 'body')
+
+    def test_an_unknown_treatment_prints_as_itself(self):
+        self.assertEqual(self.experiment.Experiment().label('whatever'),
+                         'whatever')
+
+    def test_an_unknown_adapter_is_refused_with_the_list(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / 'experiment.toml').write_text(
+                '[experiment]\nadapter = "does_not_exist"\n', encoding='utf-8')
+            with self.assertRaises(self.experiment.ConfigError) as raised:
+                self.experiment.load(Path(tmpdir))
+        message = str(raised.exception)
+        self.assertIn('does_not_exist', message)
+        self.assertIn('generic_chat', message)
+
+    def test_broken_toml_says_so_instead_of_crashing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / 'experiment.toml').write_text(
+                '[experiment\nname = nope', encoding='utf-8')
+            with self.assertRaises(self.experiment.ConfigError):
+                self.experiment.load(Path(tmpdir))
+
+
+class AdapterRegistryTests(unittest.TestCase):
+    def setUp(self):
+        from chatlens import adapters
+        self.adapters = adapters
+
+    def test_both_adapters_are_there(self):
+        self.assertEqual(self.adapters.available(),
+                         {'otree_coalition', 'generic_chat'})
+
+    def test_every_adapter_declares_what_it_needs_and_what_it_does(self):
+        for name in self.adapters.available():
+            module = self.adapters.load(name)
+            self.assertTrue(module.INPUTS, name)
+            self.assertTrue(callable(module.run), name)
+            self.assertTrue(callable(module.print_summary), name)
+
+    def test_an_unknown_name_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.adapters.load('nope')
 
 
 if __name__ == '__main__':

@@ -130,11 +130,41 @@ def use_workspace(root) -> Path:
     return WORKSPACE
 
 
-# How the two oTree exports are recognised among the files in input/.
+# How the files in input/ are recognised, as role -> filename pattern. Set from
+# the active adapter by use_experiment(); the default is the oTree coalition
+# adapter, which is what a workspace with no experiment.toml gets.
 INPUT_PATTERNS = {
     'wide': 'all_apps_wide*.csv',
     'chat': 'ChatMessages*.csv',
 }
+
+# The workspace's experiment.toml, or the defaults. Set by use_experiment().
+EXPERIMENT = None
+
+
+def use_experiment(experiment) -> None:
+    """Adopt an experiment: its adapter decides what input/ should hold."""
+    global EXPERIMENT, INPUT_PATTERNS
+
+    from chatlens import adapters
+
+    EXPERIMENT = experiment
+
+    # An adapter knows what its own experiment calls things. The workspace's
+    # file wins where it says something; where it is silent, these do.
+    module = adapters.load(experiment.adapter)
+    if not experiment.treatments:
+        experiment.treatments = dict(getattr(module, 'TREATMENT_LABELS', {}))
+    if experiment.group_noun == 'group':
+        experiment.group_noun = getattr(module, 'GROUP_NOUN', 'group')
+
+    patterns = adapters.inputs(experiment.adapter)
+    # The workspace may rename its own files; roles it does not mention keep
+    # the adapter's pattern.
+    for role, pattern in (experiment.input or {}).items():
+        if role in patterns:
+            patterns[role] = pattern
+    INPUT_PATTERNS = patterns
 
 KNOWN_KEYS = {
     'OPENAI_API_KEY': 'TopicGPT and, optionally, the validation rubric',
@@ -189,11 +219,15 @@ def find_input(kind: str, override: Path | None = None) -> Path:
         return path
 
     pattern = INPUT_PATTERNS[kind]
+    if pattern is None:
+        raise InputError(f'The "{kind}" file is optional and was not given.')
+
     matches = sorted(INPUT_DIR.glob(pattern))
     if not matches:
         raise InputError(
             f'No "{pattern}" file in {INPUT_DIR}.\n'
-            f'  Download the matching export from oTree and put it in input/.'
+            f'  Export it from your experiment and put it in input/, or point '
+            f'at it with --input {kind}=<path>.'
         )
     if len(matches) > 1:
         listing = '\n'.join(f'    {m.name}' for m in matches)
