@@ -8,6 +8,12 @@ Notable changes to chatlens. The format follows
 
 ### Added
 
+- `--topicgpt-unsupervised` induces the topics with no starting list at all:
+  every topic comes from the documents. The run archive records which mode was
+  used, since a list steered by a seed and one invented from the documents are
+  not the same object.
+- `--topicgpt-shuffle-seed` controls the document order used for induction.
+
 - `chatlens demo` writes a synthetic four-player bargaining study and analyses
   it, so the tool can be tried without anybody's participant data.
 - `experiment.toml`: a workspace describes its experiment — which adapter, what
@@ -52,6 +58,17 @@ Notable changes to chatlens. The format follows
   so a second dataset in the same workspace overwrote the first one's topics.
 - The oTree chat-channel pattern read member ids as single digits, so from a
   group of ten upwards the messages were dropped without a word.
+- **Topic induction read the documents sorted by treatment.** Induction is
+  order-dependent and stops early after a hundred consecutive documents add
+  nothing; the documents arrived sorted by `group_uid`, which begins with the
+  session code, and each session is one treatment. On the coalition data the
+  third treatment first appeared at document 104 — past that threshold — so the
+  topics could have been induced from two conditions out of three. The
+  documents are now shuffled with a reported seed before induction. This
+  changes the induced topics of a seeded run as well as an unsupervised one;
+  no topic run had yet been made on the final dataset.
+- The topics dry run wrote the input in a different order from the one the real
+  run would send, so it inspected something that never happened.
 
 ## [1.0.0] — 2026-08-26
 

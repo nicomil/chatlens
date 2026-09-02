@@ -498,7 +498,8 @@ def _run_tooltip(run: dict) -> str:
             f'Topics: {topics.get("model")} via {topics.get("api")}, induction '
             f'on {topics.get("unit")}, assignment to '
             f'{topics.get("assign_unit")}, '
-            f'seed {Path(topics.get("seed") or "").name}'
+            + ('unsupervised' if topics.get('unsupervised')
+               else f'seed {Path(topics.get("seed") or "").name}')
         )
     return ' — '.join(lines)
 
@@ -592,7 +593,15 @@ def _params_table(run: dict) -> str:
         add('Topics · attributes to',
             level_labels().get(topics.get('assign_unit'),
                              (topics.get('assign_unit'), ''))[0])
-        add('Topics · seed', Path(topics.get('seed') or '—').name)
+        # How the topics were induced, not merely which file was passed: a
+        # reader six months on needs to know whether the list was steered.
+        add('Topics · induction',
+            'unsupervised (no starting list)' if topics.get('unsupervised')
+            else f"seeded from {Path(topics.get('seed') or '—').name}")
+        if topics.get('shuffle_seed') is not None:
+            add('Topics · document order',
+                f"shuffled, seed {topics['shuffle_seed']}"
+                if topics.get('shuffle_seed') else 'as written')
 
     return f'<table class="mini params"><tbody>{"".join(rows)}</tbody></table>'
 

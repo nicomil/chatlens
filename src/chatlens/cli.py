@@ -134,6 +134,15 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument('--topicgpt-seed', default=str(DEFAULT_SEED),
                         help='starting topic list; the seed shipped by '
                              'TopicGPT itself belongs to another domain')
+        sp.add_argument('--topicgpt-unsupervised', action='store_true',
+                        help='induce the topics with no starting list at all: '
+                             'every topic comes from the documents')
+        # Induction is order-dependent and stops early, so whatever comes first
+        # decides the taxonomy. See core/topicgpt.py.
+        sp.add_argument('--topicgpt-shuffle-seed', type=int, default=1,
+                        metavar='N',
+                        help='seed for shuffling the documents before '
+                             'induction (default 1); 0 keeps the file order')
         sp.add_argument('--topicgpt-no-refine', action='store_true',
                         help='skip topic refinement')
         sp.add_argument('--topicgpt-dry-run', action='store_true',

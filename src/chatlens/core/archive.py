@@ -59,7 +59,13 @@ def describe(args, summary: dict) -> dict:
             model=getattr(args, 'topicgpt_model', None),
             unit=getattr(args, 'topicgpt_unit', None),
             assign_unit=getattr(args, 'topicgpt_assign_unit', None),
-            seed=str(getattr(args, 'topicgpt_seed', '') or ''),
+            # How the topics were induced is part of what the topics mean: a
+            # list steered by a seed and one invented from the documents are
+            # not the same object, and months later nothing else says which.
+            unsupervised=bool(getattr(args, 'topicgpt_unsupervised', False)),
+            seed=('' if getattr(args, 'topicgpt_unsupervised', False)
+                  else str(getattr(args, 'topicgpt_seed', '') or '')),
+            shuffle_seed=getattr(args, 'topicgpt_shuffle_seed', 1),
         )
     return info
 

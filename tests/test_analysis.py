@@ -1579,5 +1579,145 @@ class DemoTests(unittest.TestCase):
         self.assertEqual({r['treatment'] for r in rows}, {'open', 'restricted'})
 
 
+
+class TopicInductionOrderTests(unittest.TestCase):
+    """Topic induction is order-dependent, and the natural order is not random.
+
+    TopicGPT accumulates the topic list as it reads, shows each document the
+    list so far, and stops generating once a hundred consecutive documents add
+    nothing. Whatever comes first therefore decides the taxonomy.
+    """
+
+    def setUp(self):
+        from chatlens.core import topicgpt
+        self.topicgpt = topicgpt
+
+    def _messages(self):
+        """Groups whose uid begins with a session code, as oTree's do.
+
+        Each session is one treatment, so sorting by uid sorts by treatment —
+        which is exactly the shape of the real data.
+        """
+        messages = []
+        for session, treatment in (('aaa', 'first'), ('bbb', 'second'),
+                                   ('ccc', 'third')):
+            # Fifty per session, so the third treatment first appears at
+            # document 101 — just past TopicGPT's early-stop threshold of a
+            # hundred, which is where the real data sat too (document 104).
+            for group in range(50):
+                messages.append({
+                    'group_uid': f'{session}-{group:03d}',
+                    'treatment': treatment,
+                    'sender_id_in_group': '1', 'receiver_id_in_group': '2',
+                    'sender_color': 'Yellow', 'receiver_color': 'Orange',
+                    'dyad_key': '1-2', 'timestamp': '1',
+                    'body': f'a message from {treatment}',
+                })
+        return messages
+
+    def test_the_natural_order_groups_the_treatments_together(self):
+        """The defect, stated as a test so it cannot come back unnoticed."""
+        documents = self.topicgpt.build_documents(self._messages(), 'group')
+        first_hundred = {d['treatment'] for d in documents[:100]}
+        self.assertNotIn('third', first_hundred)
+
+    def test_shuffling_mixes_them(self):
+        import random
+
+        documents = self.topicgpt.build_documents(self._messages(), 'group')
+        shuffled = list(documents)
+        random.Random(1).shuffle(shuffled)
+        first_hundred = {d['treatment'] for d in shuffled[:100]}
+        self.assertEqual(first_hundred, {'first', 'second', 'third'})
+
+    def test_the_shuffle_is_reproducible(self):
+        import random
+
+        documents = self.topicgpt.build_documents(self._messages(), 'group')
+        runs = []
+        for _ in range(2):
+            order = list(documents)
+            random.Random(1).shuffle(order)
+            runs.append([d['id'] for d in order])
+        self.assertEqual(runs[0], runs[1])
+
+    def test_a_different_seed_gives_a_different_order(self):
+        import random
+
+        documents = self.topicgpt.build_documents(self._messages(), 'group')
+        orders = []
+        for seed in (1, 2):
+            order = list(documents)
+            random.Random(seed).shuffle(order)
+            orders.append([d['id'] for d in order])
+        self.assertNotEqual(orders[0], orders[1])
+
+    def test_shuffling_keeps_every_document(self):
+        """Reordering, not sampling: nothing may be dropped."""
+        import random
+
+        documents = self.topicgpt.build_documents(self._messages(), 'group')
+        shuffled = list(documents)
+        random.Random(1).shuffle(shuffled)
+        self.assertEqual(sorted(d['id'] for d in shuffled),
+                         sorted(d['id'] for d in documents))
+
+
+class UnsupervisedSeedTests(unittest.TestCase):
+    """No starting list at all: every topic comes from the documents."""
+
+    def test_the_upstream_tree_accepts_an_empty_seed(self):
+        """The claim this rests on, checked against TopicGPT's own code.
+
+        Skipped where TopicGPT is not installed, which is most machines: it is
+        a heavy optional dependency and the rest of the suite does without it.
+        """
+        try:
+            from topicgpt_python.utils import TopicTree
+        except ImportError:
+            self.skipTest('topicgpt_python not installed')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            empty = Path(tmpdir) / 'seed.md'
+            empty.write_text('', encoding='utf-8')
+            tree = TopicTree().from_seed_file(str(empty))
+        self.assertEqual(tree.to_topic_list(desc=True, count=False), [])
+
+    def test_the_flag_reaches_the_archive(self):
+        from types import SimpleNamespace
+
+        from chatlens.core import archive
+
+        args = SimpleNamespace(
+            topics=True, llm=False, topicgpt_api='openai',
+            topicgpt_model='gpt-4o', topicgpt_unit='group',
+            topicgpt_assign_unit='dyad_directed',
+            topicgpt_seed='/somewhere/seed.md',
+            topicgpt_unsupervised=True, topicgpt_shuffle_seed=7,
+        )
+        info = archive.describe(args, {})
+        self.assertTrue(info['topics']['unsupervised'])
+        # The seed is cleared, not merely ignored: recording a path that was
+        # never read would be worse than recording nothing.
+        self.assertEqual(info['topics']['seed'], '')
+        self.assertEqual(info['topics']['shuffle_seed'], 7)
+
+    def test_a_seeded_run_still_records_its_seed(self):
+        from types import SimpleNamespace
+
+        from chatlens.core import archive
+
+        args = SimpleNamespace(
+            topics=True, llm=False, topicgpt_api='openai',
+            topicgpt_model='gpt-4o', topicgpt_unit='group',
+            topicgpt_assign_unit='dyad_directed',
+            topicgpt_seed='/somewhere/seed.md',
+            topicgpt_unsupervised=False, topicgpt_shuffle_seed=1,
+        )
+        info = archive.describe(args, {})
+        self.assertFalse(info['topics']['unsupervised'])
+        self.assertEqual(info['topics']['seed'], '/somewhere/seed.md')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

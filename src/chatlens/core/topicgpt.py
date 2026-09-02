@@ -42,6 +42,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import random
 import re
 import sys
 from pathlib import Path
@@ -262,6 +263,21 @@ def read_jsonl(path: Path) -> list[dict]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
+def generation_order(documents, shuffle_seed=1) -> list:
+    """The order induction will read the documents in.
+
+    Its own function because the dry run has to write exactly what the real run
+    would send. Writing the documents in one order and sending them in another
+    would make the dry run a check on something that never happens.
+
+    `shuffle_seed=None` or 0 keeps the order they came in.
+    """
+    ordered = list(documents)
+    if shuffle_seed:
+        random.Random(shuffle_seed).shuffle(ordered)
+    return ordered
+
+
 def run_topicgpt(
     documents,
     outdir: Path,
@@ -271,6 +287,8 @@ def run_topicgpt(
     refine: bool = True,
     verbose: bool = True,
     seed_file: Path | None = None,
+    unsupervised: bool = False,
+    shuffle_seed: int | None = None,
     assignment_documents=None,
 ) -> Path:
     """Run the official pipeline and return the assignments file.
@@ -288,17 +306,43 @@ def run_topicgpt(
     )
 
     outdir.mkdir(parents=True, exist_ok=True)
-    data_file = outdir / 'topicgpt_input.jsonl'
-    write_jsonl(data_file, documents)
 
-    # The seed is a parameter of the method, not code: the repository ships one
-    # as an example for its own demonstration corpus (US legislation), and the
-    # paper's prompt instructs the model to answer "None" when the document
-    # contains no recognisable topic. With the wrong seed, on chat conversations
-    # that is the answer for every document.
-    seed_path = Path(seed_file) if seed_file else (repo_path / PROMPT_FILES['seed'])
-    if not seed_path.is_file():
-        raise TopicGPTUnavailable(f'Seed file not found: {seed_path}')
+    # Topic induction is order-dependent by construction: the list accumulates
+    # as documents are read, each one is shown the list so far, and generation
+    # stops early once a hundred consecutive documents add nothing. Whatever
+    # comes first therefore decides the taxonomy.
+    #
+    # Left in their natural order the documents arrive sorted by group_uid,
+    # which begins with the session code, and each session is one treatment. On
+    # the coalition data the third treatment did not appear until document 104
+    # — past the early-stop threshold. Shuffling is not a refinement here; it is
+    # what stops the induced topics from describing one condition.
+    #
+    # The shuffle is seeded, so a run is reproducible and the seed can be
+    # reported alongside the topic list.
+    generation_documents = generation_order(documents, shuffle_seed)
+
+    data_file = outdir / 'topicgpt_input.jsonl'
+    write_jsonl(data_file, generation_documents)
+
+    # The seed is a parameter of the method, not code. Three cases:
+    #
+    # unsupervised   an empty list. The model invents every topic from the
+    #                documents, which is what TopicGPT is for; the file is
+    #                still written so the archive records what was used.
+    # a file         a starting list, which steers the induction.
+    # neither        the repository's own seed, which belongs to another corpus
+    #                (US legislation). The paper's prompt tells the model to
+    #                answer "None" where a document has no recognisable topic,
+    #                and with the wrong seed that is the answer for every chat.
+    if unsupervised:
+        seed_path = outdir / 'seed_unsupervised.md'
+        seed_path.write_text('', encoding='utf-8')
+    else:
+        seed_path = (Path(seed_file) if seed_file
+                     else repo_path / PROMPT_FILES['seed'])
+        if not seed_path.is_file():
+            raise TopicGPTUnavailable(f'Seed file not found: {seed_path}')
 
     generation_out = outdir / 'generation_1.jsonl'
     topics_lvl1 = outdir / 'generation_1.md'

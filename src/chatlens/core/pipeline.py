@@ -181,7 +181,10 @@ def run_topics_stage(messages, args):
         outdir = config.topics_dir(args.stem)
         outdir.mkdir(parents=True, exist_ok=True)
         path = outdir / 'topicgpt_input.jsonl'
-        topicgpt.write_jsonl(path, documents)
+        # The same order the real run would use, or the dry run inspects
+        # something that is never sent.
+        topicgpt.write_jsonl(path, topicgpt.generation_order(
+            documents, getattr(args, 'topicgpt_shuffle_seed', 1)))
         print(f'  input written to {path} (no call made)')
         return None, None, None
 
@@ -196,6 +199,10 @@ def run_topics_stage(messages, args):
             verbose=args.verbose,
             seed_file=Path(args.topicgpt_seed).expanduser()
             if args.topicgpt_seed else None,
+            unsupervised=getattr(args, 'topicgpt_unsupervised', False),
+            # 0 means "leave the file order alone", for anyone who needs the
+            # documents in the order they were written.
+            shuffle_seed=(getattr(args, 'topicgpt_shuffle_seed', 1) or None),
             assignment_documents=assignment_documents,
         )
     except topicgpt.TopicGPTUnavailable as exc:
