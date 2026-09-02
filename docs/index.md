@@ -71,7 +71,8 @@ procedure you will run on your own data.
 | `chatlens analyze --llm --llm-replicates 2` | measures + validation rubric | yes |
 | `chatlens analyze --topics` | measures + topics with TopicGPT | yes |
 | `chatlens all --llm --topics` | everything: rubric and topics included | yes |
-| `chatlens dashboard` | opens the dashboard in the browser | — |
+| `chatlens dashboard` | opens the library of experiments in the browser | — |
+| `chatlens experiments` | lists them from the terminal | — |
 | `chatlens report` | regenerates the readable summary | — |
 | `chatlens runs` | lists the archived runs | — |
 | `chatlens runs --prune 2` | keeps the last 2 and deletes the others | — |

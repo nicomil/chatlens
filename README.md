@@ -71,7 +71,8 @@ procedure you will run on your own data.
 | `chatlens analyze --llm --llm-replicates 2` | measures + validation rubric | yes |
 | `chatlens analyze --topics` | measures + topics with TopicGPT | yes |
 | `chatlens all --llm --topics` | everything: rubric and topics included | yes |
-| `chatlens dashboard` | opens the dashboard in the browser | — |
+| `chatlens dashboard` | opens the library of experiments in the browser | — |
+| `chatlens experiments` | lists them from the terminal | — |
 | `chatlens report` | regenerates the readable summary | — |
 | `chatlens runs` | lists the archived runs | — |
 | `chatlens runs --prune 2` | keeps the last 2 and deletes the others | — |
@@ -345,6 +346,38 @@ the assessment can be made on facts.
 
 ## 5. Your own experiment
 
+### From the interface, without touching a file
+
+```bash
+chatlens dashboard
+```
+
+opens the library: the experiments this machine holds, and a form to make
+another. Then, on the new experiment's **Settings** page:
+
+1. **Drop the CSVs in.** Any name will do — each file gets a menu saying which
+   role it plays, so an export called `chat_log.csv` is as good as one called
+   `messages.csv`.
+2. **Confirm the columns.** The page reads the file's header and offers a menu
+   per role — group, sender, recipient, text, time, treatment — filled with the
+   columns your file actually has, and pre-selected by a guess from their
+   names. Usually the guess is right and there is nothing to do but agree.
+3. **Name the treatments.** Choosing the treatment column makes its own values
+   appear, one box each: what you type is what the report prints.
+
+Then **Start run**. No editor, no paths, nothing to remember.
+
+The experiments live in a folder the application owns — the interface shows the
+path, and each one is an ordinary directory that can be copied to a colleague
+or included in a backup. It is not somewhere you would come across by accident,
+so if these are participant data, check that your backup covers it.
+
+Everything below describes the file that produces, `experiment.toml`. Reading it
+is worthwhile — it is what makes an experiment portable and reviewable — but
+writing it by hand is now optional.
+
+### How the pieces fit
+
 The project is split where the reusable part ends and the experiment-specific
 part begins.
 
@@ -364,11 +397,11 @@ your export
 The core never reads a raw export. It reads the three tables and nothing else,
 which is what lets it run on a study it has never seen.
 
-### The usual case: a configuration file
+### The file behind it
 
 If your export is already one message per row — a group, a sender, a recipient,
-a text — no code is needed. Put an `experiment.toml` at the root of the
-workspace:
+a text — no code is needed. This is what the interface writes, and what you
+would write by hand for an experiment kept outside the library:
 
 ```toml
 [experiment]

@@ -8,6 +8,15 @@ Notable changes to chatlens. The format follows
 
 ### Added
 
+- **Experiments are managed from the interface.** `chatlens dashboard` opens a
+  library: make an experiment, upload its CSVs, say which file plays which
+  role, and map the columns from menus filled with the file's own header and
+  pre-selected by a guess. Choosing the treatment column reads its values and
+  asks for a name for each. `experiment.toml` is still the format — it is what
+  makes an experiment portable — but writing it by hand is now optional.
+- `chatlens experiments` lists and creates them from the terminal;
+  `-e/--experiment` opens one by name; `--library` moves where they live.
+
 - `--topicgpt-unsupervised` induces the topics with no starting list at all:
   every topic comes from the documents. The run archive records which mode was
   used, since a list steered by a seed and one invented from the documents are
