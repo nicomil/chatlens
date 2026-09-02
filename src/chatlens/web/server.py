@@ -39,7 +39,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from chatlens.core import config, library
-from chatlens.web import active, views, views_library
+from chatlens.web import active, multipart, views, views_library
 from chatlens.web.runner import build_command, runner
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
@@ -61,6 +61,12 @@ CSP = (
     "script-src 'self'; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
+    # htmx works by XHR, and every interactive part of the page is htmx: the
+    # log poll, the estimate, the file list, the upload. Without this they all
+    # fail silently at the network layer — the browser reports htmx:sendError
+    # and nothing appears on screen, which looks like a dead button rather than
+    # like a policy.
+    "connect-src 'self'; "
     "frame-src 'self'; "
     "form-action 'self'; "
     "base-uri 'none'; "
@@ -205,7 +211,7 @@ class Handler(BaseHTTPRequestHandler):
 
         name, action = _split_experiment(route)
         if name is not None:
-            self._experiment_get(name, action, cookie)
+            self._experiment_get(name, action, cookie, query)
             return
 
         if route == '/':
@@ -240,7 +246,8 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._html('<h1>404</h1>', status=404)
 
-    def _experiment_get(self, name: str, action: str, cookie: str) -> None:
+    def _experiment_get(self, name: str, action: str, cookie: str,
+                        query=None) -> None:
         """Anything under /experiment/<name>/.
 
         The fragments live here rather than at the root because each of them
@@ -248,12 +255,16 @@ class Handler(BaseHTTPRequestHandler):
         was about would read whichever one the server had active when it
         arrived.
         """
+        query = query or {}
         try:
             with active.experiment(name):
                 if not action:
                     self._html(views.page(experiment_slug=name), cookie=cookie)
                 elif action == 'settings':
                     self._html(views_library.settings_page(name), cookie=cookie)
+                elif action == 'files':
+                    self._html(views_library.files_panel(
+                        name, confirm_delete=(query.get('confirm') or [''])[0]))
                 elif action == 'log':
                     self._html(views.log_body())
                 elif action == 'done':
@@ -341,6 +352,81 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._html(views_library.library_panel())
 
+    def _upload(self, name: str) -> None:
+        """Receive files into an experiment's input/ folder.
+
+        Deliberately outside the activation lock while the bytes are moving: a
+        half-gigabyte upload holding it would stall the log poll and every
+        other page for as long as it took. The destination is worked out from
+        the name alone, which needs no shared state, and the lock is taken only
+        at the end to render the result.
+        """
+        try:
+            path = library.path_for(library.slug(name))
+        except library.LibraryError as exc:
+            self._html(f'<h1>404</h1><p>{exc}</p>', status=404)
+            return
+        if not path.is_dir():
+            self._html('<h1>404</h1>', status=404)
+            return
+
+        destination = path / 'input'
+        try:
+            _fields, files = multipart.parse(
+                self.rfile,
+                int(self.headers.get('Content-Length') or 0),
+                self.headers.get('Content-Type', ''),
+                save_dir=destination,
+                max_bytes=views_library.MAX_UPLOAD,
+            )
+        except multipart.UploadError as exc:
+            with active.experiment(name):
+                self._html(views_library.files_panel(name, error=str(exc)))
+            return
+
+        added = []
+        for saved in files:
+            target = destination / saved['filename']
+            Path(saved['path']).replace(target)
+            added.append(saved['filename'])
+
+        message = ('Added ' + ', '.join(added)) if added else 'No file chosen.'
+        with active.experiment(name):
+            self._html(views_library.files_panel(name, message=message))
+
+    def _delete_file(self, name: str) -> None:
+        """Remove one file from input/, and only from there."""
+        wanted = (self._form().get('file') or [''])[0]
+        target = config.INPUT_DIR / Path(wanted).name
+        try:
+            resolved = target.resolve()
+            resolved.relative_to(config.INPUT_DIR.resolve())
+        except (ValueError, OSError):
+            self._html(views_library.files_panel(
+                name, error='That file is not in this experiment.'))
+            return
+        if not resolved.is_file():
+            self._html(views_library.files_panel(
+                name, error=f'There is no file called "{wanted}".'))
+            return
+        resolved.unlink()
+        self._html(views_library.files_panel(
+            name, message=f'Removed {resolved.name}.'))
+
+    def _set_adapter(self, name: str) -> None:
+        chosen = (self._form().get('adapter') or [''])[0]
+        if chosen not in views_library.ADAPTERS:
+            self._html(views_library.files_panel(
+                name, error='That is not one of the adapters.'))
+            return
+        experiment = config.EXPERIMENT
+        experiment.set('experiment', {**experiment.declared['experiment'],
+                                      'adapter': chosen})
+        experiment.save()
+        config.use_experiment(experiment)
+        self._html(views_library.files_panel(
+            name, message=f'Now reading the files with {chosen}.'))
+
     def _experiment_post(self, name: str, action: str) -> None:
         try:
             if action == 'archive':
@@ -348,8 +434,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._html(views_library.library_panel())
                 return
 
+            if action == 'upload':
+                self._upload(name)
+                return
+
             with active.experiment(name):
-                if action == 'run':
+                if action == 'files/delete':
+                    self._delete_file(name)
+                elif action == 'adapter':
+                    self._set_adapter(name)
+                elif action == 'run':
                     if not runner.start(build_command(self._form())):
                         self._html('<div class="logbody empty">A run is '
                                    'already in progress: wait for it to '

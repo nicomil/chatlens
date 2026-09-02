@@ -438,3 +438,70 @@ p.path {
 }
 
 p.empty-library { margin: .4rem 0 1.6rem; }
+
+/* --- Files, uploads --------------------------------------------------- */
+
+.formnote {
+  border-left: 3px solid var(--ok);
+  background: var(--band);
+  padding: .5rem .7rem;
+  margin: 0 0 .8rem;
+  font-size: .86rem;
+}
+.formnote code, .upload code {
+  font-size: .82em;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0 .25em;
+}
+
+/* `table.mini td` has no horizontal padding, which is right for the two-column
+   status list next door and wrong here: the size ran straight into the role
+   badge beside it. */
+table.mini.files { width: 100%; }
+table.mini.files td { padding-right: .8rem; vertical-align: middle; }
+table.mini.files td:last-child { padding-right: 0; }
+table.mini.files td.act { text-align: right; white-space: nowrap; }
+
+/* Confirmation asked in the page: a native confirm() blocks everything, and
+   this can name the file it is about to remove. */
+.confirm { display: inline-flex; gap: .4rem; align-items: center; }
+.confirm button { font: inherit; font-size: .8rem; border-radius: 6px;
+  border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
+  padding: .15rem .5rem; cursor: pointer; }
+button.danger { border-color: var(--ko); color: var(--ko); }
+button.danger:hover { background: var(--ko); color: #fff; }
+
+button.linkish {
+  font: inherit;
+  font-size: .82rem;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+form.upload { margin: 1rem 0 .3rem; }
+form.upload input[type="file"] {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: .85rem;
+  padding: .6rem;
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  background: var(--band);
+}
+form.upload .field span { display: block; font-size: .8rem; color: var(--soft);
+  margin-bottom: .3rem; }
+form.upload button { margin-top: .7rem; }
+
+/* htmx shows this while a request is in flight. */
+.htmx-indicator { opacity: 0; margin-left: .6rem; font-size: .82rem; }
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator { opacity: 1; }
+
+p.small { font-size: .78rem; }

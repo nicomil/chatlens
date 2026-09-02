@@ -260,5 +260,184 @@ class RoundTripTests(unittest.TestCase):
             loaded.set('nonsense', {'a': 'b'})
 
 
+
+def multipart_body(parts, boundary=b'----test-boundary'):
+    """Build an upload the way a browser would.
+
+    `parts` is a list of (name, filename, content); filename None means a plain
+    form field.
+    """
+    out = []
+    for name, filename, content in parts:
+        disposition = f'form-data; name="{name}"'
+        if filename is not None:
+            disposition += f'; filename="{filename}"'
+        out.append(b'--' + boundary + b'\r\n')
+        out.append(f'Content-Disposition: {disposition}\r\n'.encode())
+        if filename is not None:
+            out.append(b'Content-Type: text/csv\r\n')
+        out.append(b'\r\n')
+        out.append(content if isinstance(content, bytes) else content.encode())
+        out.append(b'\r\n')
+    out.append(b'--' + boundary + b'--\r\n')
+    return b''.join(out)
+
+
+class MultipartTests(unittest.TestCase):
+    """The upload parser: the one place where bytes from outside are trusted
+    enough to be written to disk."""
+
+    BOUNDARY = b'----test-boundary'
+    CONTENT_TYPE = 'multipart/form-data; boundary=----test-boundary'
+
+    def setUp(self):
+        from chatlens.web import multipart
+        self.multipart = multipart
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def parse(self, body, content_type=None, max_bytes=10 * 1024 * 1024):
+        import io
+
+        return self.multipart.parse(
+            io.BytesIO(body), len(body), content_type or self.CONTENT_TYPE,
+            save_dir=self.dir, max_bytes=max_bytes)
+
+    def leftovers(self):
+        """Temporary parts nobody cleaned up."""
+        return sorted(self.dir.glob('.upload-*'))
+
+    # --- the ordinary cases ----------------------------------------------
+
+    def test_one_file(self):
+        body = multipart_body([('file', 'data.csv', 'a,b\n1,2\n')])
+        fields, files = self.parse(body)
+        self.assertEqual(fields, {})
+        self.assertEqual(len(files), 1)
+        self.assertEqual(files[0]['filename'], 'data.csv')
+        self.assertEqual(files[0]['path'].read_text(), 'a,b\n1,2\n')
+
+    def test_several_files_and_a_field(self):
+        body = multipart_body([
+            ('adapter', None, 'generic_chat'),
+            ('file', 'one.csv', 'x\n'),
+            ('file', 'two.csv', 'y\n'),
+        ])
+        fields, files = self.parse(body)
+        self.assertEqual(fields['adapter'], 'generic_chat')
+        self.assertEqual([f['filename'] for f in files], ['one.csv', 'two.csv'])
+
+    def test_an_empty_file_input_is_not_a_file(self):
+        """Browsers send the part even when nothing was chosen."""
+        body = multipart_body([('file', '', '')])
+        _fields, files = self.parse(body)
+        self.assertEqual(files, [])
+
+    def test_content_with_newlines_and_quotes_survives(self):
+        content = 'a,b\r\n"one, two",3\r\n\r\nlast\r\n'
+        body = multipart_body([('file', 'data.csv', content)])
+        _fields, files = self.parse(body)
+        # read_bytes, not read_text: the point is that the CRLFs arrive
+        # unchanged, and read_text would translate them and prove nothing.
+        self.assertEqual(files[0]['path'].read_bytes(), content.encode())
+
+    def test_content_that_looks_like_the_boundary_but_is_not(self):
+        """A line starting with the marker, without the CRLF that delimits."""
+        content = 'a\n--' + self.BOUNDARY.decode() + 'x\nb\n'
+        body = multipart_body([('file', 'data.csv', content)])
+        _fields, files = self.parse(body)
+        self.assertEqual(files[0]['path'].read_text(), content)
+
+    def test_a_boundary_split_across_read_blocks(self):
+        """The bug this parser exists to avoid.
+
+        With the block size forced down to a few bytes, the delimiter falls
+        across two reads on almost every pass.
+        """
+        original = self.multipart.BLOCK
+        self.multipart.BLOCK = 7
+        try:
+            content = 'x' * 500 + '\n'
+            body = multipart_body([('file', 'data.csv', content)])
+            _fields, files = self.parse(body)
+            self.assertEqual(files[0]['path'].read_text(), content)
+        finally:
+            self.multipart.BLOCK = original
+
+    def test_a_file_larger_than_a_block(self):
+        content = ('line,of,data\n' * 20000)
+        body = multipart_body([('file', 'big.csv', content)])
+        _fields, files = self.parse(body)
+        self.assertEqual(files[0]['size'], len(content))
+        self.assertEqual(files[0]['path'].read_text(), content)
+
+    # --- what it refuses --------------------------------------------------
+
+    def test_a_filename_cannot_be_a_path(self):
+        body = multipart_body([('file', '../../etc/passwd.csv', 'x\n')])
+        _fields, files = self.parse(body)
+        self.assertEqual(files[0]['filename'], 'passwd.csv')
+        self.assertEqual(files[0]['path'].parent, self.dir)
+
+    def test_a_kind_we_do_not_accept(self):
+        body = multipart_body([('file', 'script.sh', 'rm -rf /\n')])
+        with self.assertRaises(self.multipart.UploadError) as raised:
+            self.parse(body)
+        self.assertIn('accepted kinds', str(raised.exception))
+        self.assertEqual(self.leftovers(), [])
+
+    def test_too_large_stops_while_it_is_going(self):
+        body = multipart_body([('file', 'big.csv', 'x' * 5000)])
+        with self.assertRaises(self.multipart.TooLarge):
+            self.parse(body, max_bytes=1000)
+        # And nothing half-written is left where it might be found.
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_body_that_declares_too_much_is_refused_before_reading(self):
+        import io
+
+        with self.assertRaises(self.multipart.TooLarge):
+            self.multipart.parse(io.BytesIO(b''), 900 * 1024 * 1024,
+                                 self.CONTENT_TYPE, save_dir=self.dir,
+                                 max_bytes=10 * 1024 * 1024)
+
+    def test_a_truncated_upload_leaves_nothing(self):
+        body = multipart_body([('file', 'data.csv', 'x' * 5000)])
+        with self.assertRaises(self.multipart.UploadError):
+            self.parse(body[:2000])
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_part_without_a_name(self):
+        body = (b'--' + self.BOUNDARY + b'\r\n'
+                b'Content-Disposition: form-data\r\n\r\n'
+                b'x\r\n--' + self.BOUNDARY + b'--\r\n')
+        with self.assertRaises(self.multipart.UploadError) as raised:
+            self.parse(body)
+        self.assertIn('no name', str(raised.exception))
+
+    def test_a_content_type_with_no_boundary(self):
+        with self.assertRaises(self.multipart.UploadError) as raised:
+            self.parse(b'', 'multipart/form-data')
+        self.assertIn('boundary', str(raised.exception))
+
+    def test_something_that_is_not_an_upload_at_all(self):
+        with self.assertRaises(self.multipart.UploadError):
+            self.parse(b'a=1', 'application/x-www-form-urlencoded')
+
+    def test_a_body_that_does_not_start_with_its_boundary(self):
+        with self.assertRaises(self.multipart.UploadError) as raised:
+            self.parse(b'garbage\r\nmore garbage\r\n')
+        self.assertIn('boundary', str(raised.exception))
+
+    def test_a_quoted_boundary_is_understood(self):
+        body = multipart_body([('file', 'data.csv', 'x\n')])
+        _fields, files = self.parse(
+            body, 'multipart/form-data; boundary="----test-boundary"')
+        self.assertEqual(len(files), 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

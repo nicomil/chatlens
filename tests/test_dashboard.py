@@ -330,6 +330,25 @@ class ServerAuthorisationTests(unittest.TestCase):
         self.assertIn("script-src 'self'", policy)
         self.assertIn("frame-ancestors 'self'", policy)
 
+    def test_the_policy_allows_what_the_page_actually_does(self):
+        """A policy is only right if the page still works under it.
+
+        Everything interactive here is htmx, and htmx works by XHR. With
+        `default-src 'none'` and no `connect-src`, the browser refuses every
+        one of those requests: the log stops polling, the estimate never
+        updates, uploads fail. Nothing appears in the page and nothing appears
+        in the console — it looks like a dead button.
+
+        Checked as a pair, since the policy on its own always looks fine.
+        """
+        response, payload = self.request('GET', f'/?t={self.srv.TOKEN}')
+        body = payload.decode('utf-8', 'replace')
+        policy = response.getheader('Content-Security-Policy') or ''
+        if 'htmx' in body:
+            self.assertIn("connect-src 'self'", policy)
+        if '<iframe' in body or 'frame-src' in policy:
+            self.assertIn("frame-src 'self'", policy)
+
     def test_the_report_can_still_be_framed_by_this_page(self):
         """The panel shows the report in an iframe, so the policy must allow it.
 
