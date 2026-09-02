@@ -27,7 +27,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from chatlens.core import config, experiment
+from chatlens.core import config, experiment, library
 
 def spend_defaults():
     """Imported late: the help text needs the figures, nothing else does."""
@@ -48,6 +48,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('-w', '--workspace', type=Path, default=None,
                         help='folder holding input/ and output/ '
                              '(default: the current directory)')
+    parser.add_argument('-e', '--experiment', default=None, metavar='NAME',
+                        help='an experiment from the library, by name '
+                             '(chatlens experiments lists them)')
+    parser.add_argument('--library', type=Path, default=None,
+                        help='where the managed experiments live '
+                             '(default: this machine\'s application data)')
 
     # Repeated on every subcommand so that both `chatlens -w DIR all` and
     # `chatlens all -w DIR` work: a researcher should not have to remember on
@@ -55,6 +61,10 @@ def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument('-w', '--workspace', type=Path,
                         default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    common.add_argument('-e', '--experiment', default=argparse.SUPPRESS,
+                        help=argparse.SUPPRESS)
+    common.add_argument('--library', type=Path, default=argparse.SUPPRESS,
+                        help=argparse.SUPPRESS)
 
     sub = parser.add_subparsers(dest='command', required=True)
 
@@ -172,6 +182,17 @@ def build_parser() -> argparse.ArgumentParser:
                              help='open the dashboard in a browser')
     sp_dash.add_argument('--port', type=int, default=8765)
     sp_dash.add_argument('--no-browser', action='store_true')
+    sp_exp = sub.add_parser(
+        'experiments', parents=[common],
+        help='list the managed experiments, or make one')
+    sp_exp.add_argument('--new', metavar='NAME', default=None,
+                        help='create an experiment with this name')
+    sp_exp.add_argument('--adapter', default='generic_chat',
+                        help='adapter for the new experiment '
+                             '(default generic_chat)')
+    sp_exp.add_argument('--all', action='store_true',
+                        help='include the archived ones')
+
     sp_demo = sub.add_parser(
         'demo', parents=[common],
         help='write a synthetic workspace and analyse it, to try the tool')
@@ -352,6 +373,42 @@ def cmd_dashboard(args) -> int:
     return 0
 
 
+def cmd_experiments(args) -> int:
+    """List the managed experiments, or make one."""
+    if args.new:
+        try:
+            path = library.create(args.new, adapter=args.adapter)
+        except library.LibraryError as exc:
+            raise SystemExit(f'\n{exc}\n') from None
+        print(f'Created "{args.new}" in {path}')
+        print()
+        print('Next:')
+        print(f'  put the exported CSVs in {path / "input"}')
+        print(f'  chatlens -e "{args.new}" status')
+        return 0
+
+    entries = library.entries(include_archived=args.all)
+    print(f'Library: {library.ROOT}')
+    print()
+    if not entries:
+        print('  (empty)')
+        print()
+        print('  chatlens experiments --new "My study"')
+        return 0
+
+    for entry in entries:
+        state = ' [archived]' if entry['archived'] else ''
+        size = f"{entry['size'] // 1024} KB" if entry['size'] else 'no files'
+        print(f"  {entry['name']}{state}")
+        print(f"      {entry['adapter']} · {entry['n_files']} files, {size}"
+              + (f" · last run {entry['last_run']}" if entry['last_run'] else ''))
+        if entry['problem']:
+            print(f"      PROBLEM: {entry['problem'].splitlines()[0]}")
+    print()
+    print(f'  chatlens -e "{entries[0]["name"]}" dashboard')
+    return 0
+
+
 def cmd_demo(args) -> int:
     """Write a synthetic study and run the pipeline over it.
 
@@ -497,6 +554,7 @@ COMMANDS = {
     'report': cmd_report,
     'runs': cmd_runs,
     'dashboard': cmd_dashboard,
+    'experiments': cmd_experiments,
     'demo': cmd_demo,
     'install-topicgpt': cmd_install_topicgpt,
     'keys': cmd_keys,
@@ -507,8 +565,27 @@ COMMANDS = {
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     # First of all, because every path below is read from the workspace.
-    config.use_workspace(
-        config.resolve_workspace(getattr(args, 'workspace', None)))
+    library.use_library(library.resolve_root(getattr(args, 'library', None)))
+
+    # An experiment named on the command line is a workspace like any other:
+    # the library only decides where to look for it.
+    chosen = getattr(args, 'experiment', None)
+    if chosen:
+        try:
+            path = library.path_for(library.slug(chosen))
+        except library.LibraryError as exc:
+            raise SystemExit(f'\n{exc}\n') from None
+        if not path.is_dir():
+            raise SystemExit(
+                f'\nNo experiment called "{chosen}" in {library.ROOT}.\n'
+                f'  chatlens experiments            lists them\n'
+                f'  chatlens experiments --new "{chosen}"   makes it\n'
+            )
+        config.use_workspace(path)
+    else:
+        config.use_workspace(
+            config.resolve_workspace(getattr(args, 'workspace', None)))
+
     try:
         config.use_experiment(experiment.load(config.WORKSPACE))
     except experiment.ConfigError as exc:

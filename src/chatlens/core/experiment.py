@@ -66,6 +66,24 @@ class Experiment:
         self.path = path
         self.raw = data
 
+        # What the file actually said, kept apart from what was worked out
+        # afterwards. Several attributes below are resolved rather than read —
+        # `group_noun` becomes "triad" once the coalition adapter has had its
+        # say, `columns` is filled in from the defaults — and writing those back
+        # would put derived values into a file that never declared them, where
+        # they would then survive a change of adapter. `declared` is what
+        # `to_config()` writes; the attributes are what everything else reads.
+        self.declared = {
+            name: dict(data.get(name) or {})
+            for name in ('experiment', 'input', 'columns', 'treatments',
+                         'lexicons', 'rubric')
+        }
+        self.declared['rubric'].pop('dimensions', None)
+        if (data.get('rubric') or {}).get('dimensions'):
+            self.declared['rubric']['dimensions'] = [
+                dict(d) for d in data['rubric']['dimensions']
+            ]
+
         block = data.get('experiment') or {}
         self.name = str(block.get('name') or '').strip()
         self.adapter = str(block.get('adapter') or DEFAULT_ADAPTER).strip()
@@ -96,6 +114,62 @@ class Experiment:
     def configured(self) -> bool:
         """True when a file was actually read, as opposed to defaults."""
         return self.path is not None
+
+    def to_config(self) -> dict:
+        """The configuration as it should be written back.
+
+        Only what was declared, plus whatever has since been set through the
+        interface. Empty tables are dropped by the writer.
+        """
+        config = {name: dict(table) for name, table in self.declared.items()
+                  if table}
+        # These two are the identity of the experiment and are always written,
+        # even when the file was created empty.
+        experiment = config.setdefault('experiment', {})
+        experiment['name'] = self.name
+        experiment['adapter'] = self.adapter
+        return config
+
+    def set(self, table: str, values: dict) -> None:
+        """Replace one table of the declaration.
+
+        A value of None or the empty string removes the key rather than
+        writing it empty: "not set" and "set to nothing" are different, and
+        only the first is a thing a configuration can say.
+        """
+        if table not in self.declared:
+            raise ConfigError(f'There is no [{table}] to set.')
+        kept = {k: v for k, v in (values or {}).items()
+                if v not in (None, '', [], {})}
+        self.declared[table] = kept
+        # Keep the read side in step, so a page rendered right after a save
+        # shows what was saved rather than what was loaded.
+        if table == 'experiment':
+            self.name = str(kept.get('name') or self.name).strip()
+            self.adapter = str(kept.get('adapter') or self.adapter).strip()
+            if kept.get('group_noun'):
+                self.group_noun = str(kept['group_noun']).strip()
+        elif table == 'columns':
+            self.columns = {**DEFAULT_COLUMNS, **kept}
+        elif table == 'input':
+            self.input = kept
+        elif table == 'treatments':
+            self.treatments = kept
+        elif table == 'lexicons':
+            self.lexicons = kept
+
+    def save(self, path: Path | None = None) -> Path:
+        """Write the configuration back. Verified before it counts as saved."""
+        from . import tomlwrite
+
+        target = Path(path) if path else self.path
+        if target is None:
+            raise ConfigError('Nowhere to save to: this experiment has no file.')
+        return tomlwrite.save(
+            target, self.to_config(),
+            header=('Written by chatlens. Editing it by hand is fine — the '
+                    'interface reads\nwhatever is here.'),
+        )
 
     def label(self, treatment: str) -> str:
         """The name to print for a treatment; the raw value if unnamed."""
