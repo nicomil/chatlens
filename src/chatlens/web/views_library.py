@@ -67,14 +67,29 @@ def _when(stamp: str) -> str:
 # --- what an experiment still needs ----------------------------------------
 
 
-def readiness(path: Path, adapter: str) -> tuple[bool, str]:
+def input_patterns(adapter: str, overrides=None) -> dict:
+    """What this experiment's files are called, role by role.
+
+    The adapter says what it needs and the experiment may say what its own
+    files are called — which it does as soon as somebody assigns a role in the
+    interface. Reading the adapter alone means an assigned file still counts as
+    missing, which is what happened.
+    """
+    patterns = adapters.inputs(adapter)
+    for role, pattern in (overrides or {}).items():
+        if role in patterns:
+            patterns[role] = pattern
+    return patterns
+
+
+def readiness(path: Path, adapter: str, overrides=None) -> tuple[bool, str]:
     """Whether it can be run, and what is missing when it cannot.
 
-    Answered from the adapter's own declaration of what it needs, so a new
-    adapter needs no change here.
+    Answered from the adapter's declaration of what it needs, so a new adapter
+    needs no change here.
     """
     try:
-        patterns = adapters.inputs(adapter)
+        patterns = input_patterns(adapter, overrides)
     except Exception:                    # noqa: BLE001 - unknown adapter
         return False, f'unknown adapter "{adapter}"'
 
@@ -93,7 +108,8 @@ def readiness(path: Path, adapter: str) -> tuple[bool, str]:
 
 
 def _card(entry: dict) -> str:
-    ready, missing = readiness(entry['path'], entry['adapter'])
+    ready, missing = readiness(entry['path'], entry['adapter'],
+                               entry.get('input'))
     if entry['problem']:
         badge = '<span class="badge ko">configuration error</span>'
     elif ready:
@@ -190,6 +206,139 @@ def library_page() -> str:
 </body></html>'''
 
 
+# --- the column mapping ----------------------------------------------------
+
+ROLE_LABELS = {
+    'group': ('Group', 'what puts participants in the same conversation'),
+    'sender': ('Sender', 'who wrote the message'),
+    'receiver': ('Recipient', 'who it was addressed to'),
+    'body': ('Text', 'the message itself'),
+    'timestamp': ('Time', 'when it was sent — epoch seconds or ISO 8601'),
+    'treatment': ('Treatment', 'the experimental condition'),
+}
+
+REQUIRED_ROLES = ('group', 'sender', 'receiver', 'body')
+
+
+def _messages_file():
+    """The file the column mapping is about, if it is there."""
+    from chatlens.core import config
+
+    pattern = config.INPUT_PATTERNS.get('messages')
+    if not pattern:
+        return None
+    found = sorted((config.WORKSPACE / 'input').glob(pattern))
+    return found[0] if found else None
+
+
+def _select(role: str, columns, selected: str) -> str:
+    label, hint = ROLE_LABELS[role]
+    required = role in REQUIRED_ROLES
+    options = ['<option value="">— not set —</option>']
+    for column in columns:
+        mark = ' selected' if column == selected else ''
+        options.append(f'<option value="{_e(column)}"{mark}>{_e(column)}</option>')
+    return (
+        f'<label class="field maprow">'
+        f'<span class="rolename">{_e(label)}'
+        f'{"" if required else " <i>(optional)</i>"}</span>'
+        f'<select name="col_{_e(role)}">{"".join(options)}</select>'
+        f'<span class="rolehint">{_e(hint)}</span></label>'
+    )
+
+
+def columns_panel(name: str, message: str = '', error: str = '') -> str:
+    """Point each role at a column, chosen from the ones the file has."""
+    from chatlens.core import config, inspect
+
+    experiment = config.EXPERIMENT
+    notes = (f'<p class="formerror">{_e(error)}</p>' if error else '')
+    notes += (f'<p class="formnote">{_e(message)}</p>' if message else '')
+
+    if experiment.adapter != 'generic_chat':
+        return (f'{notes}<p class="muted">The <b>'
+                f'{_e(ADAPTER_HELP[experiment.adapter][0])}</b> adapter reads '
+                f'the export directly and works out the groups, the senders '
+                f'and the text itself. There is nothing to map.</p>')
+
+    path = _messages_file()
+    if path is None:
+        return (f'{notes}<p class="muted">Upload the messages file first: the '
+                f'columns are read from it, so there is nothing to choose '
+                f'until it is here.</p>')
+
+    try:
+        columns = inspect.header_of(path)
+    except inspect.ReadError as exc:
+        return f'{notes}<p class="formerror">{_e(exc)}</p>'
+
+    # What was saved, else a guess from the column names. The guess is right
+    # often enough that the usual action is to confirm it.
+    declared = experiment.declared.get('columns') or {}
+    guessed = inspect.guess(columns)
+    chosen = {role: declared.get(role) or guessed.get(role, '')
+              for role in ROLE_LABELS}
+    # A saved name that is no longer in the file would silently select nothing.
+    stale = [f'{ROLE_LABELS[r][0]} → {v}' for r, v in declared.items()
+             if r in ROLE_LABELS and v and v not in columns]
+    if stale:
+        notes += (f'<p class="formerror">These were set to columns the file no '
+                  f'longer has: {_e(", ".join(stale))}. Choose again.</p>')
+
+    rows = ''.join(_select(role, columns, chosen.get(role, ''))
+                   for role in ROLE_LABELS)
+    return f'''{notes}
+<p class="muted">Read from <b>{_e(path.name)}</b>, {len(columns)} columns.</p>
+<form hx-post="{_base(name)}/columns" hx-target="#columns" hx-swap="innerHTML">
+  <div class="mapping">{rows}</div>
+  <button type="submit" class="primary">Save the mapping</button>
+</form>'''
+
+
+def treatments_panel(name: str, message: str = '') -> str:
+    """A label for each value the treatment column actually takes."""
+    from chatlens.core import config, inspect
+
+    experiment = config.EXPERIMENT
+    notes = (f'<p class="formnote">{_e(message)}</p>' if message else '')
+
+    column = (experiment.declared.get('columns') or {}).get('treatment')
+    if experiment.adapter != 'generic_chat' or not column:
+        saved = experiment.declared.get('treatments') or {}
+        if not saved:
+            return (f'{notes}<p class="muted">Set the treatment column above '
+                    f'and its values will appear here, to be named.</p>')
+        rows = ''.join(
+            f'<tr><td><code>{_e(k)}</code></td><td>{_e(v)}</td></tr>'
+            for k, v in saved.items())
+        return (f'{notes}<table class="mini"><tbody>{rows}</tbody></table>'
+                f'<p class="muted small">These come from the configuration '
+                f'file.</p>')
+
+    path = _messages_file()
+    values = inspect.distinct(path, column) if path else []
+    if not values:
+        return (f'{notes}<p class="muted">No values found in '
+                f'<code>{_e(column)}</code>, or too many for it to be a '
+                f'treatment.</p>')
+
+    saved = experiment.declared.get('treatments') or {}
+    fields = ''.join(
+        f'<label class="field maprow"><span class="rolename">'
+        f'<code>{_e(value)}</code></span>'
+        f'<input type="text" name="tr_{_e(value)}" maxlength="60" '
+        f'value="{_e(saved.get(value, value))}"></label>'
+        for value in values)
+    return f'''{notes}
+<p class="muted">Found in <code>{_e(column)}</code>. The name on the right is
+what the report will print.</p>
+<form hx-post="{_base(name)}/treatments" hx-target="#treatments"
+      hx-swap="innerHTML">
+  <div class="mapping">{fields}</div>
+  <button type="submit" class="primary">Save the names</button>
+</form>'''
+
+
 # --- one experiment's settings ---------------------------------------------
 
 
@@ -198,7 +347,8 @@ def settings_page(name: str) -> str:
     from chatlens.core import config
 
     experiment = config.EXPERIMENT
-    ready, missing = readiness(config.WORKSPACE, experiment.adapter)
+    ready, missing = readiness(config.WORKSPACE, experiment.adapter,
+                               experiment.declared.get('input'))
     state = ('<span class="badge ok">ready to run</span>' if ready
              else f'<span class="badge warn">needs {_e(missing)}</span>')
 
@@ -219,6 +369,12 @@ def settings_page(name: str) -> str:
   <h2>Files</h2>
   <div id="files">{files_panel(name)}</div>
 
+  <h2>Which column is which</h2>
+  <div id="columns">{columns_panel(name)}</div>
+
+  <h2>Treatments</h2>
+  <div id="treatments">{treatments_panel(name)}</div>
+
   <h2>Where this experiment lives</h2>
   <p class="muted path">{_e(config.WORKSPACE)}</p>
 </main>
@@ -231,7 +387,10 @@ def files_panel(name: str, message: str = '', error: str = '',
     """The input files: what is there, what it is taken for, and how to add."""
     from chatlens.core import config
 
-    patterns = adapters.inputs(config.EXPERIMENT.adapter)
+    # The effective patterns, not the adapter's: a file whose role was
+    # assigned here is named in the experiment, and reading the adapter
+    # alone showed it as unused right after it had been assigned.
+    patterns = config.INPUT_PATTERNS
     wanted = ', '.join(f'<code>{_e(p)}</code>'
                        for p in patterns.values() if p)
     files = sorted((config.WORKSPACE / 'input').glob('*.csv'))
@@ -250,8 +409,20 @@ def files_panel(name: str, message: str = '', error: str = '',
         for path in files:
             role = next((r for r, pattern in patterns.items()
                          if pattern and path.match(pattern)), '')
-            label = (f'<span class="badge ok">{_e(role)}</span>' if role
-                     else '<span class="badge warn">not recognised</span>')
+            # A dropdown rather than a verdict: an export called
+            # "chat_log.csv" is not "messages*.csv", and the answer to that
+            # cannot be "rename your file" when the whole point is that nobody
+            # has to touch a file manager.
+            options = ['<option value="">not used</option>']
+            for candidate in patterns:
+                mark = ' selected' if candidate == role else ''
+                options.append(f'<option value="{_e(candidate)}"{mark}>'
+                               f'{_e(candidate)}</option>')
+            label = (
+                f'<select name="role" hx-post="{_base(name)}/input"'
+                f' hx-vals=\'{{"file": "{_e(path.name)}"}}\''
+                f' hx-target="#files" hx-swap="innerHTML"'
+                f' hx-trigger="change">{"".join(options)}</select>')
             if confirm_delete == path.name:
                 # Asked in the page rather than in a browser dialog: a native
                 # confirm() blocks the page, and this can say what it is about
@@ -321,6 +492,139 @@ def _adapter_suggestion(name: str, files) -> str:
         f'Read them as {_e(title)} instead</button></p>')
 
 
+# --- the column mapping ----------------------------------------------------
+
+ROLE_LABELS = {
+    'group': ('Group', 'what puts participants in the same conversation'),
+    'sender': ('Sender', 'who wrote the message'),
+    'receiver': ('Recipient', 'who it was addressed to'),
+    'body': ('Text', 'the message itself'),
+    'timestamp': ('Time', 'when it was sent — epoch seconds or ISO 8601'),
+    'treatment': ('Treatment', 'the experimental condition'),
+}
+
+REQUIRED_ROLES = ('group', 'sender', 'receiver', 'body')
+
+
+def _messages_file():
+    """The file the column mapping is about, if it is there."""
+    from chatlens.core import config
+
+    pattern = config.INPUT_PATTERNS.get('messages')
+    if not pattern:
+        return None
+    found = sorted((config.WORKSPACE / 'input').glob(pattern))
+    return found[0] if found else None
+
+
+def _select(role: str, columns, selected: str) -> str:
+    label, hint = ROLE_LABELS[role]
+    required = role in REQUIRED_ROLES
+    options = ['<option value="">— not set —</option>']
+    for column in columns:
+        mark = ' selected' if column == selected else ''
+        options.append(f'<option value="{_e(column)}"{mark}>{_e(column)}</option>')
+    return (
+        f'<label class="field maprow">'
+        f'<span class="rolename">{_e(label)}'
+        f'{"" if required else " <i>(optional)</i>"}</span>'
+        f'<select name="col_{_e(role)}">{"".join(options)}</select>'
+        f'<span class="rolehint">{_e(hint)}</span></label>'
+    )
+
+
+def columns_panel(name: str, message: str = '', error: str = '') -> str:
+    """Point each role at a column, chosen from the ones the file has."""
+    from chatlens.core import config, inspect
+
+    experiment = config.EXPERIMENT
+    notes = (f'<p class="formerror">{_e(error)}</p>' if error else '')
+    notes += (f'<p class="formnote">{_e(message)}</p>' if message else '')
+
+    if experiment.adapter != 'generic_chat':
+        return (f'{notes}<p class="muted">The <b>'
+                f'{_e(ADAPTER_HELP[experiment.adapter][0])}</b> adapter reads '
+                f'the export directly and works out the groups, the senders '
+                f'and the text itself. There is nothing to map.</p>')
+
+    path = _messages_file()
+    if path is None:
+        return (f'{notes}<p class="muted">Upload the messages file first: the '
+                f'columns are read from it, so there is nothing to choose '
+                f'until it is here.</p>')
+
+    try:
+        columns = inspect.header_of(path)
+    except inspect.ReadError as exc:
+        return f'{notes}<p class="formerror">{_e(exc)}</p>'
+
+    # What was saved, else a guess from the column names. The guess is right
+    # often enough that the usual action is to confirm it.
+    declared = experiment.declared.get('columns') or {}
+    guessed = inspect.guess(columns)
+    chosen = {role: declared.get(role) or guessed.get(role, '')
+              for role in ROLE_LABELS}
+    # A saved name that is no longer in the file would silently select nothing.
+    stale = [f'{ROLE_LABELS[r][0]} → {v}' for r, v in declared.items()
+             if r in ROLE_LABELS and v and v not in columns]
+    if stale:
+        notes += (f'<p class="formerror">These were set to columns the file no '
+                  f'longer has: {_e(", ".join(stale))}. Choose again.</p>')
+
+    rows = ''.join(_select(role, columns, chosen.get(role, ''))
+                   for role in ROLE_LABELS)
+    return f'''{notes}
+<p class="muted">Read from <b>{_e(path.name)}</b>, {len(columns)} columns.</p>
+<form hx-post="{_base(name)}/columns" hx-target="#columns" hx-swap="innerHTML">
+  <div class="mapping">{rows}</div>
+  <button type="submit" class="primary">Save the mapping</button>
+</form>'''
+
+
+def treatments_panel(name: str, message: str = '') -> str:
+    """A label for each value the treatment column actually takes."""
+    from chatlens.core import config, inspect
+
+    experiment = config.EXPERIMENT
+    notes = (f'<p class="formnote">{_e(message)}</p>' if message else '')
+
+    column = (experiment.declared.get('columns') or {}).get('treatment')
+    if experiment.adapter != 'generic_chat' or not column:
+        saved = experiment.declared.get('treatments') or {}
+        if not saved:
+            return (f'{notes}<p class="muted">Set the treatment column above '
+                    f'and its values will appear here, to be named.</p>')
+        rows = ''.join(
+            f'<tr><td><code>{_e(k)}</code></td><td>{_e(v)}</td></tr>'
+            for k, v in saved.items())
+        return (f'{notes}<table class="mini"><tbody>{rows}</tbody></table>'
+                f'<p class="muted small">These come from the configuration '
+                f'file.</p>')
+
+    path = _messages_file()
+    values = inspect.distinct(path, column) if path else []
+    if not values:
+        return (f'{notes}<p class="muted">No values found in '
+                f'<code>{_e(column)}</code>, or too many for it to be a '
+                f'treatment.</p>')
+
+    saved = experiment.declared.get('treatments') or {}
+    fields = ''.join(
+        f'<label class="field maprow"><span class="rolename">'
+        f'<code>{_e(value)}</code></span>'
+        f'<input type="text" name="tr_{_e(value)}" maxlength="60" '
+        f'value="{_e(saved.get(value, value))}"></label>'
+        for value in values)
+    return f'''{notes}
+<p class="muted">Found in <code>{_e(column)}</code>. The name on the right is
+what the report will print.</p>
+<form hx-post="{_base(name)}/treatments" hx-target="#treatments"
+      hx-swap="innerHTML">
+  <div class="mapping">{fields}</div>
+  <button type="submit" class="primary">Save the names</button>
+</form>'''
+
+
 # --- one experiment's settings ---------------------------------------------
 
 
@@ -329,7 +633,8 @@ def settings_page(name: str) -> str:
     from chatlens.core import config
 
     experiment = config.EXPERIMENT
-    ready, missing = readiness(config.WORKSPACE, experiment.adapter)
+    ready, missing = readiness(config.WORKSPACE, experiment.adapter,
+                               experiment.declared.get('input'))
     state = ('<span class="badge ok">ready to run</span>' if ready
              else f'<span class="badge warn">needs {_e(missing)}</span>')
 
@@ -349,6 +654,12 @@ def settings_page(name: str) -> str:
 <main class="single">
   <h2>Files</h2>
   <div id="files">{files_panel(name)}</div>
+
+  <h2>Which column is which</h2>
+  <div id="columns">{columns_panel(name)}</div>
+
+  <h2>Treatments</h2>
+  <div id="treatments">{treatments_panel(name)}</div>
 
   <h2>Where this experiment lives</h2>
   <p class="muted path">{_e(config.WORKSPACE)}</p>

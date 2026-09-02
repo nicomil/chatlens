@@ -505,3 +505,33 @@ form.upload button { margin-top: .7rem; }
 .htmx-request.htmx-indicator { opacity: 1; }
 
 p.small { font-size: .78rem; }
+
+/* --- The column mapping ------------------------------------------------- */
+
+.mapping { display: grid; gap: .55rem; margin: .6rem 0 1rem; }
+
+/* Label, control, hint on one line at a comfortable width, stacking on a
+   narrow window rather than squeezing the select to nothing. */
+.field.maprow {
+  display: grid;
+  grid-template-columns: 9rem minmax(10rem, 18rem) 1fr;
+  align-items: center;
+  gap: .6rem;
+}
+.field.maprow .rolename { font-size: .85rem; font-weight: 600; }
+.field.maprow .rolename i { font-weight: 400; color: var(--muted); }
+.field.maprow .rolehint { font-size: .78rem; color: var(--muted); }
+.field.maprow select,
+.field.maprow input[type="text"] {
+  width: 100%;
+  font: inherit;
+  font-size: .88rem;
+  padding: .35rem .45rem;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+@media (max-width: 40rem) {
+  .field.maprow { grid-template-columns: 1fr; gap: .2rem; }
+}

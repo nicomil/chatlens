@@ -537,5 +537,179 @@ class LibraryRoutingTests(unittest.TestCase):
         self.assertEqual(loaded.adapter, 'generic_chat')
 
 
+
+class MappingRoutesTests(unittest.TestCase):
+    """Configuring an experiment without opening an editor."""
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server
+        import tempfile
+        import threading as _threading
+
+        from chatlens.core import library
+        from chatlens.web import server as srv
+
+        cls.tmp = tempfile.TemporaryDirectory()
+        library.use_library(Path(cls.tmp.name))
+        path = library.create('Mapped Study')
+        (path / 'input' / 'chat_log.csv').write_text(
+            'team,condition,from_seat,to_seat,sent_at,text\n'
+            'g1,ctrl,1,2,2026-01-01T10:00:00,hello\n'
+            'g1,ctrl,2,1,2026-01-01T10:01:00,hi\n'
+            'g2,treat,1,2,2026-01-01T10:02:00,hey\n',
+            encoding='utf-8')
+
+        cls.srv = srv
+        srv.TOKEN = 'mapping-test-token'
+        srv.LIBRARY_MODE = True
+        cls.httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0),
+                                                    srv.Handler)
+        cls.port = cls.httpd.server_address[1]
+        srv.BOUND = ('127.0.0.1', cls.port)
+        cls.thread = _threading.Thread(target=cls.httpd.serve_forever,
+                                       daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+        cls.tmp.cleanup()
+
+    def call(self, method, path, body=None):
+        import http.client
+
+        conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+        headers = {'Host': f'127.0.0.1:{self.port}',
+                   'Cookie': f'{self.srv.COOKIE_NAME}={self.srv.TOKEN}'}
+        if body is not None:
+            headers.update({'Origin': f'http://127.0.0.1:{self.port}',
+                            'Sec-Fetch-Site': 'same-origin',
+                            'Content-Type':
+                                'application/x-www-form-urlencoded'})
+        conn.request(method, path, body=body, headers=headers)
+        response = conn.getresponse()
+        payload = response.read().decode('utf-8', 'replace')
+        conn.close()
+        return response, payload
+
+    def config(self):
+        from chatlens.core import experiment, library
+
+        return experiment.load(library.path_for('mapped-study'))
+
+    # --- assigning a file to a role ---------------------------------------
+
+    def test_a_file_whose_name_matches_nothing_can_still_be_used(self):
+        """The case that made this necessary: "chat_log.csv" is not
+        "messages*.csv", and the answer cannot be "rename your file"."""
+        response, body = self.call(
+            'POST', '/experiment/mapped-study/input',
+            'file=chat_log.csv&role=messages')
+        self.assertEqual(response.status, 200)
+        self.assertIn('is now the messages file', body)
+        self.assertEqual(self.config().input['messages'], 'chat_log.csv')
+
+    def test_an_assigned_file_counts_as_present(self):
+        self.call('POST', '/experiment/mapped-study/input',
+                  'file=chat_log.csv&role=messages')
+        _response, body = self.call('GET', '/')
+        self.assertIn('ready', body)
+        self.assertNotIn('needs messages', body)
+
+    def test_a_role_the_adapter_does_not_have(self):
+        _response, body = self.call('POST', '/experiment/mapped-study/input',
+                                    'file=chat_log.csv&role=invented')
+        self.assertIn('not a role', body)
+
+    def test_a_file_that_is_not_there(self):
+        _response, body = self.call('POST', '/experiment/mapped-study/input',
+                                    'file=../../etc/passwd&role=messages')
+        self.assertIn('no file called', body)
+
+    # --- the columns ------------------------------------------------------
+
+    def test_the_form_offers_the_columns_the_file_has(self):
+        self.call('POST', '/experiment/mapped-study/input',
+                  'file=chat_log.csv&role=messages')
+        _response, body = self.call('GET',
+                                    '/experiment/mapped-study/settings')
+        for column in ('team', 'from_seat', 'to_seat', 'text', 'sent_at',
+                       'condition'):
+            self.assertIn(f'value="{column}"', body)
+
+    def test_the_guess_arrives_already_chosen(self):
+        self.call('POST', '/experiment/mapped-study/input',
+                  'file=chat_log.csv&role=messages')
+        _response, body = self.call('GET',
+                                    '/experiment/mapped-study/settings')
+        # In the ordinary case the mapping is right and only needs confirming.
+        self.assertIn('value="team" selected', body)
+        self.assertIn('value="text" selected', body)
+
+    def test_saving_writes_the_configuration(self):
+        self.call('POST', '/experiment/mapped-study/input',
+                  'file=chat_log.csv&role=messages')
+        response, body = self.call(
+            'POST', '/experiment/mapped-study/columns',
+            'col_group=team&col_sender=from_seat&col_receiver=to_seat'
+            '&col_body=text&col_treatment=condition')
+        self.assertEqual(response.status, 200)
+        self.assertIn('Saved', body)
+        columns = self.config().declared['columns']
+        self.assertEqual(columns['group'], 'team')
+        self.assertEqual(columns['body'], 'text')
+
+    def test_a_column_the_file_does_not_have_is_refused(self):
+        """Otherwise a value from anywhere lands in the configuration."""
+        self.call('POST', '/experiment/mapped-study/input',
+                  'file=chat_log.csv&role=messages')
+        _response, body = self.call(
+            'POST', '/experiment/mapped-study/columns',
+            'col_group=team&col_sender=from_seat&col_receiver=to_seat'
+            '&col_body=made_up_column')
+        self.assertIn('not a column in chat_log.csv', body)
+        self.assertNotEqual(
+            self.config().declared.get('columns', {}).get('body'),
+            'made_up_column')
+
+    def test_saving_an_incomplete_mapping_says_what_is_still_needed(self):
+        self.call('POST', '/experiment/mapped-study/input',
+                  'file=chat_log.csv&role=messages')
+        _response, body = self.call('POST',
+                                    '/experiment/mapped-study/columns',
+                                    'col_group=team&col_body=text')
+        self.assertIn('still needs', body)
+        self.assertIn('Sender', body)
+
+    # --- the treatments ---------------------------------------------------
+
+    def test_the_treatment_values_come_from_the_data(self):
+        self.call('POST', '/experiment/mapped-study/input',
+                  'file=chat_log.csv&role=messages')
+        self.call('POST', '/experiment/mapped-study/columns',
+                  'col_group=team&col_sender=from_seat&col_receiver=to_seat'
+                  '&col_body=text&col_treatment=condition')
+        _response, body = self.call('GET',
+                                    '/experiment/mapped-study/settings')
+        # Read from the column, not typed by anyone.
+        self.assertIn('name="tr_ctrl"', body)
+        self.assertIn('name="tr_treat"', body)
+
+    def test_naming_them_writes_the_labels(self):
+        self.call('POST', '/experiment/mapped-study/input',
+                  'file=chat_log.csv&role=messages')
+        self.call('POST', '/experiment/mapped-study/columns',
+                  'col_group=team&col_sender=from_seat&col_receiver=to_seat'
+                  '&col_body=text&col_treatment=condition')
+        _response, body = self.call('POST',
+                                    '/experiment/mapped-study/treatments',
+                                    'tr_ctrl=Control&tr_treat=Treated')
+        self.assertIn('Saved 2 names', body)
+        self.assertEqual(self.config().treatments,
+                         {'ctrl': 'Control', 'treat': 'Treated'})
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

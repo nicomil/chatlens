@@ -439,5 +439,111 @@ class MultipartTests(unittest.TestCase):
         self.assertEqual(len(files), 1)
 
 
+
+class InspectTests(unittest.TestCase):
+    """Reading a CSV well enough to fill in a form about it."""
+
+    def setUp(self):
+        from chatlens.core import inspect
+        self.inspect = inspect
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, text, name='data.csv', encoding='utf-8'):
+        path = self.dir / name
+        path.write_text(text, encoding=encoding)
+        return path
+
+    # --- the header -------------------------------------------------------
+
+    def test_the_header(self):
+        path = self.write('a,b,c\n1,2,3\n')
+        self.assertEqual(self.inspect.header_of(path), ['a', 'b', 'c'])
+
+    def test_a_byte_order_mark_is_not_part_of_the_first_name(self):
+        """Excel writes one, and it would become part of the column name."""
+        path = self.write('\ufeffgroup,sender\n1,2\n')
+        self.assertEqual(self.inspect.header_of(path)[0], 'group')
+
+    def test_surrounding_spaces_are_trimmed(self):
+        path = self.write('  group , sender \n1,2\n')
+        self.assertEqual(self.inspect.header_of(path), ['group', 'sender'])
+
+    def test_an_empty_file_says_so(self):
+        path = self.write('')
+        with self.assertRaises(self.inspect.ReadError) as raised:
+            self.inspect.header_of(path)
+        self.assertIn('empty', str(raised.exception))
+
+    def test_a_file_that_is_not_text_says_what_to_do(self):
+        path = self.dir / 'binary.csv'
+        path.write_bytes(b'\xff\xfe\x00\x01binary')
+        with self.assertRaises(self.inspect.ReadError) as raised:
+            self.inspect.header_of(path)
+        self.assertIn('UTF-8', str(raised.exception))
+
+    # --- guessing ---------------------------------------------------------
+
+    def test_it_guesses_the_obvious_shape(self):
+        guess = self.inspect.guess(
+            ['group_id', 'sender', 'receiver', 'body', 'timestamp',
+             'treatment'])
+        self.assertEqual(guess['group'], 'group_id')
+        self.assertEqual(guess['body'], 'body')
+        self.assertEqual(guess['treatment'], 'treatment')
+
+    def test_it_guesses_a_different_vocabulary(self):
+        guess = self.inspect.guess(
+            ['team', 'condition', 'from_seat', 'to_seat', 'sent_at', 'text'])
+        self.assertEqual(
+            {k: guess.get(k) for k in ('group', 'sender', 'receiver', 'body',
+                                       'timestamp', 'treatment')},
+            {'group': 'team', 'sender': 'from_seat', 'receiver': 'to_seat',
+             'body': 'text', 'timestamp': 'sent_at', 'treatment': 'condition'})
+
+    def test_capitalisation_does_not_matter(self):
+        guess = self.inspect.guess(
+            ['Room', 'Speaker', 'Addressee', 'Utterance', 'When', 'Arm'])
+        self.assertEqual(guess['sender'], 'Speaker')
+        self.assertEqual(guess['body'], 'Utterance')
+
+    def test_no_column_is_offered_for_two_roles(self):
+        """"group" fits both group and treatment; only one may have it."""
+        guess = self.inspect.guess(['group', 'sender', 'receiver', 'text'])
+        self.assertEqual(len(set(guess.values())), len(guess))
+
+    def test_a_suffix_beats_a_prefix(self):
+        """`msg_body` is the body; `body_length` is a number about it."""
+        guess = self.inspect.guess(['body_length', 'msg_body'])
+        self.assertEqual(guess.get('body'), 'msg_body')
+
+    def test_names_that_mean_nothing_are_left_alone(self):
+        guess = self.inspect.guess(['col1', 'col2', 'col3'])
+        self.assertEqual(guess, {})
+
+    # --- distinct values --------------------------------------------------
+
+    def test_the_values_a_column_takes_in_the_order_they_appear(self):
+        path = self.write('t\nb\na\nb\nc\na\n')
+        self.assertEqual(self.inspect.distinct(path, 't'), ['b', 'a', 'c'])
+
+    def test_a_column_that_is_not_there(self):
+        path = self.write('a\n1\n')
+        self.assertEqual(self.inspect.distinct(path, 'missing'), [])
+
+    def test_too_many_values_is_not_a_treatment(self):
+        """Pointed at the message text, this must not offer a thousand boxes."""
+        rows = '\n'.join(str(i) for i in range(500))
+        path = self.write(f't\n{rows}\n')
+        self.assertEqual(self.inspect.distinct(path, 't'), [])
+
+    def test_blank_values_are_not_a_treatment_of_their_own(self):
+        path = self.write('t\na\n\n  \nb\n')
+        self.assertEqual(self.inspect.distinct(path, 't'), ['a', 'b'])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

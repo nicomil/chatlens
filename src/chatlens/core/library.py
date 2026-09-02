@@ -202,6 +202,7 @@ def describe(path: Path) -> dict:
         path=path,
         name=loaded.name or path.name,
         adapter=loaded.adapter,
+        input=dict(loaded.declared.get('input') or {}),
         n_files=len(files),
         size=sum(f.stat().st_size for f in files),
         last_run=_last_run(path),

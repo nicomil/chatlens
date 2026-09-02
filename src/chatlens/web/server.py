@@ -38,6 +38,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from chatlens import adapters
 from chatlens.core import config, library
 from chatlens.web import active, multipart, views, views_library
 from chatlens.web.runner import build_command, runner
@@ -413,6 +414,102 @@ class Handler(BaseHTTPRequestHandler):
         self._html(views_library.files_panel(
             name, message=f'Removed {resolved.name}.'))
 
+    def _assign_role(self, name: str) -> None:
+        """Say which uploaded file plays which of the adapter's roles."""
+        form = self._form()
+        filename = Path((form.get('file') or [''])[0]).name
+        role = (form.get('role') or [''])[0].strip()
+
+        patterns = adapters.inputs(config.EXPERIMENT.adapter)
+        if role and role not in patterns:
+            self._html(views_library.files_panel(
+                name, error=f'"{role}" is not a role this adapter has.'))
+            return
+        if not (config.INPUT_DIR / filename).is_file():
+            self._html(views_library.files_panel(
+                name, error=f'There is no file called "{filename}".'))
+            return
+
+        experiment = config.EXPERIMENT
+        declared = dict(experiment.declared.get('input') or {})
+        # A role belongs to one file: pointing it at this one releases whatever
+        # held it before.
+        for existing, value in list(declared.items()):
+            if value == filename:
+                declared.pop(existing)
+        if role:
+            declared[role] = filename
+        experiment.set('input', declared)
+        experiment.save()
+        config.use_experiment(experiment)
+
+        message = (f'{filename} is now the {role} file.' if role
+                   else f'{filename} is not used.')
+        self._html(views_library.files_panel(name, message=message)
+                   + f'<div hx-swap-oob="innerHTML:#columns">'
+                     f'{views_library.columns_panel(name)}</div>')
+
+    def _save_columns(self, name: str) -> None:
+        """Write [columns] from the form, then say whether it is enough."""
+        from chatlens.core import inspect
+
+        form = self._form()
+        experiment = config.EXPERIMENT
+        chosen = {}
+        for role in views_library.ROLE_LABELS:
+            value = (form.get(f'col_{role}') or [''])[0].strip()
+            if value:
+                chosen[role] = value
+
+        # Only names the file actually has: a column typed into the request by
+        # something other than this form would otherwise be written straight
+        # into the configuration.
+        path = views_library._messages_file()
+        if path is not None:
+            try:
+                available = set(inspect.header_of(path))
+            except inspect.ReadError as exc:
+                self._html(views_library.columns_panel(name, error=str(exc)))
+                return
+            unknown = sorted(set(chosen.values()) - available)
+            if unknown:
+                self._html(views_library.columns_panel(
+                    name,
+                    error=f'{", ".join(unknown)}: not a column in '
+                          f'{path.name}.'))
+                return
+
+        missing = [views_library.ROLE_LABELS[r][0]
+                   for r in views_library.REQUIRED_ROLES if r not in chosen]
+
+        experiment.set('columns', chosen)
+        experiment.save()
+        config.use_experiment(experiment)
+
+        message = ('Saved.' if not missing else
+                   f'Saved, but the analysis still needs: '
+                   f'{", ".join(missing)}.')
+        self._html(views_library.columns_panel(name, message=message)
+                   + f'<div hx-swap-oob="innerHTML:#treatments">'
+                     f'{views_library.treatments_panel(name)}</div>')
+
+    def _save_treatments(self, name: str) -> None:
+        """Write [treatments]: one label per value the column takes."""
+        form = self._form()
+        experiment = config.EXPERIMENT
+        labels = {}
+        for field, values in form.items():
+            if not field.startswith('tr_'):
+                continue
+            label = (values or [''])[0].strip()
+            if label:
+                labels[field[len('tr_'):]] = label
+        experiment.set('treatments', labels)
+        experiment.save()
+        config.use_experiment(experiment)
+        self._html(views_library.treatments_panel(
+            name, message=f'Saved {len(labels)} names.'))
+
     def _set_adapter(self, name: str) -> None:
         chosen = (self._form().get('adapter') or [''])[0]
         if chosen not in views_library.ADAPTERS:
@@ -441,6 +538,12 @@ class Handler(BaseHTTPRequestHandler):
             with active.experiment(name):
                 if action == 'files/delete':
                     self._delete_file(name)
+                elif action == 'input':
+                    self._assign_role(name)
+                elif action == 'columns':
+                    self._save_columns(name)
+                elif action == 'treatments':
+                    self._save_treatments(name)
                 elif action == 'adapter':
                     self._set_adapter(name)
                 elif action == 'run':
