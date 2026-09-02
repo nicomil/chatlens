@@ -64,7 +64,11 @@ CSP = (
     "frame-src 'self'; "
     "form-action 'self'; "
     "base-uri 'none'; "
-    "frame-ancestors 'none'"
+    # 'self', not 'none': the report is shown in an iframe on this same page,
+    # and 'none' forbids being framed by anyone at all — this server included.
+    # Against clickjacking the two are equivalent, since any other origin is
+    # still refused.
+    "frame-ancestors 'self'"
 )
 
 # Set by serve(); a random value per run, never written to disk.

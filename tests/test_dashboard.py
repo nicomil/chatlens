@@ -328,7 +328,36 @@ class ServerAuthorisationTests(unittest.TestCase):
         response, _ = self.request('GET', f'/?t={self.srv.TOKEN}')
         policy = response.getheader('Content-Security-Policy') or ''
         self.assertIn("script-src 'self'", policy)
-        self.assertIn("frame-ancestors 'none'", policy)
+        self.assertIn("frame-ancestors 'self'", policy)
+
+    def test_the_report_can_still_be_framed_by_this_page(self):
+        """The panel shows the report in an iframe, so the policy must allow it.
+
+        'frame-ancestors none' blocks being framed by anyone at all, this
+        server included: the report panel rendered an empty box and the file
+        looked missing when it was not.
+        """
+        import tempfile
+
+        from chatlens.core import config
+        from chatlens.web import views
+
+        # The panel only draws the iframe once a report exists, so make one.
+        original = config.OUTPUT_DIR
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                config.OUTPUT_DIR = Path(tmpdir)
+                (config.OUTPUT_DIR / 'x_report.html').write_text(
+                    '<p>report</p>', encoding='utf-8')
+                self.assertIn('<iframe', views.report_panel())
+        finally:
+            config.OUTPUT_DIR = original
+        response, _ = self.request(
+            'GET', '/report.html',
+            {'Cookie': f'{self.srv.COOKIE_NAME}={self.srv.TOKEN}'})
+        policy = response.getheader('Content-Security-Policy') or ''
+        self.assertIn("frame-ancestors 'self'", policy)
+        self.assertNotIn("frame-ancestors 'none'", policy)
 
 
 class BindingTests(unittest.TestCase):
