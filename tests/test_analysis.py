@@ -1719,5 +1719,88 @@ class UnsupervisedSeedTests(unittest.TestCase):
         self.assertEqual(info['topics']['seed'], '/somewhere/seed.md')
 
 
+
+class ReportVocabularyTests(unittest.TestCase):
+    """No output line may say "triad" when the experiment calls it otherwise.
+
+    The report was written for a three-player game and the word was scattered
+    through it. Each place fixed on its own is a place that can be missed, so
+    this checks the output rather than the source: whatever the sections say,
+    none of it may carry the wrong noun.
+    """
+
+    def setUp(self):
+        from chatlens.core import config, experiment, report
+
+        self.report = report
+        self.original = config.EXPERIMENT
+        exp = experiment.Experiment()
+        exp.group_noun = 'team'
+        exp.treatments = {'a': 'Condition A'}
+        config.EXPERIMENT = exp
+        self.config = config
+
+    def tearDown(self):
+        self.config.EXPERIMENT = self.original
+
+    def _rows(self):
+        """One group per problem, so every note fires at once."""
+        return [
+            # excluded member, and silent
+            dict(group_uid='g1', treatment='a', group_valid='0',
+                 nlp_group_n_messages='0', nlp_group_low_language_flag='0',
+                 nlp_group_llm_n_errors='0'),
+            # text that is not language
+            dict(group_uid='g2', treatment='a', group_valid='1',
+                 nlp_group_n_messages='5', nlp_group_low_language_flag='1',
+                 nlp_group_llm_n_errors='2'),
+            dict(group_uid='g3', treatment='a', group_valid='1',
+                 nlp_group_n_messages='7', nlp_group_low_language_flag='0',
+                 nlp_group_llm_n_errors='0'),
+        ]
+
+    def test_every_note_uses_the_experiment_s_own_word(self):
+        notes = self.report._quality(self._rows(), [])['notes']
+        self.assertTrue(notes)
+        joined = ' '.join(notes)
+        self.assertNotIn('triad', joined)
+        # And it is actually saying something, not empty strings.
+        self.assertIn('team', joined)
+
+    def test_all_five_notes_can_fire(self):
+        notes = self.report._quality(self._rows(), [])['notes']
+        self.assertEqual(len(notes), 5)
+
+    def test_the_notes_disappear_when_there_is_nothing_to_say(self):
+        clean = [dict(group_uid=f'g{i}', treatment='a', group_valid='1',
+                      nlp_group_n_messages='9',
+                      nlp_group_low_language_flag='0',
+                      nlp_group_llm_n_errors='0')
+                 for i in range(80)]
+        self.assertEqual(self.report._quality(clean, [])['notes'], [])
+
+    def test_the_rendered_report_carries_no_stray_triad(self):
+        """The rubric caption counted "triads" too, in both renderers."""
+        data = dict(
+            stem='x', stages=['measures'], generated='01/01/2026',
+            merge={},
+            coverage=dict(n_participants=3, n_triads=3, n_pairs=6,
+                          n_valid_triads=None, per_treatment=[
+                              dict(label='Condition A', n_triads=3,
+                                   n_participants=3)],
+                          dropped={}, n_input=None, n_messages=None,
+                          n_messages_in=None, n_messages_filtered=None),
+            outcomes={}, behaviour={}, language={},
+            rubric=dict(rows=[dict(label='Analytic', llm_median=50,
+                                   dict_median=48, sd=2, correlation=0.4)],
+                        n_with_commitment=2, n_triads=3),
+            topics={}, quality=dict(notes=[]),
+        )
+        for rendered in (self.report.render_markdown(data),
+                         self.report.render_html(data)):
+            self.assertNotIn('triad', rendered)
+            self.assertIn('team', rendered)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

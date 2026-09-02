@@ -397,8 +397,8 @@ def _quality(aggregated, by_partner) -> dict:
 
     silent = [r for r in triads if (_num(r.get('nlp_group_n_messages')) or 0) == 0]
     if silent:
-        subject = ('1 triad exchanged' if len(silent) == 1
-                   else f'{len(silent)} triads exchanged')
+        subject = (f'1 {_noun()} exchanged' if len(silent) == 1
+                   else f'{len(silent)} {_noun(True)} exchanged')
         notes.append(f'{subject} no messages at all.')
 
     if len(triads) < 60:
@@ -504,7 +504,7 @@ def render_markdown(data: dict) -> str:
               _fmt(r['sd'], 1), _fmt(r['correlation'])] for r in rub['rows']],
         )]
         parts += ['', f"Explicit commitments to support detected in "
-                      f"{rub['n_with_commitment']} triads out of "
+                      f"{rub['n_with_commitment']} {_noun(True)} out of "
                       f"{rub['n_triads']}.",
                   '', 'The correlation compares the rubric with the dictionary '
                       'measure: it is the convergent validation, not a '
@@ -674,7 +674,8 @@ def render_html(data: dict) -> str:
             [[r['label'], _fmt(r['llm_median'], 1), _fmt(r['dict_median'], 1),
               _fmt(r['sd'], 1), _fmt(r['correlation'])] for r in rub['rows']]),
             f'<p class="caption">Explicit commitments to support detected in '
-            f"{rub['n_with_commitment']} triads out of {rub['n_triads']}. "
+            f"{rub['n_with_commitment']} {_noun(True)} out of "
+            f"{rub['n_triads']}. "
             f'The correlation is the convergent validation between the two '
             f'measures: if it is low or negative it should be reported, not '
             f'corrected.</p>']
