@@ -288,6 +288,7 @@ def run_topicgpt(
     verbose: bool = True,
     seed_file: Path | None = None,
     unsupervised: bool = False,
+    induce_only: bool = False,
     shuffle_seed: int | None = None,
     assignment_documents=None,
 ) -> Path:
@@ -350,7 +351,8 @@ def run_topicgpt(
     generation_out = outdir / 'generation_1.jsonl'
     topics_lvl1 = outdir / 'generation_1.md'
 
-    print('  [1/4] topic generation', flush=True)
+    total = 2 if induce_only else 4
+    print(f'  [1/{total}] topic generation', flush=True)
     with _quiet(verbose) as digest:
         generate_topic_lvl1(
             api=api,
@@ -377,7 +379,7 @@ def run_topicgpt(
     if refine:
         refined_topics = outdir / 'generation_1_refined.md'
         refined_generation = outdir / 'generation_1_updated.jsonl'
-        print('  [2/4] refinement', flush=True)
+        print(f'  [2/{total}] refinement', flush=True)
         with _quiet(verbose) as digest:
             refine_topics(
                 api=api,
@@ -394,6 +396,16 @@ def run_topicgpt(
         if digest:
             digest.report()
         topics_for_assignment = refined_topics
+
+    if induce_only:
+        # Assignment costs about four times what induction does, and the
+        # taxonomy is the thing there is to judge: a list of one broad topic is
+        # not worth attributing to two thousand documents. Stopping here puts
+        # that judgement before the spending; the assignment run afterwards
+        # reads this same topic file.
+        print(f'  stopping after induction: '
+              f'{topics_for_assignment.name} holds the topics', flush=True)
+        return None
 
     assignment_out = outdir / 'assignment.jsonl'
     print('  [3/4] assignment to documents', flush=True)

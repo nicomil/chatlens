@@ -66,6 +66,7 @@ def describe(args, summary: dict) -> dict:
             seed=('' if getattr(args, 'topicgpt_unsupervised', False)
                   else str(getattr(args, 'topicgpt_seed', '') or '')),
             shuffle_seed=getattr(args, 'topicgpt_shuffle_seed', 1),
+            induce_only=bool(getattr(args, 'topicgpt_induce_only', False)),
         )
     return info
 

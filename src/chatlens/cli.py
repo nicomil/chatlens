@@ -144,6 +144,11 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument('--topicgpt-seed', default=str(DEFAULT_SEED),
                         help='starting topic list; the seed shipped by '
                              'TopicGPT itself belongs to another domain')
+        sp.add_argument('--topicgpt-induce-only', action='store_true',
+                        help='stop after discovering and refining the topics, '
+                             'without attributing them: the taxonomy costs a '
+                             'fifth of the full run and is what there is to '
+                             'judge')
         sp.add_argument('--topicgpt-unsupervised', action='store_true',
                         help='induce the topics with no starting list at all: '
                              'every topic comes from the documents')

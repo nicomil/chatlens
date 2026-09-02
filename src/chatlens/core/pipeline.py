@@ -200,6 +200,7 @@ def run_topics_stage(messages, args):
             seed_file=Path(args.topicgpt_seed).expanduser()
             if args.topicgpt_seed else None,
             unsupervised=getattr(args, 'topicgpt_unsupervised', False),
+            induce_only=getattr(args, 'topicgpt_induce_only', False),
             # 0 means "leave the file order alone", for anyone who needs the
             # documents in the order they were written.
             shuffle_seed=(getattr(args, 'topicgpt_shuffle_seed', 1) or None),
@@ -209,6 +210,10 @@ def run_topics_stage(messages, args):
         # A prerequisite is missing: something to fix, not a program error.
         # Show the instruction, not the stack trace.
         raise SystemExit(f'\n{exc}\n') from None
+    if corrected is None:
+        # Stopped after induction: a taxonomy to read, nothing yet to graft.
+        return None, None, None
+
     assignments = topicgpt.parse_assignments(corrected)
     print(f'  topics assigned to {len(assignments)} documents')
 

@@ -1803,5 +1803,54 @@ class ReportVocabularyTests(unittest.TestCase):
             self.assertIn('team', rendered)
 
 
+
+class InduceOnlyTests(unittest.TestCase):
+    """Stopping after the taxonomy, before paying to attribute it."""
+
+    def setUp(self):
+        from chatlens.core import archive
+        self.archive = archive
+
+    def test_the_flag_reaches_the_run_record(self):
+        from types import SimpleNamespace
+
+        args = SimpleNamespace(
+            topics=True, llm=False, topicgpt_api='openai',
+            topicgpt_model='gpt-4o', topicgpt_unit='group',
+            topicgpt_assign_unit='dyad_directed', topicgpt_seed='',
+            topicgpt_unsupervised=True, topicgpt_shuffle_seed=1,
+            topicgpt_induce_only=True)
+        info = self.archive.describe(args, {})
+        self.assertTrue(info['topics']['induce_only'])
+        # Otherwise a topic list with nothing attached looks like a failed run.
+        self.assertTrue(info['topics']['unsupervised'])
+
+    def test_a_full_run_records_that_it_was_full(self):
+        from types import SimpleNamespace
+
+        args = SimpleNamespace(
+            topics=True, llm=False, topicgpt_api='openai',
+            topicgpt_model='gpt-4o', topicgpt_unit='group',
+            topicgpt_assign_unit='dyad_directed', topicgpt_seed='s.md',
+            topicgpt_unsupervised=False, topicgpt_shuffle_seed=1,
+            topicgpt_induce_only=False)
+        info = self.archive.describe(args, {})
+        self.assertFalse(info['topics']['induce_only'])
+
+    def test_the_pipeline_survives_a_stage_that_returns_nothing(self):
+        """Induction alone attaches no topics, and that is not a failure."""
+        from chatlens.core import pipeline
+
+        self.assertIn('corrected is None',
+                      Path(pipeline.__file__).read_text())
+
+    def test_the_option_exists_on_the_command_line(self):
+        from chatlens.cli import build_parser
+
+        args = build_parser().parse_args(
+            ['analyze', '--topics', '--topicgpt-induce-only'])
+        self.assertTrue(args.topicgpt_induce_only)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
