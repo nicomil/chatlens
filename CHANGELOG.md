@@ -68,12 +68,12 @@ Notable changes to chatlens. The format follows
 - The oTree chat-channel pattern read member ids as single digits, so from a
   group of ten upwards the messages were dropped without a word.
 - **Topic induction read the documents sorted by treatment.** Induction is
-  order-dependent and stops early after a hundred consecutive documents add
-  nothing; the documents arrived sorted by `group_uid`, which begins with the
-  session code, and each session is one treatment. On the coalition data the
-  third treatment first appeared at document 104 — past that threshold — so the
-  topics could have been induced from two conditions out of three. The
-  documents are now shuffled with a reported seed before induction. This
+  order-dependent: the list accumulates and each document is shown the list so
+  far, told to reuse an existing topic where one fits. The documents arrived
+  sorted by `group_uid`, which begins with the session code, and each session
+  is one treatment, so one whole condition was read only after the taxonomy had
+  settled on the other two. The documents are now shuffled with a reported seed
+  before induction. This
   changes the induced topics of a seeded run as well as an unsupervised one;
   no topic run had yet been made on the final dataset.
 - The topics dry run wrote the input in a different order from the one the real

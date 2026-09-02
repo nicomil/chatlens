@@ -1583,9 +1583,10 @@ class DemoTests(unittest.TestCase):
 class TopicInductionOrderTests(unittest.TestCase):
     """Topic induction is order-dependent, and the natural order is not random.
 
-    TopicGPT accumulates the topic list as it reads, shows each document the
-    list so far, and stops generating once a hundred consecutive documents add
-    nothing. Whatever comes first therefore decides the taxonomy.
+    TopicGPT accumulates the topic list as it reads and shows each document the
+    list so far, with an instruction to reuse an existing topic where one fits.
+    What comes first therefore shapes the vocabulary, and what comes last is
+    nudged into it.
     """
 
     def setUp(self):
@@ -1601,9 +1602,9 @@ class TopicInductionOrderTests(unittest.TestCase):
         messages = []
         for session, treatment in (('aaa', 'first'), ('bbb', 'second'),
                                    ('ccc', 'third')):
-            # Fifty per session, so the third treatment first appears at
-            # document 101 — just past TopicGPT's early-stop threshold of a
-            # hundred, which is where the real data sat too (document 104).
+            # Fifty per session, so the third treatment does not appear until
+            # document 101 — the shape of the real data, where it first
+            # appeared at document 104, after the other two had had their say.
             for group in range(50):
                 messages.append({
                     'group_uid': f'{session}-{group:03d}',

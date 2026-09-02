@@ -54,13 +54,13 @@ chat conversations that seed makes the model recognise nothing. Avoid it.
 
 ### Document order is part of the method
 
-Induction is order-dependent by construction — the list accumulates, and
-generation stops early once a hundred consecutive documents add nothing — so
-whatever comes first decides the taxonomy. Left in their natural order the
-documents arrive sorted by `group_uid`, which begins with the session code, and
-each session is one treatment. On the coalition data the third treatment did
-not appear until document 104, past the early-stop threshold: the topics could
-have been induced from two conditions out of three.
+Induction is order-dependent by construction: the list accumulates as
+documents are read, and each document is shown the list so far with an
+instruction to reuse an existing topic where one fits. What comes first shapes
+the vocabulary; what comes last is nudged into it. Left in their natural order
+the documents arrive sorted by `group_uid`, which begins with the session code,
+and each session is one treatment — so on the coalition data one whole
+condition is read only after the taxonomy has settled on the other two.
 
 The documents are therefore shuffled before induction, with a seed
 (`--topicgpt-shuffle-seed`, default 1) so that a run stays reproducible and the

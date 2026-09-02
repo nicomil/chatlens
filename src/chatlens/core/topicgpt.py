@@ -308,15 +308,18 @@ def run_topicgpt(
     outdir.mkdir(parents=True, exist_ok=True)
 
     # Topic induction is order-dependent by construction: the list accumulates
-    # as documents are read, each one is shown the list so far, and generation
-    # stops early once a hundred consecutive documents add nothing. Whatever
-    # comes first therefore decides the taxonomy.
+    # as documents are read, and each document is shown the list so far with an
+    # instruction to reuse an existing topic where one fits. What comes first
+    # therefore shapes the vocabulary, and what comes last is nudged into it.
     #
     # Left in their natural order the documents arrive sorted by group_uid,
     # which begins with the session code, and each session is one treatment. On
-    # the coalition data the third treatment did not appear until document 104
-    # — past the early-stop threshold. Shuffling is not a refinement here; it is
-    # what stops the induced topics from describing one condition.
+    # the coalition data that means one whole condition is read only after the
+    # taxonomy has already settled on the other two.
+    #
+    # (Generation also stops once `early_stop` consecutive documents add
+    # nothing, but `generate_topic_lvl1` defaults that to 1000 and there are
+    # 501 documents, so it cannot fire here. The ordering matters on its own.)
     #
     # The shuffle is seeded, so a run is reproducible and the seed can be
     # reported alongside the topic list.
