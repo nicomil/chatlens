@@ -334,3 +334,107 @@ iframe {
   width: 100%; height: 40rem; border: 1px solid var(--rule);
   border-radius: 6px; background: var(--panel);
 }
+
+/* --- The library, and one experiment's settings -------------------------- */
+
+/* The run dashboard is two columns; these pages are one, and narrower than
+   full width so that prose and forms stay readable. */
+main.single {
+  display: block;
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+header .back-link,
+header .settings-link {
+  font-size: .82rem;
+  color: var(--accent);
+  text-decoration: none;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: .18rem .5rem;
+  white-space: nowrap;
+}
+header .back-link:hover,
+header .settings-link:hover { background: var(--band); }
+header .settings-link { margin-left: auto; }
+
+.cards.experiments {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: .7rem;
+  margin: .4rem 0 1.6rem;
+}
+
+/* A column, not a row: the state is a small note under the name rather than
+   something competing with it for width. Laid out as a row, a long label like
+   "needs wide, chat" took half the card and pushed the title onto two lines. */
+.card.experiment {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .3rem;
+  padding: .8rem .9rem;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel);
+  text-decoration: none;
+  color: inherit;
+}
+.card.experiment:hover { border-color: var(--accent); background: var(--band); }
+.card.experiment .title { font-weight: 600; line-height: 1.25; }
+.card.experiment .meta { font-size: .78rem; color: var(--muted); }
+.card.experiment .badge { margin-top: .1rem; }
+
+/* Amber rather than red: something is missing, nothing is broken. */
+.badge.warn { background: var(--run); color: #fff; }
+
+.formerror {
+  border-left: 3px solid var(--ko);
+  background: var(--band);
+  padding: .5rem .7rem;
+  margin: 0 0 .8rem;
+  font-size: .86rem;
+}
+
+#newexp .field { display: block; margin-bottom: .9rem; }
+#newexp .field span { display: block; font-size: .8rem; color: var(--soft); }
+#newexp input[type="text"] {
+  width: 100%;
+  padding: .5rem .6rem;
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+}
+#newexp input[type="text"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button.primary {
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  padding: .55rem 1.1rem;
+  cursor: pointer;
+}
+button.primary:hover { filter: brightness(1.08); }
+
+/* Paths are shown so people can find their data; they must be selectable and
+   must not push the page sideways. */
+p.path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .78rem;
+  word-break: break-all;
+  background: var(--band);
+  border-radius: 6px;
+  padding: .45rem .6rem;
+}
+
+p.empty-library { margin: .4rem 0 1.6rem; }

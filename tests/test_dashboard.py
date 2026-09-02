@@ -372,5 +372,151 @@ class BindingTests(unittest.TestCase):
         self.assertIn('ssh', message)
 
 
+
+class LibraryRoutingTests(unittest.TestCase):
+    """Several experiments reachable from one window.
+
+    These run the real handler, because what is being checked is which
+    workspace a request ends up reading — and that is decided in the routing,
+    not in the views.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server
+        import tempfile
+        import threading as _threading
+
+        from chatlens.core import library
+        from chatlens.web import server as srv
+
+        cls.tmp = tempfile.TemporaryDirectory()
+        library.use_library(Path(cls.tmp.name))
+        library.create('First Study')
+        library.create('Second Study', adapter='otree_coalition')
+
+        cls.srv = srv
+        srv.TOKEN = 'library-test-token'
+        srv.LIBRARY_MODE = True
+        cls.httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0),
+                                                    srv.Handler)
+        cls.port = cls.httpd.server_address[1]
+        srv.BOUND = ('127.0.0.1', cls.port)
+        cls.thread = _threading.Thread(target=cls.httpd.serve_forever,
+                                       daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+        cls.tmp.cleanup()
+
+    def get(self, path):
+        import http.client
+
+        conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+        conn.request('GET', path, headers={
+            'Host': f'127.0.0.1:{self.port}',
+            'Cookie': f'{self.srv.COOKIE_NAME}={self.srv.TOKEN}'})
+        response = conn.getresponse()
+        body = response.read().decode('utf-8', 'replace')
+        conn.close()
+        return response, body
+
+    def post(self, path, body):
+        import http.client
+
+        conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+        conn.request('POST', path, body=body, headers={
+            'Host': f'127.0.0.1:{self.port}',
+            'Cookie': f'{self.srv.COOKIE_NAME}={self.srv.TOKEN}',
+            'Origin': f'http://127.0.0.1:{self.port}',
+            'Sec-Fetch-Site': 'same-origin',
+            'Content-Type': 'application/x-www-form-urlencoded'})
+        response = conn.getresponse()
+        payload = response.read().decode('utf-8', 'replace')
+        conn.close()
+        return response, payload
+
+    # --- the list ---------------------------------------------------------
+
+    def test_the_root_lists_the_experiments(self):
+        response, body = self.get('/')
+        self.assertEqual(response.status, 200)
+        self.assertIn('First Study', body)
+        self.assertIn('Second Study', body)
+
+    def test_the_list_says_what_each_one_still_needs(self):
+        _response, body = self.get('/')
+        # Roles come from the adapter, so the two differ.
+        self.assertIn('needs messages', body)
+        self.assertIn('needs wide, chat', body)
+
+    # --- one experiment ---------------------------------------------------
+
+    def test_an_experiment_opens_on_its_own_page(self):
+        response, body = self.get('/experiment/first-study')
+        self.assertEqual(response.status, 200)
+        self.assertIn('First Study', body)
+
+    def test_every_fragment_says_which_experiment_it_is_about(self):
+        """The point of the whole arrangement.
+
+        A log poll that did not name its experiment would read whichever one
+        the server happened to have active when it arrived.
+        """
+        _response, body = self.get('/experiment/first-study')
+        for endpoint in ('/run', '/estimate'):
+            self.assertIn(f'/experiment/first-study{endpoint}', body)
+        self.assertNotIn('hx-post="/run"', body)
+
+    def test_the_fragments_answer_under_the_experiment(self):
+        for fragment in ('log', 'report', 'settings'):
+            response, _body = self.get(f'/experiment/first-study/{fragment}')
+            self.assertEqual(response.status, 200, fragment)
+
+    def test_an_unknown_experiment_is_a_404_not_a_crash(self):
+        response, body = self.get('/experiment/does-not-exist')
+        self.assertEqual(response.status, 404)
+        self.assertIn('does-not-exist', body)
+
+    def test_traversal_in_the_url_is_refused(self):
+        for attempt in ('/experiment/..', '/experiment/../../etc',
+                        '/experiment/First%20Study'):
+            response, _body = self.get(attempt)
+            self.assertEqual(response.status, 404, attempt)
+
+    # --- creating ---------------------------------------------------------
+
+    def test_creating_one_returns_the_updated_list(self):
+        response, body = self.post('/experiments/new',
+                                   'name=Third Study&adapter=generic_chat')
+        self.assertEqual(response.status, 200)
+        self.assertIn('Third Study', body)
+        self.assertIn('First Study', body)
+
+    def test_a_duplicate_name_is_a_message_in_the_form(self):
+        """Something to correct, not an error page."""
+        self.post('/experiments/new', 'name=Fourth Study&adapter=generic_chat')
+        response, body = self.post('/experiments/new',
+                                   'name=fourth   study&adapter=generic_chat')
+        self.assertEqual(response.status, 200)
+        self.assertIn('already exists', body)
+
+    def test_an_unusable_name_is_a_message_too(self):
+        response, body = self.post('/experiments/new',
+                                   'name=%21%21%21&adapter=generic_chat')
+        self.assertEqual(response.status, 200)
+        self.assertIn('no letters or digits', body)
+
+    def test_an_invented_adapter_falls_back_instead_of_being_used(self):
+        self.post('/experiments/new', 'name=Fifth Study&adapter=rm -rf /')
+        from chatlens.core import experiment, library
+
+        loaded = experiment.load(library.path_for('fifth-study'))
+        self.assertEqual(loaded.adapter, 'generic_chat')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

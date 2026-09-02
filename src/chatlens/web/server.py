@@ -38,8 +38,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from chatlens.core import config
-from chatlens.web import views
+from chatlens.core import config, library
+from chatlens.web import active, views, views_library
 from chatlens.web.runner import build_command, runner
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
@@ -74,6 +74,22 @@ CSP = (
 # Set by serve(); a random value per run, never written to disk.
 TOKEN = ''
 BOUND = ('127.0.0.1', 0)
+
+# True when the dashboard manages a library of experiments, False when it was
+# pointed at a single folder with --workspace. In the second case there is no
+# library page and `/` is the experiment, which is how it behaved before.
+LIBRARY_MODE = True
+
+
+def _split_experiment(route: str):
+    """`/experiment/<name>/<action>` -> (name, action), or (None, None)."""
+    if not route.startswith('/experiment/'):
+        return None, None
+    rest = route[len('/experiment/'):].strip('/')
+    if not rest:
+        return None, None
+    name, _, action = rest.partition('/')
+    return name, action
 
 
 def loopback_hosts(host: str, port: int) -> set[str]:
@@ -187,8 +203,16 @@ class Handler(BaseHTTPRequestHandler):
             cookie = (f'{COOKIE_NAME}={TOKEN}; Path=/; HttpOnly; '
                       f'SameSite=Strict')
 
+        name, action = _split_experiment(route)
+        if name is not None:
+            self._experiment_get(name, action, cookie)
+            return
+
         if route == '/':
-            self._html(views.page(), cookie=cookie)
+            if LIBRARY_MODE:
+                self._html(views_library.library_page(), cookie=cookie)
+            else:
+                self._html(views.page(), cookie=cookie)
         elif route == '/log':
             self._html(views.log_body())
         elif route == '/done':
@@ -216,6 +240,46 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._html('<h1>404</h1>', status=404)
 
+    def _experiment_get(self, name: str, action: str, cookie: str) -> None:
+        """Anything under /experiment/<name>/.
+
+        The fragments live here rather than at the root because each of them
+        reads the workspace: a log poll that did not say which experiment it
+        was about would read whichever one the server had active when it
+        arrived.
+        """
+        try:
+            with active.experiment(name):
+                if not action:
+                    self._html(views.page(experiment_slug=name), cookie=cookie)
+                elif action == 'settings':
+                    self._html(views_library.settings_page(name), cookie=cookie)
+                elif action == 'log':
+                    self._html(views.log_body())
+                elif action == 'done':
+                    self._html(views.after_run())
+                elif action == 'report':
+                    self._html(views.report_panel())
+                elif action == 'report.html':
+                    reports = sorted(config.OUTPUT_DIR.glob('*_report.html'))
+                    if reports:
+                        self._file(reports[-1], config.OUTPUT_DIR)
+                    else:
+                        self._html('<p>No report produced yet.</p>')
+                elif action.startswith('run/'):
+                    run = action[len('run/'):].strip('/')
+                    if '/' in run or run in ('', '.', '..'):
+                        self._html('<h1>404</h1>', status=404)
+                    else:
+                        self._html(views.run_detail(run))
+                elif action.startswith('runs/'):
+                    self._file(config.OUTPUT_DIR / 'runs' / action[len('runs/'):],
+                               config.OUTPUT_DIR / 'runs')
+                else:
+                    self._html('<h1>404</h1>', status=404)
+        except active.Unknown as exc:
+            self._html(f'<h1>404</h1><p>{exc}</p>', status=404)
+
     def do_POST(self):  # noqa: N802
         route = urlparse(self.path).path
 
@@ -225,6 +289,15 @@ class Handler(BaseHTTPRequestHandler):
         if not self._token_ok({}) or not self._origin_ok():
             # A run costs money. Refusing is the cheap side of the mistake.
             self._deny('Request refused: it did not come from this page.')
+            return
+
+        name, action = _split_experiment(route)
+        if name is not None:
+            self._experiment_post(name, action)
+            return
+
+        if route == '/experiments/new':
+            self._create_experiment()
             return
 
         if route not in ('/run', '/estimate'):
@@ -245,8 +318,54 @@ class Handler(BaseHTTPRequestHandler):
         self._html(views.log_panel())
 
 
-def serve(host='127.0.0.1', port=8765, open_browser=True):
-    global TOKEN, BOUND
+    def _form(self) -> dict:
+        """A urlencoded body, with a cap: this is not where files arrive."""
+        length = int(self.headers.get('Content-Length') or 0)
+        if length > 1_000_000:
+            self._deny('That form is far too large.')
+            return {}
+        return parse_qs(self.rfile.read(length).decode('utf-8'))
+
+    def _create_experiment(self) -> None:
+        form = self._form()
+        name = (form.get('name') or [''])[0].strip()
+        adapter = (form.get('adapter') or ['generic_chat'])[0]
+        if adapter not in views_library.ADAPTERS:
+            adapter = 'generic_chat'
+        try:
+            library.create(name, adapter=adapter)
+        except library.LibraryError as exc:
+            # Shown in the form rather than as an error page: the name is
+            # something to correct, not a failure to report.
+            self._html(views_library.library_panel(error=str(exc)))
+            return
+        self._html(views_library.library_panel())
+
+    def _experiment_post(self, name: str, action: str) -> None:
+        try:
+            if action == 'archive':
+                library.archive(library.slug(name))
+                self._html(views_library.library_panel())
+                return
+
+            with active.experiment(name):
+                if action == 'run':
+                    if not runner.start(build_command(self._form())):
+                        self._html('<div class="logbody empty">A run is '
+                                   'already in progress: wait for it to '
+                                   'finish.</div>')
+                        return
+                    self._html(views.log_panel())
+                elif action == 'estimate':
+                    self._html(views.estimate_panel(self._form()))
+                else:
+                    self._html('<h1>404</h1>', status=404)
+        except (active.Unknown, library.LibraryError) as exc:
+            self._html(f'<h1>404</h1><p>{exc}</p>', status=404)
+
+
+def serve(host='127.0.0.1', port=8765, open_browser=True, library_mode=True):
+    global TOKEN, BOUND, LIBRARY_MODE
 
     if host not in ('127.0.0.1', 'localhost', '::1'):
         raise SystemExit(
@@ -262,13 +381,19 @@ def serve(host='127.0.0.1', port=8765, open_browser=True):
 
     TOKEN = secrets.token_urlsafe(24)
     BOUND = (host, port)
+    LIBRARY_MODE = library_mode
+    if library_mode:
+        library.ensure_root()
 
     httpd = ThreadingHTTPServer((host, port), Handler)
     url = f'http://{host}:{port}/?t={TOKEN}'
     # flush: the address carries the session key and is the only place it
     # appears. Redirected to a file or a pipe, an unflushed line would leave
     # the dashboard unreachable until the process ended.
-    print(f'Workspace: {config.WORKSPACE}', flush=True)
+    if library_mode:
+        print(f'Experiments: {library.ROOT}', flush=True)
+    else:
+        print(f'Workspace: {config.WORKSPACE}', flush=True)
     print(f'Dashboard at {url}', flush=True)
     print("The address carries this session's key: it changes every time.",
           flush=True)

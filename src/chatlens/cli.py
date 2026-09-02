@@ -369,7 +369,13 @@ def cmd_runs(args) -> int:
 def cmd_dashboard(args) -> int:
     from chatlens.web.server import serve
 
-    serve(port=args.port, open_browser=not args.no_browser)
+    # Pointed at one folder, the dashboard is that folder's and there is no
+    # library page — which is how it behaved before the library existed, and
+    # what anyone with workspaces of their own already relies on.
+    single = bool(getattr(args, 'workspace', None)
+                  or getattr(args, 'experiment', None))
+    serve(port=args.port, open_browser=not args.no_browser,
+          library_mode=not single)
     return 0
 
 

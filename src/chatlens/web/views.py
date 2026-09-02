@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 from chatlens.core import archive, config
+from chatlens.web import active
 from chatlens.web.runner import runner
 
 MODELS_RUBRIC = ['', 'gpt-4o', 'gpt-4.1', 'gpt-5.6-terra', 'gpt-5.6-luna',
@@ -125,7 +126,8 @@ def estimate_panel(form=None) -> str:
     """Estimate of the calls the current configuration implies."""
     form = form or {}
     counts = _unit_counts()
-    live = ('hx-post="/estimate" hx-trigger="change from:#launch" '
+    live = (f'hx-post="{active.base()}/estimate" '
+            'hx-trigger="change from:#launch" '
             'hx-include="#launch" hx-target="this" hx-swap="outerHTML"')
     if not counts:
         return (f'<div id="estimate" class="estimate muted" {live}>The estimate '
@@ -231,7 +233,7 @@ def form_panel() -> str:
     disabled = ' disabled' if runner.running else ''
 
     return f'''
-<form id="launch" hx-post="/run" hx-target="#logwrap" hx-swap="innerHTML">
+<form id="launch" hx-post="{active.base()}/run" hx-target="#logwrap" hx-swap="innerHTML">
   <fieldset{disabled}>
     {presets_panel()}
     {estimate_panel()}
@@ -383,10 +385,11 @@ def log_body() -> str:
     if state['running']:
         # The content requests itself: the scrolling container stays put, so
         # the scroll position is not lost.
-        attrs = ('hx-get="/log" hx-trigger="load delay:1s" '
+        attrs = (f'hx-get="{active.base()}/log" hx-trigger="load delay:1s" '
                  'hx-target="#logbody" hx-swap="outerHTML"')
     else:
-        attrs = ('hx-get="/done" hx-trigger="load" hx-target="#after" '
+        attrs = (f'hx-get="{active.base()}/done" hx-trigger="load" '
+                 'hx-target="#after" '
                  'hx-swap="innerHTML"')
 
     rendered = ''.join(_render_line(line) for line in lines)
@@ -535,7 +538,7 @@ def runs_panel() -> str:
         # The whole row opens the run: it is the index of what was done, not
         # a list of links to a single file.
         rows.append(
-            f'<li hx-get="/run/{_e(name)}" hx-target="#report" '
+            f'<li hx-get="{active.base()}/run/{_e(name)}" hx-target="#report" '
             f'hx-swap="innerHTML" tabindex="0" role="button">'
             f'<span class="when">{_e(_run_time(run.get("timestamp", "")))}</span>'
             f'<span class="chips">{stages}{current}</span>'
@@ -634,7 +637,7 @@ def run_detail(name: str) -> str:
         f'<div><b>{_e(_run_time(run.get("timestamp", "")))}</b> '
         f'<span class="muted">{_e(stages)}</span></div>'
         f'{status}'
-        f'<button class="back" hx-get="/report" hx-target="#report" '
+        f'<button class="back" hx-get="{active.base()}/report" hx-target="#report" '
         f'hx-swap="innerHTML">back to the latest</button></div>'
         f'{_params_table(run)}'
         f'{_run_files(run["path"], name)}'
@@ -651,9 +654,11 @@ def report_panel() -> str:
     latest = reports[-1]
     return (f'<div class="reportbar">'
             f'<span class="badge ok">in output/</span>'
-            f'<a href="/report.html" target="_blank">open full page</a>'
+            f'<a href="{active.base()}/report.html" '
+            f'target="_blank">open full page</a>'
             f'<span class="muted">{_e(latest.name)}</span></div>'
-            f'<iframe src="/report.html" title="Report"></iframe>')
+            f'<iframe src="{active.base()}/report.html" '
+            f'title="Report"></iframe>')
 
 
 def after_run() -> str:
@@ -668,7 +673,7 @@ def after_run() -> str:
 # --- page ------------------------------------------------------------------
 
 
-def page() -> str:
+def page(experiment_slug: str = '') -> str:
     # Whichever required input is there: the roles depend on the adapter, and
     # asking for 'wide' by name broke on every experiment that is not ours.
     dataset = '—'
@@ -694,9 +699,10 @@ def page() -> str:
 <script src="/static/htmx.min.js"></script>
 </head><body>
 <header>
-  <h1>Text analysis</h1>
-  {f'<span class="muted">{_e(named)}</span>' if named else ''}
+  {'<a class="back-link" href="/">&larr; Experiments</a>' if experiment_slug else ''}
+  <h1>{_e(named) if named else 'Text analysis'}</h1>
   <span class="muted">{_e(dataset)}</span>
+  {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/settings">Settings</a>' if experiment_slug else ''}
 </header>
 
 <main>
