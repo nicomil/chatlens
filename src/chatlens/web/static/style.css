@@ -535,3 +535,69 @@ p.small { font-size: .78rem; }
 @media (max-width: 40rem) {
   .field.maprow { grid-template-columns: 1fr; gap: .2rem; }
 }
+
+/* --- Participation ------------------------------------------------------ */
+
+/* A row of headline figures. The numbers are the finding, so they get the
+   serif and the size; the labels stay small and quiet under them. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 1rem 0;
+}
+.stat {
+  background: var(--panel);
+  padding: .9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+.stat .v {
+  font-size: 1.85rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.stat .l { font-size: .78rem; color: var(--muted); line-height: 1.35; }
+
+/* The shape of the distribution is the point ----------------------------- */
+/* A count per row hides whether groups cluster at "used everything" or at
+   "barely spoke"; a bar makes it a glance instead of a comparison. */
+table.hist { width: 100%; border-collapse: collapse; }
+table.hist td, table.hist th { padding: .35rem .6rem; }
+table.hist td.barcell { width: 70%; }
+table.hist .bar {
+  display: block;
+  height: .85rem;
+  border-radius: 3px;
+  background: var(--accent, #2f4c8c);
+  min-width: 2px;
+}
+
+/* Plain data tables on the participation page. */
+.scroll { overflow-x: auto; }
+table.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  margin: .6rem 0 1rem;
+}
+table.grid th, table.grid td {
+  text-align: left;
+  padding: .55rem .7rem;
+  border-bottom: 1px solid var(--rule);
+}
+table.grid thead th {
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--ink);
+}
+table.grid tbody tr:last-child td { border-bottom: 0; }
+table.grid td.num, table.grid th.num { text-align: right; white-space: nowrap; }

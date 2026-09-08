@@ -41,6 +41,7 @@ from urllib.parse import parse_qs, urlparse
 from chatlens import adapters
 from chatlens.core import config, library, outcome
 from chatlens.web import active, multipart, views, views_library
+from chatlens.web import views_participation
 from chatlens.web.runner import build_command, runner
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
@@ -263,6 +264,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._html(views.page(experiment_slug=name), cookie=cookie)
                 elif action == 'settings':
                     self._html(views_library.settings_page(name), cookie=cookie)
+                elif action == 'participation':
+                    self._html(views_participation.page(name), cookie=cookie)
                 elif action == 'files':
                     self._html(views_library.files_panel(
                         name, confirm_delete=(query.get('confirm') or [''])[0]))
