@@ -110,7 +110,7 @@ def dumps(config: dict, header: str = '') -> str:
         out.append('')
 
     for name in ('experiment', 'input', 'columns', 'treatments', 'outcome',
-                 'lexicons'):
+                 'narratives', 'lexicons'):
         _table(name, config.get(name) or {}, out)
 
     rubric = dict(config.get('rubric') or {})

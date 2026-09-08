@@ -96,3 +96,21 @@ The commands the pages print are built from the interpreter chatlens is actually
 running under. That matters more than it sounds: chatlens normally lives in its
 own environment, so a `pip install` typed into a shell installs somewhere else
 and the page goes on reporting the same thing missing.
+
+### The narratives extra
+
+```bash
+uv tool install --reinstall "chatlens[narratives]"
+python -m spacy download en_core_web_md
+```
+
+Two commands, because a language model is a separate package from the library
+that loads it: `pip install spacy` succeeds and leaves the page just as broken.
+The page prints both, each naming this installation's own interpreter.
+
+RELATIO itself is not installed from here. Its published release does not build,
+and the GitHub branch pulls torch and transformers — about 1.6 GB against the
+four megabytes chatlens takes. The dependency-parsing route used here agrees
+with the package on the finding that matters, so it is the one wired in; the
+package remains worth running separately where the corpus has many entities and
+you do not know what they are.

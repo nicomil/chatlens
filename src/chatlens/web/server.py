@@ -41,7 +41,7 @@ from urllib.parse import parse_qs, urlparse
 from chatlens import adapters
 from chatlens.core import config, library, outcome
 from chatlens.web import active, multipart, views, views_library
-from chatlens.web import views_participation, views_words
+from chatlens.web import views_narratives, views_participation, views_words
 from chatlens.web.runner import build_command, runner
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
@@ -272,6 +272,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._html(views_words.panel(name, query))
                 elif action.startswith('words/'):
                     self._words_file(name, action, query)
+                elif action == 'narratives':
+                    self._html(views_narratives.page(name, query),
+                               cookie=cookie)
                 elif action == 'files':
                     self._html(views_library.files_panel(
                         name, confirm_delete=(query.get('confirm') or [''])[0]))
@@ -519,6 +522,20 @@ class Handler(BaseHTTPRequestHandler):
         self._html(views_library.treatments_panel(
             name, message=f'Saved {len(labels)} names.'))
 
+    def _save_entities(self, name: str) -> None:
+        """Write [narratives].entities, then run with them."""
+        raw = (self._form().get('entities') or [''])[0]
+        chosen = [part.strip().lower() for part in raw.split(',')
+                  if part.strip()]
+        experiment = config.EXPERIMENT
+        experiment.set('narratives',
+                       {'entities': chosen,
+                        'model': experiment.narrative_model})
+        experiment.save()
+        config.use_experiment(experiment)
+        views_narratives._CACHE.clear()
+        self._html(views_narratives.panel(name))
+
     def _words_file(self, name: str, action: str, query) -> None:
         """A figure or a table, generated for the parameters in the query.
 
@@ -632,6 +649,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._save_treatments(name)
                 elif action == 'outcome':
                     self._save_outcome(name)
+                elif action == 'narratives/entities':
+                    self._save_entities(name)
                 elif action == 'adapter':
                     self._set_adapter(name)
                 elif action == 'run':

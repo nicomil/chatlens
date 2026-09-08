@@ -79,7 +79,7 @@ class Experiment:
         self.declared = {
             name: dict(data.get(name) or {})
             for name in ('experiment', 'input', 'columns', 'treatments',
-                         'lexicons', 'rubric', 'outcome')
+                         'lexicons', 'rubric', 'outcome', 'narratives')
         }
         self.declared['rubric'].pop('dimensions', None)
         if (data.get('rubric') or {}).get('dimensions'):
@@ -106,6 +106,18 @@ class Experiment:
 
         # Only 'commitment' can be replaced; see core/lexicons.py.
         self.lexicons = dict(data.get('lexicons') or {})
+
+        # Who the relational analysis should treat as an entity. The players
+        # of this experiment are entities and nothing else can know that: in a
+        # game about who supports whom, leaving "i" and "you" to be clustered
+        # puts the speaker and the person spoken to in one group and erases the
+        # only distinction that matters.
+        narratives = data.get('narratives') or {}
+        self.narrative_entities = [str(e).strip().lower()
+                                   for e in (narratives.get('entities') or [])
+                                   if str(e).strip()]
+        self.narrative_model = str(
+            narratives.get('model') or 'en_core_web_md').strip()
 
         # What the experiment is trying to explain, if it says. None is a
         # legitimate answer: everything descriptive works without it.
@@ -164,6 +176,12 @@ class Experiment:
             self.treatments = kept
         elif table == 'outcome':
             self.outcome = outcome_module.parse(kept)
+        elif table == 'narratives':
+            self.narrative_entities = [str(e).strip().lower()
+                                       for e in (kept.get('entities') or [])
+                                       if str(e).strip()]
+            self.narrative_model = str(
+                kept.get('model') or 'en_core_web_md').strip()
         elif table == 'lexicons':
             self.lexicons = kept
 

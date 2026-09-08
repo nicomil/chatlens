@@ -57,8 +57,14 @@ words = [
     "matplotlib>=3.6",
     "wordcloud>=1.9",
 ]
+# The relational analysis. The language model is a separate download and the
+# page prints the command for it: `python -m spacy download en_core_web_md`.
+narratives = [
+    "spacy>=3.7",
+    "statsmodels>=0.14",
+]
 all = [
-    "chatlens[llm,topics,words]",
+    "chatlens[llm,topics,words,narratives]",
 ]
 
 [project.scripts]
