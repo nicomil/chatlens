@@ -7,8 +7,18 @@
 input/
 output/
 
-# Virtual environments and build artefacts.
+# Somebody else's source tree. Both clone into this machine's application data
+# directory by default, so neither is normally here at all — these entries are
+# for the case where `--repo .` was passed, or a clone was made by hand. They
+# are large, they are not ours, and a clone inside a working copy is one
+# `git add -A` away from being committed.
+relatio/
+topicGPT/
+
+# Virtual environments and build artefacts. A full relatio install is about
+# 1.6 GB of torch and transformers; it lives in an environment, never in here.
 .venv/
+.venv-*/
 dist/
 build/
 *.egg-info/

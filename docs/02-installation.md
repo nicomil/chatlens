@@ -108,9 +108,24 @@ Two commands, because a language model is a separate package from the library
 that loads it: `pip install spacy` succeeds and leaves the page just as broken.
 The page prints both, each naming this installation's own interpreter.
 
-RELATIO itself is not installed from here. Its published release does not build,
-and the GitHub branch pulls torch and transformers — about 1.6 GB against the
-four megabytes chatlens takes. The dependency-parsing route used here agrees
-with the package on the finding that matters, so it is the one wired in; the
-package remains worth running separately where the corpus has many entities and
-you do not know what they are.
+RELATIO itself is optional on top of that:
+
+```bash
+chatlens install-relatio
+```
+
+It is a command rather than a dependency because it pulls torch and transformers
+— about 1.6 GB against the four megabytes chatlens takes — and nobody should
+download that by opening a page. It is cloned into this machine's application
+data directory, not into the checkout, for the same reason TopicGPT is.
+
+The page works without it and says which route it took. The difference is what
+happens to phrases that are **not** declared entities: without the package each
+is kept under its head word, with it they are clustered and the number of
+clusters is chosen automatically. On a corpus with three known participants that
+changed nothing worth reporting — 361 against 362 for the commonest relation —
+and on one with many entities and no list of them it is the whole value.
+
+If it is installed but cannot be imported, the page falls back to the lighter
+route and says why rather than failing. The usual cause is `transformers`
+refusing to load beside Keras 3, which `pip install tf-keras` resolves.

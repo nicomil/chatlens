@@ -231,6 +231,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp_sub.add_argument('--api', default='openai')
     sp_sub.add_argument('--model', default='gpt-4o')
 
+    sp_rel = sub.add_parser(
+        'install-relatio', parents=[common],
+        help='clone and install RELATIO (optional: the narratives page works '
+             'without it)')
+    sp_rel.add_argument('--repo', type=Path, default=None,
+                        help="where to clone it (default: this machine's "
+                             'application data directory)')
+
     sub.add_parser('keys', parents=[common], help='configure the API keys')
     sub.add_parser('status', parents=[common],
                    help='what is in input, output and among the keys')
@@ -572,6 +580,51 @@ def cmd_status(_args) -> int:
     return 0
 
 
+def cmd_install_relatio(args) -> int:
+    """Clone RELATIO and install it into the running interpreter.
+
+    From the repository rather than from PyPI: the published release fails to
+    build, because its pinned gensim cannot generate metadata under a modern
+    setuptools. The master branch installs cleanly.
+
+    This is optional. The narratives page works without it, using spaCy
+    dependency parsing, and on the corpus this tool was built for the two agree
+    on the finding that matters. What the package adds is its own clustering of
+    the phrases that are *not* declared entities, and the automatic choice of
+    how many clusters to use — worth having when a corpus has many entities and
+    you do not yet know what they are.
+
+    It is also large: torch and transformers come with it, about 1.6 GB against
+    the four megabytes chatlens itself takes. Hence a command rather than a
+    dependency, so that nobody downloads it by opening a page.
+    """
+    import subprocess
+
+    repo = Path(args.repo).expanduser() if args.repo else config.relatio_repo()
+    if not repo.exists():
+        repo.parent.mkdir(parents=True, exist_ok=True)
+        print(f'Cloning RELATIO into {repo}')
+        cloned = subprocess.run(
+            ['git', 'clone', '--depth', '1',
+             'https://github.com/relatio-nlp/relatio.git', str(repo)])
+        if cloned.returncode:
+            raise SystemExit('\nClone failed: check the network and that git '
+                             'is installed.\n')
+    else:
+        print(f'Already present: {repo}')
+
+    print('Installing it. This pulls torch and transformers — about 1.6 GB —')
+    print('and will take some minutes.')
+    installed = subprocess.run([sys.executable, '-m', 'pip', 'install',
+                                str(repo)])
+    if installed.returncode:
+        raise SystemExit('\nInstall failed: the output above says why.\n')
+
+    print('\nInstalled. The narratives page will use it from now on, and says')
+    print('which route it took.')
+    return 0
+
+
 def cmd_subtopics(args) -> int:
     """Subdivide the topics a completed run already found.
 
@@ -628,6 +681,7 @@ COMMANDS = {
     'demo': cmd_demo,
     'install-topicgpt': cmd_install_topicgpt,
     'subtopics': cmd_subtopics,
+    'install-relatio': cmd_install_relatio,
     'keys': cmd_keys,
     'status': cmd_status,
 }

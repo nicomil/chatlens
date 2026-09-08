@@ -98,6 +98,19 @@ def topicgpt_repo() -> Path:
     return user_data_dir() / 'topicGPT'
 
 
+def relatio_repo() -> Path:
+    """The cloned RELATIO repository.
+
+    In the application data directory rather than in the checkout, for the same
+    reason TopicGPT is: it is somebody else's source tree, it is large, and a
+    clone inside a working copy is one `git add -A` away from being committed.
+    """
+    override = os.environ.get('CHATLENS_RELATIO_REPO', '').strip()
+    if override:
+        return Path(override).expanduser()
+    return user_data_dir() / 'relatio'
+
+
 def resolve_workspace(explicit=None) -> Path:
     """Which folder holds the data: what was asked for, then the environment,
     then the current directory."""

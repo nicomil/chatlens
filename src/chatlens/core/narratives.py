@@ -89,6 +89,109 @@ def triples(doc, entities):
     return found
 
 
+def _default_unit_key(message):
+    return (message.get('group_uid'), str(message.get('sender_id_in_group')),
+            str(message.get('receiver_id_in_group')))
+
+
+_ROUTE = {}
+
+
+def available_route(prefer_package=True) -> tuple:
+    """Which implementation this machine can run, and why not the other.
+
+    Returns ``(route, note)``. The two answer the same question and differ in
+    what happens to the phrases that are *not* declared entities: the light
+    route keeps each under its head word, the package clusters them and chooses
+    how many clusters to use. On a corpus with three known participants that
+    changed nothing; on one with many entities and no list of them it is the
+    whole value.
+
+    RELATIO is **imported** rather than looked for, which the rest of this
+    codebase deliberately avoids doing. Checking the filesystem is the right
+    test for a library that imports cleanly, and RELATIO does not: it pulls
+    sentence-transformers, which pulls transformers, which refuses to load
+    beside Keras 3. The package is then present and unusable, and a check that
+    only looked would send the page down a route that raises. The import is
+    attempted once and the answer kept.
+    """
+    from chatlens.core import optional
+
+    if prefer_package and optional.have('relatio'):
+        if 'relatio' not in _ROUTE:
+            try:
+                import relatio  # noqa: F401
+                _ROUTE['relatio'] = ''
+            except Exception as exc:            # noqa: BLE001 - any failure
+                _ROUTE['relatio'] = str(exc).strip().splitlines()[-1][:200]
+        broken = _ROUTE['relatio']
+        if not broken:
+            return 'relatio', ''
+        if optional.have('spacy'):
+            return 'spacy', (f'RELATIO is installed but cannot be imported '
+                             f'here ({broken}), so the lighter route was used.')
+        return '', broken
+    if optional.have('spacy'):
+        return 'spacy', ''
+    return '', ''
+
+
+def extract_with_relatio(messages, entities, model='en_core_web_sm',
+                         clusters=None, unit_key=None):
+    """The published package, on its dependency-parsing path.
+
+    Its semantic-role path needs AllenNLP, which caps Python at 3.10; this one
+    needs none of it. The entities are passed as ``known_entities`` and matched
+    directly, which is the package's own mechanism for exactly this case — and
+    necessary, because left to its clustering it put "i" and "you" in one group
+    and the narratives came back as "i | support | i".
+    """
+    import pandas as pd
+    from relatio import Preprocessor
+    from relatio.narrative_models import NarrativeModel
+
+    unit_key = unit_key or _default_unit_key
+    kept = [(i, m) for i, m in enumerate(messages)
+            if str(m.get('body') or '').strip()]
+    frame = pd.DataFrame({'id': [i for i, _m in kept],
+                          'doc': [str(m['body']).strip() for _i, m in kept]})
+
+    preprocessor = Preprocessor(spacy_model=model, remove_punctuation=True,
+                                remove_digits=False, lowercase=True,
+                                lemmatize=True, stop_words=[], n_process=1,
+                                batch_size=200)
+    sentences = preprocessor.split_into_sentences(frame)
+    index, roles = preprocessor.extract_svos(sentences['sentence'],
+                                             expand_nouns=True,
+                                             only_triplets=False)
+    processed = preprocessor.process_roles(roles, max_length=50)
+
+    model_kwargs = dict(
+        clustering='kmeans', PCA=True, UMAP=True,
+        roles_considered=['ARG0', 'B-V', 'B-ARGM-NEG', 'ARG1'],
+        roles_with_known_entities=['ARG0', 'ARG1'],
+        known_entities=list(entities or ()),
+        assignment_to_known_entities='character_matching',
+        roles_with_unknown_entities=['ARG0', 'ARG1'])
+    narrative_model = NarrativeModel(**model_kwargs)
+    narrative_model.fit(processed)
+    predicted = narrative_model.predict(processed)
+
+    doc_ids = sentences['id'].tolist()
+    per_unit = defaultdict(set)
+    for position, narrative in zip(index, predicted):
+        agent = str(narrative.get('ARG0') or '').strip()
+        verb = str(narrative.get('B-V') or '').strip()
+        patient = str(narrative.get('ARG1') or '').strip()
+        if not (agent and verb and patient):
+            continue
+        if narrative.get('B-ARGM-NEG'):
+            verb = 'not ' + verb
+        message = messages[doc_ids[position]]
+        per_unit[unit_key(message)].add((agent, verb, patient))
+    return dict(per_unit)
+
+
 def extract(messages, entities, model='en_core_web_md', unit_key=None):
     """Narratives per unit of analysis, from the messages.
 

@@ -115,9 +115,14 @@ def _result(experiment):
         return None, 'no messages'
     messages = views_participation._read(messages_path)
 
-    per_unit = narratives.extract(messages, experiment.narrative_entities,
-                                  experiment.narrative_model)
-    value = {'per_unit': per_unit,
+    route, route_note = narratives.available_route()
+    if route == 'relatio':
+        per_unit = narratives.extract_with_relatio(
+            messages, experiment.narrative_entities)
+    else:
+        per_unit = narratives.extract(messages, experiment.narrative_entities,
+                                      experiment.narrative_model)
+    value = {'per_unit': per_unit, 'route': route, 'route_note': route_note,
              'frequencies': narratives.frequencies(per_unit), 'tested': None}
 
     if declared and declared['kind'] == 'binary':
@@ -167,9 +172,22 @@ def panel(name: str) -> str:
     rows = ''.join(
         f'<tr><td><code>{_e(a)} | {_e(v)} | {_e(p)}</code></td>'
         f'<td class="num">{n}</td></tr>' for (a, v, p), n in common)
+    route = found.get('route')
+    if route == 'relatio':
+        how = ('Extracted with the <b>RELATIO package</b>, which also clusters '
+               'the phrases that are not declared entities and chooses how many '
+               'clusters to use.')
+    elif found.get('route_note'):
+        how = _e(found['route_note'])
+    else:
+        how = ('Extracted with <b>spaCy dependency parsing</b>. Phrases that '
+               'are not declared entities are kept under their head word rather '
+               'than clustered; <code>chatlens install-relatio</code> adds the '
+               'package that clusters them, at about 1.6 GB.')
+
     body += f'''<h3>What was said</h3>
 <p class="muted">{len(found["per_unit"])} units carry at least one relation, and
-{len(found["frequencies"])} distinct relations were found.</p>
+{len(found["frequencies"])} distinct relations were found. {how}</p>
 <div class="scroll"><table class="grid">
 <thead><tr><th>Relation</th><th class="num">Units</th></tr></thead>
 <tbody>{rows}</tbody></table></div>'''

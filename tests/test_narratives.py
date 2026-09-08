@@ -168,6 +168,57 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(experiment.Experiment({}).narrative_entities, [])
 
 
+class RouteTests(unittest.TestCase):
+    """Which implementation runs, and what happens when the big one is broken."""
+
+    def test_a_present_but_unimportable_package_falls_back_and_says_why(self):
+        """RELATIO pulls transformers, which refuses to load beside Keras 3.
+
+        Looking for the package on the filesystem is not enough here: it is
+        present and unusable, and a check that only looked would send the page
+        down a route that raises.
+        """
+        import unittest.mock
+
+        from chatlens.core import optional
+
+        narratives._ROUTE.clear()
+        real_import = __builtins__['__import__'] if isinstance(
+            __builtins__, dict) else __builtins__.__import__
+
+        def broken(name, *args, **kwargs):
+            if name == 'relatio':
+                raise ValueError('Keras 3 is not supported')
+            return real_import(name, *args, **kwargs)
+
+        with unittest.mock.patch.object(optional, 'have', lambda m: True), \
+                unittest.mock.patch('builtins.__import__', broken):
+            route, note = narratives.available_route()
+        narratives._ROUTE.clear()
+        self.assertEqual(route, 'spacy')
+        self.assertIn('cannot be imported', note)
+        self.assertIn('Keras 3', note)
+
+    def test_without_either_there_is_no_route(self):
+        import unittest.mock
+
+        from chatlens.core import optional
+
+        narratives._ROUTE.clear()
+        with unittest.mock.patch.object(optional, 'have', lambda m: False):
+            route, _note = narratives.available_route()
+        self.assertEqual(route, '')
+
+    def test_the_light_route_is_used_when_asked_for(self):
+        import unittest.mock
+
+        from chatlens.core import optional
+
+        with unittest.mock.patch.object(optional, 'have', lambda m: True):
+            route, _note = narratives.available_route(prefer_package=False)
+        self.assertEqual(route, 'spacy')
+
+
 class RequirementNoticeTests(unittest.TestCase):
     def test_the_model_has_its_own_command(self):
         """`pip install spacy` succeeds and leaves the page just as broken."""
