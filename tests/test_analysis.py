@@ -1852,5 +1852,77 @@ class InduceOnlyTests(unittest.TestCase):
         self.assertTrue(args.topicgpt_induce_only)
 
 
+class PhaseCompletenessTests(unittest.TestCase):
+    """A phase that lost documents must stop the run, not finish quietly.
+
+    The defect these cover shipped: a run of 1,333 documents stopped at 806
+    when the credit balance ran out, and every downstream step — datasets,
+    report, run archive — completed and recorded a success.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        self.dir = Path(tempfile.mkdtemp())
+        self.path = self.dir / 'phase.jsonl'
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def write(self, responses):
+        topicgpt_runner.write_jsonl(
+            self.path,
+            [{'id': str(i), 'text': 'x', 'responses': r}
+             for i, r in enumerate(responses)],
+        )
+
+    def test_complete_phase_passes(self):
+        self.write(['[1] Cooperation'] * 5)
+        self.assertEqual(topicgpt_runner.verify_phase('assignment', self.path, 5), 5)
+
+    def test_truncated_output_raises(self):
+        """The signature of the failure that shipped: a file simply shorter."""
+        self.write(['[1] Cooperation'] * 3)
+        with self.assertRaises(topicgpt_runner.TopicGPTIncomplete) as ctx:
+            topicgpt_runner.verify_phase('assignment', self.path, 5)
+        self.assertIn('2 are missing', str(ctx.exception))
+
+    def test_error_marker_raises_even_when_the_file_is_full_length(self):
+        """Assignment and correction do not truncate: they write "Error"."""
+        self.write(['[1] Cooperation', 'Error', '[1] Cooperation'])
+        with self.assertRaises(topicgpt_runner.TopicGPTIncomplete) as ctx:
+            topicgpt_runner.verify_phase('assignment', self.path, 3)
+        self.assertIn('API error', str(ctx.exception))
+
+    def test_the_message_says_what_was_kept(self):
+        """It must not invite paying twice for answers already on disk."""
+        self.write(['[1] Cooperation'] * 4 + ['Error'])
+        with self.assertRaises(topicgpt_runner.TopicGPTIncomplete) as ctx:
+            topicgpt_runner.verify_phase('generation', self.path, 9,
+                                         allow_short=True)
+        self.assertIn('4 answers are already on disk', str(ctx.exception))
+
+    def test_early_stop_is_not_a_failure(self):
+        """Induction converging early is the method working, not an error."""
+        self.write(['[1] Cooperation'] * 3)
+        self.assertEqual(
+            topicgpt_runner.verify_phase('generation', self.path, 9,
+                                         allow_short=True), 3)
+
+    def test_missing_file_raises(self):
+        with self.assertRaises(topicgpt_runner.TopicGPTIncomplete):
+            topicgpt_runner.verify_phase('assignment', self.path, 5)
+
+    def test_refinement_failure_is_counted_from_stdout(self):
+        """Refinement leaves no trace in its output, only this printed line."""
+        digest = topicgpt_runner._Digest()
+        digest.write('Error when calling API!\n')
+        digest.write('Invalid topic format: junk. Skipping...\n')
+        self.assertEqual(digest.api_failures, 1)
+        self.assertEqual(digest.counts.get('documents with no recognised topic'), 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

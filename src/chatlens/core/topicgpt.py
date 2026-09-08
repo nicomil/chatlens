@@ -74,6 +74,13 @@ NOISY_LINES = [
     ('Too many topics', 'topic lists pruned'),
 ]
 
+# Refinement is the one phase that leaves no trace in its output file when a
+# call fails: it catches the exception, prints this line and carries on with the
+# topic tree unmerged. Counting the line is the only way to know it happened.
+API_FAILURE_LINES = (
+    'Error when calling API!',
+)
+
 # Banner lines repeating parameters the caller already knows.
 BANNER_LINES = (
     '---', 'Initializing', 'Model:', 'Data file:', 'Prompt file:',
@@ -89,6 +96,7 @@ class _Digest(io.TextIOBase):
     def __init__(self):
         self.counts = {}
         self.passthrough = []
+        self.api_failures = 0
         self._partial = ''
 
     def write(self, text):
@@ -100,6 +108,11 @@ class _Digest(io.TextIOBase):
 
     def _handle(self, line):
         if not line or line.startswith(BANNER_LINES):
+            return
+        # Checked before the noisy lines: a failure must never be filed away as
+        # one of the benign repetitive messages.
+        if any(needle in line for needle in API_FAILURE_LINES):
+            self.api_failures += 1
             return
         for needle, label in NOISY_LINES:
             if needle in line:
@@ -119,6 +132,8 @@ class _Digest(io.TextIOBase):
             print(f'{prefix}{line}')
         for label, count in sorted(self.counts.items(), key=lambda kv: -kv[1]):
             print(f'{prefix}{count} {label}')
+        if self.api_failures:
+            print(f'{prefix}{self.api_failures} API CALLS FAILED')
 
 
 @contextlib.contextmanager
@@ -145,6 +160,18 @@ UNIT_KEYS = {
 
 class TopicGPTUnavailable(RuntimeError):
     """TopicGPT or its prompt files are unavailable."""
+
+
+class TopicGPTIncomplete(RuntimeError):
+    """A phase answered fewer documents than it was given, or answered "Error".
+
+    Raised by :func:`verify_phase`. It is a separate exception from
+    ``TopicGPTUnavailable`` because it means something different to the caller:
+    the run started correctly and then lost documents part-way through, so
+    there is paid-for work on disk worth resuming from.
+    """
+
+
 
 
 def check_installation(repo_path: Path) -> None:
@@ -263,6 +290,73 @@ def read_jsonl(path: Path) -> list[dict]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
+# The string TopicGPT writes into a document's response field when the API call
+# raised. It is the only trace an API failure leaves in the output.
+API_ERROR = 'Error'
+
+
+def verify_phase(phase: str, path: Path, expected: int,
+                 allow_short: bool = False) -> int:
+    """Check a phase answered every document it was given; raise if it did not.
+
+    TopicGPT does not propagate API failures. When a call raises it records the
+    string ``"Error"`` as that document's response and carries on — and in
+    generation it breaks out of the loop and truncates the output file to the
+    answers it managed to collect (``df.iloc[: len(responses)]``). Either way
+    the function returns normally. Without this check the caller sees a clean
+    return, the pipeline builds its datasets from whatever arrived, the report
+    is written and the archive records the run as complete.
+
+    That is not hypothetical: a run of 1,333 documents stopped at 806 when the
+    credit balance ran out, and produced a full set of output files that gave
+    no sign 527 documents were missing. It was caught by counting the lines in
+    the input and the output by hand.
+
+    Nothing is deleted when this fails. The answers already paid for stay where
+    they are, and the message says how many there are, because the sensible
+    next step is to resume from them rather than buy them again.
+
+    ``allow_short`` is for generation only, where stopping early is a documented
+    feature of the method: once ``early_stop`` documents in a row have produced
+    no new topic, induction has converged and returns. A short file with no
+    ``"Error"`` in it is therefore that convergence, and is reported rather than
+    raised.
+    """
+    if not path.is_file():
+        raise TopicGPTIncomplete(
+            f'{phase}: {path.name} was not written at all.\n'
+            f'  Expected {expected} answers. Check the messages above for the '
+            f'cause.')
+
+    rows = read_jsonl(path)
+    failed = sum(1 for r in rows
+                 if str(r.get('responses') or '').strip() == API_ERROR)
+
+    if failed:
+        raise TopicGPTIncomplete(
+            f'{phase}: {failed} of {len(rows)} documents came back as an API '
+            f'error, and {expected - len(rows)} were never sent.\n'
+            f'  The usual cause is an exhausted credit balance or a revoked '
+            f'key; the traceback above says which.\n'
+            f'  {len(rows) - failed} answers are already on disk in '
+            f'{path.name} and are not affected. Fix the key and resume from '
+            f'them rather than paying for them twice.')
+
+    if len(rows) < expected:
+        if allow_short:
+            print(f'    induction converged early: {len(rows)} of {expected} '
+                  f'documents read before the topic list stopped growing',
+                  flush=True)
+            return len(rows)
+        raise TopicGPTIncomplete(
+            f'{phase}: {len(rows)} answers for {expected} documents — '
+            f'{expected - len(rows)} are missing, with no error recorded '
+            f'against them.\n'
+            f'  {path.name} holds what arrived.')
+
+    return len(rows)
+
+
 def generation_order(documents, shuffle_seed=1) -> list:
     """The order induction will read the documents in.
 
@@ -366,6 +460,10 @@ def run_topicgpt(
         )
     if digest:
         digest.report()
+    # Before anything downstream reads this file. Generation is the one phase
+    # allowed to stop early, because the method says so.
+    induced = verify_phase('topic generation', generation_out, len(documents),
+                           allow_short=True)
 
     topics_for_assignment = topics_lvl1
     # Topics can be induced on a broad unit and assigned to a finer one:
@@ -395,6 +493,20 @@ def run_topicgpt(
             )
         if digest:
             digest.report()
+            # Refinement writes nothing into its output to mark a failed call,
+            # so the count of the line it prints is the only evidence. With
+            # verbose=True there is no digest to count it and the lines reach
+            # the terminal instead, where the caller sees them directly.
+            if digest.api_failures:
+                raise TopicGPTIncomplete(
+                    f'refinement: {digest.api_failures} API calls failed.\n'
+                    f'  Refinement merges and prunes the induced topics, and a '
+                    f'failed call silently leaves that merge undone, so the '
+                    f'topic list would be neither the raw one nor the refined '
+                    f'one.\n'
+                    f'  The raw topics are in {topics_lvl1.name} and are '
+                    f'unaffected.')
+        verify_phase('refinement', refined_generation, induced)
         topics_for_assignment = refined_topics
 
     if induce_only:
@@ -421,6 +533,9 @@ def run_topicgpt(
         )
     if digest:
         digest.report()
+    n_assigned = len(assignment_documents if assignment_documents is not None
+                     else documents)
+    verify_phase('assignment', assignment_out, n_assigned)
 
     corrected_out = outdir / 'assignment_corrected.jsonl'
     print('  [4/4] correction of assignments', flush=True)
@@ -436,6 +551,7 @@ def run_topicgpt(
         )
     if digest:
         digest.report()
+    verify_phase('correction', corrected_out, n_assigned)
 
     return corrected_out
 
