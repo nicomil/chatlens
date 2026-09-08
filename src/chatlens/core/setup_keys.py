@@ -94,37 +94,87 @@ def _masked(value: str) -> str:
     return f'{value[:6]}...{value[-4:]} ({len(value)} characters)'
 
 
+# The check makes a real, minimal completion rather than listing the models.
+#
+# Listing is free, and that is exactly the problem: `GET /v1/models` answers 200
+# on a key with no credit left on it, so it confirms the key exists and nothing
+# about whether it can do any work. An analysis run then starts, spends what
+# credit there is, and stops part-way through. Only a completion distinguishes
+# "valid" from "usable", and the smallest one costs a fraction of a cent.
+#
+# The model is the cheapest each provider offers, not the one the analysis will
+# use: this is a check on the account, not on model access.
+PROBE_MODELS = {'openai': 'gpt-4o-mini', 'anthropic': 'claude-haiku-4-5'}
+
+
 def check_openai(key: str) -> tuple[bool, str]:
     request = urllib.request.Request(
-        'https://api.openai.com/v1/models',
-        headers={'Authorization': f'Bearer {key}'},
+        'https://api.openai.com/v1/chat/completions',
+        method='POST',
+        headers={'Authorization': f'Bearer {key}',
+                 'Content-Type': 'application/json'},
+        data=json.dumps({
+            'model': PROBE_MODELS['openai'],
+            'messages': [{'role': 'user', 'content': 'ok'}],
+            'max_completion_tokens': 1,
+        }).encode('utf-8'),
     )
     return _probe(request, 'OpenAI')
 
 
 def check_anthropic(key: str) -> tuple[bool, str]:
     request = urllib.request.Request(
-        'https://api.anthropic.com/v1/models',
-        headers={'x-api-key': key, 'anthropic-version': '2023-06-01'},
+        'https://api.anthropic.com/v1/messages',
+        method='POST',
+        headers={'x-api-key': key, 'anthropic-version': '2023-06-01',
+                 'Content-Type': 'application/json'},
+        data=json.dumps({
+            'model': PROBE_MODELS['anthropic'],
+            'messages': [{'role': 'user', 'content': 'ok'}],
+            'max_tokens': 1,
+        }).encode('utf-8'),
     )
     return _probe(request, 'Anthropic')
 
 
 def _probe(request, label: str) -> tuple[bool, str]:
-    """A read-only call to confirm the key is valid."""
+    """One minimal completion, to confirm the key can actually buy work."""
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            payload = json.loads(response.read().decode('utf-8'))
-        models = payload.get('data') or []
-        return True, f'{label}: key valid, {len(models)} models available'
+        with urllib.request.urlopen(request, timeout=30) as response:
+            response.read()
+        return True, f'{label}: key valid and in credit'
     except urllib.error.HTTPError as exc:
+        detail = _reason(exc)
         if exc.code in (401, 403):
-            return False, f'{label}: key rejected (HTTP {exc.code})'
-        return False, f'{label}: unexpected response (HTTP {exc.code})'
+            return False, f'{label}: key rejected (HTTP {exc.code}){detail}'
+        if exc.code == 429:
+            # The one this check exists for. A rate limit is temporary and a
+            # spent balance is not, and they arrive under the same status code.
+            return False, (f'{label}: no capacity — out of credit or rate '
+                           f'limited (HTTP 429){detail}')
+        if exc.code == 404:
+            return False, (f'{label}: the account cannot reach '
+                           f'{_probe_model(label)} (HTTP 404){detail}')
+        return False, f'{label}: unexpected response (HTTP {exc.code}){detail}'
     except urllib.error.URLError as exc:
         return False, f'{label}: no connection ({exc.reason})'
     except (TimeoutError, OSError, ValueError) as exc:
         return False, f'{label}: check failed ({exc})'
+
+
+def _probe_model(label: str) -> str:
+    return PROBE_MODELS.get(label.lower(), '')
+
+
+def _reason(exc) -> str:
+    """The provider's own explanation, which names the cause precisely."""
+    try:
+        payload = json.loads(exc.read().decode('utf-8'))
+    except Exception:  # noqa: BLE001 - an unreadable body is not worth a crash
+        return ''
+    error = payload.get('error') or {}
+    text = error.get('message') or error.get('type') or ''
+    return f': {text[:160]}' if text else ''
 
 
 CHECKERS = {

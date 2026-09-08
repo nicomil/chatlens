@@ -12,6 +12,9 @@ import io
 import sys
 import tempfile
 import unittest
+import unittest.mock
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 # Runs from a source checkout without installing: the package is under src/.
@@ -1922,6 +1925,75 @@ class PhaseCompletenessTests(unittest.TestCase):
         digest.write('Invalid topic format: junk. Skipping...\n')
         self.assertEqual(digest.api_failures, 1)
         self.assertEqual(digest.counts.get('documents with no recognised topic'), 1)
+
+
+class KeyCheckTests(unittest.TestCase):
+    """The check must prove the key can buy work, not merely that it exists.
+
+    `GET /v1/models` answers 200 on a key with no credit left, so the previous
+    check confirmed the key existed and nothing else. A run would then start and
+    stop part-way through.
+    """
+
+    def setUp(self):
+        from chatlens.core import setup_keys
+
+        self.keys = setup_keys
+
+    def test_openai_probe_is_a_completion_not_a_listing(self):
+        request = self._request(self.keys.check_openai)
+        self.assertEqual(request.get_method(), 'POST')
+        self.assertIn('chat/completions', request.full_url)
+        self.assertNotIn('v1/models', request.full_url)
+
+    def test_anthropic_probe_is_a_completion_not_a_listing(self):
+        request = self._request(self.keys.check_anthropic)
+        self.assertEqual(request.get_method(), 'POST')
+        self.assertIn('v1/messages', request.full_url)
+        self.assertNotIn('v1/models', request.full_url)
+
+    def test_the_probe_asks_for_as_little_as_possible(self):
+        import json
+
+        for check, cap in ((self.keys.check_openai, 'max_completion_tokens'),
+                           (self.keys.check_anthropic, 'max_tokens')):
+            body = json.loads(self._request(check).data.decode('utf-8'))
+            self.assertEqual(body[cap], 1)
+
+    def test_out_of_credit_is_not_reported_as_an_invalid_key(self):
+        """429 and 401 mean different things and need different fixes."""
+        ok, message = self._probe_returning(429, b'{"error":{"message":"x"}}')
+        self.assertFalse(ok)
+        self.assertIn('out of credit', message)
+        self.assertNotIn('rejected', message)
+
+    def test_a_rejected_key_says_so(self):
+        ok, message = self._probe_returning(401, b'{"error":{"message":"nope"}}')
+        self.assertFalse(ok)
+        self.assertIn('rejected', message)
+        self.assertIn('nope', message)
+
+    def _request(self, check):
+        """Capture the request the checker would send, without sending it."""
+        captured = {}
+
+        def fake(request, timeout=None):
+            captured['request'] = request
+            raise urllib.error.URLError('not sent')
+
+        with unittest.mock.patch.object(urllib.request, 'urlopen', fake):
+            check('sk-test')
+        return captured['request']
+
+    def _probe_returning(self, code, body):
+        error = urllib.error.HTTPError('https://x', code, 'msg', {},
+                                       io.BytesIO(body))
+
+        def fake(request, timeout=None):
+            raise error
+
+        with unittest.mock.patch.object(urllib.request, 'urlopen', fake):
+            return self.keys.check_openai('sk-test')
 
 
 if __name__ == '__main__':
