@@ -1060,34 +1060,39 @@ is the intended use — but not with LIWC scores published elsewhere.
 
 ---
 
-## Emotions, and what a zero means
+## Emotions: zero is a value, and also a confound
 
 The Emotions page counts words from the NRC Emotion Lexicon: eight emotions and
-two sentiments, about fourteen thousand English words. It is free for research
-and distributed through a form, so it is not shipped — the page says where to
-request it and where to put it.
+two sentiments, about fourteen thousand English words.
 
-**A zero is two different things and the column cannot tell them apart.** A
-document scores by containing words that are on the list; one containing none
-scores zero on every category, which is an absence of measurement rather than an
-absence of feeling. Anything built on these columns should carry the unmeasured
-rows as missing, not as zeros, or the model will read "we could not tell" as
-"calm".
+Three ways to get it, and the page reads all three shapes without conversion:
 
-The page therefore always shows how much of the corpus could be measured at all,
-by document length, because the shape says where the limit is:
+- request the file at [saifmohammad.com](https://saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm);
+- export it from R, which is quicker —
+  `library(tidytext); write.csv(get_sentiments("nrc"), "nrc.csv")`;
+- any wide copy you already have, one column per category.
 
-- **Falling with length** — the documents are the constraint. No word list finds
-  emotion in "ok" or "sure", and a larger one will not change that. On the corpus
-  this tool was built for, 73% of documents of seven words or fewer contained no
-  listed word, against 8% of those over thirty.
-- **High everywhere** — the word list is the constraint: a vocabulary it does not
-  cover.
+**A zero is correct and the rows belong in the analysis.** A message with no
+frightening word in it did not frighten anyone, and its fear rating is zero. Do
+not drop those rows.
 
-Category shares are computed over the documents that could be measured, not over
-all of them. Dividing by everything puts every category over the same inflated
-denominator, and an unmeasurable corpus comes out looking uniformly unemotional
-rather than unmeasured.
+The care is needed elsewhere. A document containing **no listed word at all**
+scores zero on every category at once, and on short messages that happens
+constantly — on the corpus this tool was built for, 73% of documents of seven
+words or fewer against 8% of those over thirty. Those all-zero rows are not
+spread at random: they are the short ones. So the emotion columns carry a signal
+about length mixed into the one about emotion, and a specification that leaves
+length out is partly fitting it.
+
+Which is the same trap the rest of this tool exists to point at, with the same
+fix: keep the zeros, put length in the model. The coverage table says how much
+is at stake — a corpus measured on 95% of its documents needs no special care,
+one measured on 40% needs length in every specification that touches them.
+
+Category shares are reported over the documents that contain at least one listed
+word, not over all of them. Over everything, each category is divided by the
+same inflated denominator and a corpus of very short messages comes out looking
+uniformly unemotional.
 
 ## 11. TopicGPT
 

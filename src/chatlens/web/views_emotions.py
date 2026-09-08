@@ -104,10 +104,11 @@ def panel() -> str:
 <th class="num">No emotion word</th><th class="num">Share</th></tr></thead>
 <tbody>{buckets}</tbody></table></div>
 <p class="muted">{_e(cover["note"])}</p>
-<p class="muted">A document with no listed word scores zero on every category,
-and that is not the same as a neutral one — it is an absence of measurement
-wearing the same number. Anything built on these columns should carry the
-unmeasured rows as missing rather than as zeros.</p>
+<p class="muted">A zero is a real value: a message with no frightening word in
+it did not frighten anyone, and those rows belong in the analysis. What the
+figures above are for is that the all-zero rows are <b>the short ones</b>, so
+these columns carry a signal about length as well as one about emotion. Keep the
+zeros and put length in the model, the same way every other page here does.</p>
 
 <h3>What the measured documents contain</h3>
 <div class="scroll"><table class="grid">
@@ -136,10 +137,10 @@ def page(name: str, query=None) -> str:
   <h1>Emotions</h1>
 </header>
 <main class="single">
-<p class="muted">Eight emotions and two sentiments, from a word list. It counts
-words that are on the list, so a document containing none scores zero
-everywhere — which is an absence of measurement rather than an absence of
-feeling, and the tables below keep the two apart.</p>
+<p class="muted">Eight emotions and two sentiments, from a word list. A document
+containing none of its words scores zero everywhere, which is a correct reading
+and not a gap — but those rows are overwhelmingly the short ones, so the tables
+below show how many there are and where they sit.</p>
 {panel()}
 </main>
 </body></html>'''

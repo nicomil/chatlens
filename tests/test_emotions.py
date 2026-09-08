@@ -81,11 +81,14 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(found['counts']['joy'], 1)
         self.assertEqual(found['counts']['positive'], 2)
 
-    def test_a_document_with_none_is_not_measured_rather_than_neutral(self):
-        """The whole point. Both give zeros; only one is a measurement."""
+    def test_a_document_with_no_listed_word_is_flagged_but_still_scored(self):
+        """The zeros are kept: a message with no frightening word did not
+        frighten anyone, and that row belongs in the analysis. The flag is a
+        diagnostic — those rows are the short ones — not a reason to drop it."""
         found = nrc.score('ok sure', self.marked)
         self.assertFalse(found['measured'])
-        self.assertEqual(sum(found['counts'].values()), 0)
+        self.assertEqual(found['counts']['joy'], 0)
+        self.assertEqual(found['words'], 2)
 
         neutral = nrc.score('happy angry', self.marked)
         self.assertTrue(neutral['measured'])
@@ -107,15 +110,15 @@ class CoverageTests(unittest.TestCase):
         path.write_text(LONG_FORM, encoding='utf-8')
         self.marked = nrc.load(path)
 
-    def test_short_documents_failing_is_named_a_text_problem(self):
-        """The shape observed on the real corpus: 77% at 1-5 words, 13% at 21+."""
+    def test_short_documents_failing_is_named_a_length_confound(self):
+        """The shape observed on the real corpus: 73% at 1-7 words, 8% at 31+."""
         texts = (['ok'] * 40
                  + ['ok then sure right'] * 40
                  + ['this is a longer one and i am happy about it'] * 40
                  + ['a much longer message where i trust you and am happy '
                     'to say so at length'] * 40)
         cover = nrc.coverage(texts, self.marked)
-        self.assertIn('documents are the constraint', cover['note'])
+        self.assertIn('length in any model', cover['note'])
         self.assertGreater(cover['buckets'][0]['share'],
                            cover['buckets'][-1]['share'])
 
@@ -174,6 +177,46 @@ class NoticeTests(unittest.TestCase):
         with unittest.mock.patch.dict(
                 os.environ, {'CHATLENS_NRC_LEXICON': '/tmp/mine.txt'}):
             self.assertEqual(nrc.lexicon_path(), Path('/tmp/mine.txt'))
+
+
+
+class LexiconShapeTests(unittest.TestCase):
+    """Three shapes reach people and none should have to be converted first."""
+
+    def written(self, name, text):
+        directory = Path(tempfile.mkdtemp())
+        path = directory / name
+        path.write_text(text, encoding='utf-8')
+        return path
+
+    def test_an_export_from_r(self):
+        """`write.csv(get_sentiments("nrc"))`: quoted, comma separated, and a
+        row is itself the marking — there is no value column to check."""
+        path = self.written('nrc.csv',
+                            '"word","sentiment"\n"abandon","fear"\n'
+                            '"abandon","negative"\n"happy","joy"\n')
+        marked = nrc.load(path)
+        self.assertEqual(marked['abandon'], {'fear', 'negative'})
+        self.assertEqual(marked['happy'], {'joy'})
+
+    def test_a_wide_file_with_only_two_categories(self):
+        """Three columns, and not the distributed form: counting columns would
+        read the second one as a category and the third as its 0/1 value."""
+        path = self.written('wide.txt',
+                            'word\tanger\tjoy\nhappy\t0\t1\nangry\t1\t0\n')
+        marked = nrc.load(path)
+        self.assertEqual(marked['happy'], {'joy'})
+        self.assertEqual(marked['angry'], {'anger'})
+
+    def test_the_distributed_three_column_form_still_reads(self):
+        path = self.written('long.txt',
+                            'happy\tjoy\t1\nhappy\tanger\t0\n')
+        self.assertEqual(nrc.load(path)['happy'], {'joy'})
+
+    def test_the_missing_file_message_mentions_both_routes(self):
+        with self.assertRaises(FileNotFoundError) as ctx:
+            nrc.load(Path('/nowhere/at/all.txt'))
+        self.assertIn('tidytext', str(ctx.exception))
 
 
 if __name__ == '__main__':

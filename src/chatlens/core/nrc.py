@@ -7,19 +7,25 @@ distributed through a request form, so it cannot be shipped: its absence is
 handled the way a missing dependency is, with the page saying where to get it
 and where to put it.
 
-Why the coverage diagnostic is not optional
--------------------------------------------
-This is a word list. A document scores by containing words that are on it, and a
-document that contains none scores zero on every category — which is not "no
-emotion", it is "no measurement". The two are indistinguishable in the output
-column and the difference decides whether a regression means anything.
+Zero is the right value, and it is also a confound
+--------------------------------------------------
+A document with no fear word has a fear rating of zero, and that is correct:
+nothing frightening was said. Zero is a measurement, not a gap, and rows should
+not be dropped for it.
 
-On the corpus this tool was built for the constraint was not the lexicon's size
-but the messages': 77% of documents of five words or fewer contained no emotion
-word at all, against 13% of those over twenty. A larger word list helps at the
-margin and cannot help with "ok" or "sure". So every table here carries the
-share of documents it could not measure, in the same view, and a caller that
-wants the scores gets the coverage whether it asked or not.
+The difficulty is elsewhere. A document containing **no listed word at all**
+scores zero on every category at once, and on a corpus of short messages that
+happens constantly — here, 73% of documents of seven words or fewer against 8%
+of those over thirty. Those all-zero rows are not distributed at random: they
+are the short ones. So the emotion columns carry, mixed into them, a signal
+about how much was written, and a model fitted on them without controlling for
+length is partly reading that.
+
+Which is the same trap the rest of this tool is built to point at, and it has
+the same fix: keep the zeros, and put length in the model. The coverage figures
+below say how much of these columns is at stake — a corpus measured on 95% of
+its documents needs no special care, one measured on 40% needs length in every
+specification that uses them.
 """
 
 from __future__ import annotations
@@ -59,48 +65,72 @@ def available() -> bool:
     return lexicon_path().is_file()
 
 
+def _cells(line: str) -> list:
+    """Split a row however it happens to be delimited, and unquote it."""
+    stripped = line.rstrip('\r\n')
+    parts = stripped.split('\t') if '\t' in stripped else stripped.split(',')
+    return [p.strip().strip('"').strip("'") for p in parts]
+
+
 def load(path: Path | None = None) -> dict:
     """word -> the categories it is marked for.
 
-    The distributed file has one row per word and category, with a 0 or 1, so
-    most rows say nothing and are dropped. Some copies in circulation are the
-    wide form instead, one row per word with a column per category, and both are
-    accepted: a user who has obtained the file should not have to know which
-    one they were sent.
+    Three shapes are accepted, because the lexicon reaches people three ways and
+    none of them should have to be converted first.
+
+    **The distributed file**: tab separated, one row per word *and* category with
+    a 0 or 1, so most rows say nothing and are dropped.
+
+    **The wide form**: one row per word with a column per category. Copies in
+    this shape circulate and are not marked as different.
+
+    **An export from R**: `tidytext::get_sentiments("nrc")` gives a table of
+    word and sentiment, one row per pair, and `write.csv` makes it two quoted
+    comma-separated columns. A row here *is* a marking, so there is no value
+    column to check.
     """
     path = Path(path or lexicon_path())
     if not path.is_file():
         raise FileNotFoundError(
-            f'The NRC lexicon is not at {path}. It is free for research but '
-            f'distributed through a form: {FORM_URL}')
+            f'The NRC lexicon is not at {path}. It is free for research: '
+            f'request it at {FORM_URL}, or export it from R with '
+            f'tidytext::get_sentiments("nrc").')
 
     marked = {}
     with path.open(encoding='utf-8', errors='replace') as handle:
-        first = handle.readline()
-        columns = first.rstrip('\n').split('\t')
-        wide = len(columns) > 3 and any(c.strip().lower() in CATEGORIES
-                                        for c in columns[1:])
-        if wide:
-            names = [c.strip().lower() for c in columns[1:]]
-            for line in handle:
-                parts = line.rstrip('\n').split('\t')
-                if len(parts) < 2:
-                    continue
-                found = {name for name, value in zip(names, parts[1:])
-                         if value.strip() not in ('', '0')}
-                if found:
-                    marked[parts[0].strip().lower()] = found
-            return marked
+        rows = [_cells(line) for line in handle if line.strip()]
+    if not rows:
+        raise ValueError(f'{path.name} is empty.')
 
-        handle.seek(0)
-        for line in handle:
-            parts = line.rstrip('\n').split('\t')
-            if len(parts) != 3 or parts[2].strip() != '1':
-                continue
-            category = parts[1].strip().lower()
-            if category in CATEGORIES:
-                marked.setdefault(parts[0].strip().lower(),
-                                  set()).add(category)
+    header = rows[0]
+    # Wide when *every* column after the first names a category. Counting them
+    # instead would misread a wide file carrying only two categories as the
+    # three-column distributed form, where the second column is a category and
+    # the third is a 0 or a 1.
+    wide = (len(header) > 2
+            and all(c.lower() in CATEGORIES for c in header[1:]))
+    if wide:
+        names = [c.lower() for c in header[1:]]
+        for parts in rows[1:]:
+            found = {name for name, value in zip(names, parts[1:])
+                     if value not in ('', '0')}
+            if found:
+                marked[parts[0].lower()] = found
+        return marked
+
+    for parts in rows:
+        if len(parts) < 2:
+            continue
+        category = parts[1].lower()
+        if category not in CATEGORIES:
+            continue
+        # Two columns is a pairs table, where the row itself is the marking.
+        # Three is the distributed form, where the third column says whether
+        # the word carries the category at all.
+        if len(parts) > 2 and parts[2] not in ('1', 'TRUE', 'True', 'true'):
+            continue
+        marked.setdefault(parts[0].lower(), set()).add(category)
+
     if not marked:
         raise ValueError(f'{path.name} was read but no marked words were '
                          f'found in it. Is it the right file?')
@@ -108,11 +138,12 @@ def load(path: Path | None = None) -> dict:
 
 
 def score(text: str, marked: dict) -> dict:
-    """Counts and shares for one document, plus whether it was measurable.
+    """Counts and shares for one document, and whether any listed word was in it.
 
-    ``measured`` is the field that matters. A document with no listed word gets
-    zeros, and a caller reading only the scores cannot tell that apart from a
-    document that is genuinely neutral.
+    ``measured`` is a diagnostic, not a filter. The zeros are real values and a
+    caller should keep them; what the flag is for is knowing how many of the
+    rows are all-zero, because those cluster among the short documents and turn
+    the emotion columns into a partial proxy for length.
     """
     tokens = TOKEN.findall((text or '').lower())
     counts = Counter()
@@ -165,10 +196,12 @@ def coverage(texts, marked) -> dict:
     if buckets:
         first, last = buckets[0]['share'], buckets[-1]['share']
         if first > 0.5 and last < 0.25:
-            note = ('The documents are the constraint, not the word list: the '
-                    'short ones are where nothing is found, and no lexicon can '
-                    'find emotion in "ok" or "sure". A coarser unit of analysis '
-                    'would leave fewer unmeasured.')
+            note = ('The all-zero rows are the short documents, so these '
+                    'columns carry a signal about length as well as about '
+                    'emotion. Keep the zeros — they are real values — and put '
+                    'length in any model that uses them. No lexicon can find '
+                    'emotion in "ok" or "sure", so a larger word list would not '
+                    'change this.')
         elif last > 0.4:
             note = ('Even the longest documents are mostly unmeasured, which '
                     'points at the word list rather than the text — a corpus '
