@@ -74,3 +74,32 @@ On Windows the repository path is a Windows one, so
 unusual.
 
 **All together:** combine the options of the two commands above.
+
+## Choosing between the representations
+
+Each page turns the conversations into numbers a different way, and each looks
+reasonable on its own. The **Compare** page puts them against the same outcome,
+on the same rows and the same folds, with whole groups held out.
+
+Length is always the first row, because it is the null hypothesis of text
+analysis: longer documents contain more of everything, and a representation that
+does not beat "how much was written" has not shown that content matters. The bar
+is the higher of length and chance — length can score below 0.5, and beating it
+would then be no achievement at all.
+
+A representation that could not be built appears with the reason rather than
+being skipped. Comparing three things while the reader believes they are seeing
+five is the worse failure.
+
+**Predicting well and mattering are different questions, and the page answers
+the first.** A relation can carry a large and reliable effect and still predict
+poorly, because it appears in a fraction of the rows and brings a handful of
+variables where a bag of words brings a thousand. On the corpus this tool was
+built for, the narrative relations barely beat length as predictors while
+several of them survived a properly controlled regression — read this page to
+choose what to build on, and the narratives page to decide what is true.
+
+The strongest result is often not in the table at all, which is why whether
+anything was written appears above it: on that corpus it separated the outcome
+better than any representation of what was said, on a sample the table cannot
+see.

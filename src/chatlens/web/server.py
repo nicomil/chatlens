@@ -41,7 +41,8 @@ from urllib.parse import parse_qs, urlparse
 from chatlens import adapters
 from chatlens.core import config, library, outcome
 from chatlens.web import active, multipart, views, views_library
-from chatlens.web import (views_emotions, views_narratives,
+from chatlens.web import (views_compare, views_emotions,
+                          views_narratives,
                           views_participation, views_words)
 from chatlens.web.runner import build_command, runner
 
@@ -278,6 +279,9 @@ class Handler(BaseHTTPRequestHandler):
                                cookie=cookie)
                 elif action == 'emotions':
                     self._html(views_emotions.page(name, query),
+                               cookie=cookie)
+                elif action == 'compare':
+                    self._html(views_compare.page(name, query),
                                cookie=cookie)
                 elif action == 'files':
                     self._html(views_library.files_panel(

@@ -646,3 +646,23 @@ pre.cmd {
   font-size: .85rem;
   margin: .3rem 0 .8rem;
 }
+
+/* --- Comparison --------------------------------------------------------- */
+.verdictbox {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-dim);
+  border-radius: 0 8px 8px 0;
+  padding: .9rem 1.1rem;
+  margin: 1rem 0;
+}
+.verdictbox p { margin: 0 0 .5rem; }
+.verdictbox p:last-child { margin-bottom: 0; }
+.verdictbox .note {
+  font-size: .85rem;
+  color: var(--soft);
+  border-top: 1px solid var(--rule);
+  padding-top: .5rem;
+}
+/* A representation that could not be built is shown, not skipped: comparing
+   three things while the reader believes they see five is the worse failure. */
+table.grid tr.absent td { color: var(--muted); font-style: italic; }
