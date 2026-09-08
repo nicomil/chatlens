@@ -39,7 +39,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from chatlens import adapters
-from chatlens.core import config, library
+from chatlens.core import config, library, outcome
 from chatlens.web import active, multipart, views, views_library
 from chatlens.web.runner import build_command, runner
 
@@ -510,6 +510,36 @@ class Handler(BaseHTTPRequestHandler):
         self._html(views_library.treatments_panel(
             name, message=f'Saved {len(labels)} names.'))
 
+    def _save_outcome(self, name: str) -> None:
+        """Write [outcome], or clear it when no column is chosen."""
+        form = self._form()
+        field = lambda key: (form.get(key) or [''])[0].strip()
+        column = field('column')
+        experiment = config.EXPERIMENT
+
+        if not column:
+            experiment.set('outcome', {})
+            experiment.save()
+            config.use_experiment(experiment)
+            self._html(views_library.outcome_panel(
+                name, message='Cleared. The descriptive pages are unaffected.'))
+            return
+
+        chosen = {'column': column, 'kind': field('kind'),
+                  'unit': field('unit'), 'label': field('label')}
+        # The kind and the unit arrive from selects, so a value outside the
+        # list means the form was not the one we served.
+        found = outcome.problems(chosen)
+        if found:
+            self._html(views_library.outcome_panel(name, error=' '.join(found)))
+            return
+
+        experiment.set('outcome', chosen)
+        experiment.save()
+        config.use_experiment(experiment)
+        self._html(views_library.outcome_panel(
+            name, message=f'Saved: {column}.'))
+
     def _set_adapter(self, name: str) -> None:
         chosen = (self._form().get('adapter') or [''])[0]
         if chosen not in views_library.ADAPTERS:
@@ -544,6 +574,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._save_columns(name)
                 elif action == 'treatments':
                     self._save_treatments(name)
+                elif action == 'outcome':
+                    self._save_outcome(name)
                 elif action == 'adapter':
                     self._set_adapter(name)
                 elif action == 'run':

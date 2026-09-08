@@ -16,7 +16,7 @@ from pathlib import Path
 # Runs from a source checkout without installing: the package is under src/.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
-from chatlens.core import experiment, library, tomlwrite  # noqa: E402
+from chatlens.core import experiment, library, outcome, tomlwrite  # noqa: E402
 
 
 class SlugTests(unittest.TestCase):
@@ -543,6 +543,102 @@ class InspectTests(unittest.TestCase):
     def test_blank_values_are_not_a_treatment_of_their_own(self):
         path = self.write('t\na\n\n  \nb\n')
         self.assertEqual(self.inspect.distinct(path, 't'), ['a', 'b'])
+
+
+class OutcomeTests(unittest.TestCase):
+    """The declaration of what an analysis is trying to explain.
+
+    An experiment without one keeps working: everything descriptive is
+    unaffected, and only the predictive pages are unavailable.
+    """
+
+    def test_absent_stays_absent(self):
+        """No section, no key written back — not an empty table."""
+        exp = experiment.Experiment({})
+        self.assertIsNone(exp.outcome)
+        self.assertNotIn('outcome', exp.to_config())
+
+    def test_round_trip(self):
+        declared = {'column': 'persuasion_ij', 'kind': 'binary',
+                    'unit': 'dyad_directed'}
+        exp = experiment.Experiment({'outcome': dict(declared)})
+        self.assertEqual(exp.to_config()['outcome'], declared)
+
+    def test_the_label_defaults_to_the_column_but_is_not_written_back(self):
+        """Derived values must not leak into a file that never declared them."""
+        exp = experiment.Experiment({'outcome': {'column': 'A_ji'}})
+        self.assertEqual(exp.outcome['label'], 'A_ji')
+        self.assertNotIn('label', exp.to_config()['outcome'])
+
+    def test_setting_it_updates_the_read_side(self):
+        exp = experiment.Experiment({})
+        exp.set('outcome', {'column': 'A_ji', 'kind': 'binary',
+                            'unit': 'dyad_directed'})
+        self.assertEqual(exp.outcome['column'], 'A_ji')
+
+    def test_clearing_it_removes_the_section(self):
+        exp = experiment.Experiment({'outcome': {'column': 'A_ji'}})
+        exp.set('outcome', {})
+        self.assertIsNone(exp.outcome)
+        self.assertNotIn('outcome', exp.to_config())
+
+    def test_a_bad_kind_or_unit_is_reported_not_accepted(self):
+        problems = outcome.problems({'column': 'x', 'kind': 'ordinal',
+                                     'unit': 'dyad_directed'})
+        self.assertTrue(any('Kind' in p for p in problems))
+        problems = outcome.problems({'column': 'x', 'kind': 'binary',
+                                     'unit': 'per_message'})
+        self.assertTrue(any('Unit' in p for p in problems))
+
+    def test_every_problem_is_reported_at_once(self):
+        """The page shows them together rather than one save at a time."""
+        problems = outcome.problems({'column': '', 'kind': 'ordinal',
+                                     'unit': 'nope'})
+        self.assertEqual(len(problems), 3)
+
+    def test_a_binary_column_is_summarised(self):
+        rows = [{'y': '1'}] * 30 + [{'y': '0'}] * 70
+        found = outcome.describe(rows, {'column': 'y', 'kind': 'binary'})
+        self.assertTrue(found['usable'])
+        self.assertEqual(found['positive'], 30)
+        self.assertAlmostEqual(found['share'], 0.30)
+
+    def test_a_column_that_is_not_binary_says_so(self):
+        """The commonest wrong choice: pointing at an identifier."""
+        rows = [{'y': str(i)} for i in range(40)]
+        found = outcome.describe(rows, {'column': 'y', 'kind': 'binary'})
+        self.assertFalse(found['usable'])
+        self.assertIn('not binary', found['note'])
+
+    def test_a_constant_column_has_nothing_to_explain(self):
+        rows = [{'y': '1'}] * 50
+        found = outcome.describe(rows, {'column': 'y', 'kind': 'binary'})
+        self.assertFalse(found['usable'])
+        self.assertIn('same value', found['note'])
+
+    def test_a_very_rare_outcome_is_flagged_but_still_usable(self):
+        rows = [{'y': '1'}] + [{'y': '0'}] * 999
+        found = outcome.describe(rows, {'column': 'y', 'kind': 'binary'})
+        self.assertIn('unstable', found['note'])
+
+    def test_a_continuous_column_is_summarised(self):
+        rows = [{'y': str(i)} for i in range(1, 101)]
+        found = outcome.describe(rows, {'column': 'y', 'kind': 'continuous'})
+        self.assertTrue(found['usable'])
+        self.assertEqual(found['min'], 1.0)
+        self.assertEqual(found['max'], 100.0)
+
+    def test_text_declared_continuous_says_so(self):
+        rows = [{'y': 'yes'}] * 20 + [{'y': 'no'}] * 20
+        found = outcome.describe(rows, {'column': 'y', 'kind': 'continuous'})
+        self.assertFalse(found['usable'])
+        self.assertIn('not numbers', found['note'])
+
+    def test_a_missing_column_is_not_a_crash(self):
+        found = outcome.describe([{'a': '1'}], {'column': 'y',
+                                                'kind': 'binary'})
+        self.assertFalse(found['usable'])
+        self.assertEqual(found['set'], 0)
 
 
 if __name__ == '__main__':

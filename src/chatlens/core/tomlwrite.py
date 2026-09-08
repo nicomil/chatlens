@@ -109,7 +109,8 @@ def dumps(config: dict, header: str = '') -> str:
         out += [f'# {line}' if line else '#' for line in header.splitlines()]
         out.append('')
 
-    for name in ('experiment', 'input', 'columns', 'treatments', 'lexicons'):
+    for name in ('experiment', 'input', 'columns', 'treatments', 'outcome',
+                 'lexicons'):
         _table(name, config.get(name) or {}, out)
 
     rubric = dict(config.get('rubric') or {})

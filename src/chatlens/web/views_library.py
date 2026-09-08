@@ -466,6 +466,125 @@ what the report will print.</p>
 # --- one experiment's settings ---------------------------------------------
 
 
+def _outcome_columns(unit: str):
+    """The columns of the built dataset for this unit, if it has been built.
+
+    The outcome lives in the dataset the pipeline produces, not in the raw
+    export, because that is where the adapter has already put one row per unit.
+    Before the first run there is no such file, and the field falls back to
+    typing the name — which is the honest option: we cannot offer a list we do
+    not have.
+    """
+    from chatlens.core import config, inspect, outcome as outcome_module
+
+    stem_files = sorted(config.DATASETS_DIR.glob(
+        f'*_{outcome_module.DATASET_OF.get(unit, "chat_by_partner")}_nlp.csv'))
+    if not stem_files:
+        return None, None
+    try:
+        return inspect.header_of(stem_files[0]), stem_files[0]
+    except inspect.ReadError:
+        return None, stem_files[0]
+
+
+def _outcome_summary(outcome) -> str:
+    """What the chosen column holds, so a wrong choice shows up immediately."""
+    import csv
+
+    from chatlens.core import config, outcome as outcome_module
+
+    columns, path = _outcome_columns(outcome['unit'])
+    if path is None:
+        return ('<p class="muted">No dataset has been built yet, so the column '
+                'cannot be checked. Run the analysis once and this will fill '
+                'in.</p>')
+    if columns is not None and outcome['column'] not in columns:
+        return (f'<p class="formerror">{_e(path.name)} has no column '
+                f'<b>{_e(outcome["column"])}</b>. It may belong to a different '
+                f'unit, or the name may have changed.</p>')
+    try:
+        with path.open(encoding='utf-8-sig', newline='') as handle:
+            rows = list(csv.DictReader(handle))
+    except OSError as exc:
+        return f'<p class="formerror">{_e(exc)}</p>'
+
+    found = outcome_module.describe(rows, outcome)
+    bits = [f'{found["set"]} of {found["rows"]} rows have a value']
+    if found['kind'] == 'binary' and 'share' in found:
+        bits.append(f'{found["positive"]} of them are 1 '
+                    f'({100 * found["share"]:.0f}%)')
+    elif found['kind'] == 'continuous' and 'median' in found:
+        bits.append(f'median {found["median"]:g}, '
+                    f'range {found["min"]:g} to {found["max"]:g}')
+    note = (f'<p class="formerror">{_e(found["note"])}</p>' if found['note']
+            else '')
+    badge = ('<span class="badge ok">usable</span>' if found['usable']
+             else '<span class="badge warn">not usable</span>')
+    return (f'<p class="muted">{badge} {_e(" — ".join(bits))}, '
+            f'in {_e(path.name)}.</p>{note}')
+
+
+def outcome_panel(name: str, message: str = '', error: str = '') -> str:
+    """What the experiment is trying to explain, if anything."""
+    from chatlens.core import config, outcome as outcome_module
+
+    experiment = config.EXPERIMENT
+    notes = (f'<p class="formerror">{_e(error)}</p>' if error else '')
+    notes += (f'<p class="formnote">{_e(message)}</p>' if message else '')
+
+    current = experiment.outcome or {'column': '', 'kind': 'binary',
+                                     'unit': 'dyad_directed', 'label': ''}
+    columns, _path = _outcome_columns(current['unit'])
+
+    if columns:
+        options = ['<option value="">— none —</option>']
+        for column in columns:
+            mark = ' selected' if column == current['column'] else ''
+            options.append(f'<option value="{_e(column)}"{mark}>'
+                           f'{_e(column)}</option>')
+        field = f'<select name="column">{"".join(options)}</select>'
+    else:
+        field = (f'<input type="text" name="column" '
+                 f'value="{_e(current["column"])}" '
+                 f'placeholder="column name">')
+
+    kinds = ''.join(
+        f'<option value="{k}"{" selected" if k == current["kind"] else ""}>'
+        f'{k}</option>' for k in outcome_module.KINDS)
+    units = ''.join(
+        f'<option value="{u}"{" selected" if u == current["unit"] else ""}>'
+        f'{_e(gloss)}</option>'
+        for u, gloss in outcome_module.UNITS.items())
+
+    summary = _outcome_summary(current) if current['column'] else (
+        '<p class="muted">Nothing is set. Everything descriptive works without '
+        'an outcome; the pages that predict one will say it is missing.</p>')
+
+    return f'''{notes}
+<p class="muted">The column holding what the analysis should explain — whether a
+proposal was accepted, how much someone earned, whether a group agreed. It is
+read from the dataset built for the unit you choose.</p>
+<form hx-post="{_base(name)}/outcome" hx-target="#outcome" hx-swap="innerHTML">
+  <div class="mapping">
+    <label class="field maprow"><span class="rolename">Column</span>
+      {field}
+      <span class="rolehint">what to explain</span></label>
+    <label class="field maprow"><span class="rolename">Kind</span>
+      <select name="kind">{kinds}</select>
+      <span class="rolehint">binary for yes/no, continuous for a number</span></label>
+    <label class="field maprow"><span class="rolename">One row is</span>
+      <select name="unit">{units}</select>
+      <span class="rolehint">the unit the outcome belongs to</span></label>
+    <label class="field maprow"><span class="rolename">Name</span>
+      <input type="text" name="label" value="{_e(current.get("label") or "")}"
+             placeholder="optional, for the report">
+      <span class="rolehint">how it should read on a page</span></label>
+  </div>
+  <button type="submit" class="primary">Save the outcome</button>
+</form>
+{summary}'''
+
+
 def settings_page(name: str) -> str:
     """Everything about one experiment that is not running it."""
     from chatlens.core import config
@@ -498,6 +617,9 @@ def settings_page(name: str) -> str:
 
   <h2>Treatments</h2>
   <div id="treatments">{treatments_panel(name)}</div>
+
+  <h2>What to explain</h2>
+  <div id="outcome">{outcome_panel(name)}</div>
 
   <h2>Where this experiment lives</h2>
   <p class="muted path">{_e(config.WORKSPACE)}</p>

@@ -58,6 +58,9 @@ class ConfigError(RuntimeError):
     """The file is there but says something that cannot be acted on."""
 
 
+from chatlens.core import outcome as outcome_module
+
+
 class Experiment:
     """The workspace's description of its experiment."""
 
@@ -76,7 +79,7 @@ class Experiment:
         self.declared = {
             name: dict(data.get(name) or {})
             for name in ('experiment', 'input', 'columns', 'treatments',
-                         'lexicons', 'rubric')
+                         'lexicons', 'rubric', 'outcome')
         }
         self.declared['rubric'].pop('dimensions', None)
         if (data.get('rubric') or {}).get('dimensions'):
@@ -103,6 +106,10 @@ class Experiment:
 
         # Only 'commitment' can be replaced; see core/lexicons.py.
         self.lexicons = dict(data.get('lexicons') or {})
+
+        # What the experiment is trying to explain, if it says. None is a
+        # legitimate answer: everything descriptive works without it.
+        self.outcome = outcome_module.parse(data.get('outcome'))
 
         rubric = data.get('rubric') or {}
         self.rubric_dimensions = rubric.get('dimensions')
@@ -155,6 +162,8 @@ class Experiment:
             self.input = kept
         elif table == 'treatments':
             self.treatments = kept
+        elif table == 'outcome':
+            self.outcome = outcome_module.parse(kept)
         elif table == 'lexicons':
             self.lexicons = kept
 

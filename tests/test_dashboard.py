@@ -628,6 +628,58 @@ class MappingRoutesTests(unittest.TestCase):
                                     'file=../../etc/passwd&role=messages')
         self.assertIn('no file called', body)
 
+    # --- the outcome ------------------------------------------------------
+
+    def test_the_settings_page_offers_an_outcome(self):
+        _response, body = self.call('GET', '/experiment/mapped-study/settings')
+        self.assertIn('What to explain', body)
+        self.assertIn('name="unit"', body)
+
+    def test_saving_an_outcome_writes_it(self):
+        response, body = self.call(
+            'POST', '/experiment/mapped-study/outcome',
+            'column=accepted&kind=binary&unit=dyad_directed&label=Offer+taken')
+        self.assertEqual(response.status, 200)
+        self.assertIn('Saved', body)
+        saved = self.config().declared['outcome']
+        self.assertEqual(saved['column'], 'accepted')
+        self.assertEqual(saved['unit'], 'dyad_directed')
+
+    def test_clearing_the_outcome_removes_the_section(self):
+        self.call('POST', '/experiment/mapped-study/outcome',
+                  'column=accepted&kind=binary&unit=dyad_directed')
+        _response, body = self.call('POST',
+                                    '/experiment/mapped-study/outcome',
+                                    'column=&kind=binary&unit=dyad_directed')
+        self.assertIn('Cleared', body)
+        # `declared` always holds every section key; what matters is that the
+        # cleared one is empty and so is never written back to the file.
+        self.assertFalse(self.config().declared['outcome'])
+        self.assertNotIn('outcome', self.config().to_config())
+        self.assertIsNone(self.config().outcome)
+
+    def test_a_unit_we_never_offered_is_refused(self):
+        """The selects are ours, so a value outside them is not our form."""
+        _response, body = self.call(
+            'POST', '/experiment/mapped-study/outcome',
+            'column=accepted&kind=binary&unit=per_message')
+        self.assertIn('Unit must be one of', body)
+
+    def test_a_kind_we_never_offered_is_refused(self):
+        _response, body = self.call(
+            'POST', '/experiment/mapped-study/outcome',
+            'column=accepted&kind=ordinal&unit=group')
+        self.assertIn('Kind must be one of', body)
+
+    def test_an_experiment_with_no_outcome_still_runs(self):
+        """The whole descriptive side must not depend on declaring one."""
+        self.call('POST', '/experiment/mapped-study/outcome',
+                  'column=&kind=binary&unit=group')
+        self.call('POST', '/experiment/mapped-study/input',
+                  'file=chat_log.csv&role=messages')
+        _response, body = self.call('GET', '/')
+        self.assertIn('ready', body)
+
     # --- the columns ------------------------------------------------------
 
     def test_the_form_offers_the_columns_the_file_has(self):
