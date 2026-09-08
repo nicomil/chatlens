@@ -75,6 +75,8 @@ unusual.
 
 **All together:** combine the options of the two commands above.
 
+---
+
 ## Choosing between the representations
 
 Each page turns the conversations into numbers a different way, and each looks

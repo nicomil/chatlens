@@ -72,6 +72,8 @@ standardisation happens within the sample under analysis: the values are
 comparable *between units of the same study* — that is between treatments, which
 is the intended use — but not with LIWC scores published elsewhere.
 
+---
+
 ## Emotions, and what a zero means
 
 The Emotions page counts words from the NRC Emotion Lexicon: eight emotions and

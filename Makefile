@@ -2,7 +2,7 @@
 #
 # For *using* the tool there is no need for make: install it once with
 #
-#     uv tool install chatlens          (or: pipx install chatlens)
+#     uv tool install git+https://github.com/nicomil/chatlens.git
 #
 # and then run `chatlens` in the folder holding your data. This Makefile is for
 # working on the code: it builds an editable install in .venv/ so that an edit
@@ -38,7 +38,8 @@ help: ## List the available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "To use the tool rather than work on it:  uv tool install chatlens"
+	@echo "To use the tool rather than work on it:"
+	@echo "  uv tool install git+https://github.com/nicomil/chatlens.git"
 
 $(DEPS): pyproject.toml
 	@test -d $(VENV) || { \
@@ -72,7 +73,7 @@ check: test ## Tests plus a look at the installed state
 dashboard: $(DEPS) ## Open the dashboard on the current folder
 	@$(PY) -m chatlens.cli dashboard $(ARGS)
 
-docs: $(DEPS) ## Regenerate docs/ and mkdocs.yml from README.md
+docs: $(DEPS) ## Regenerate docs/ and mkdocs.yml from README.md (clears docs/)
 	@$(PY) scripts/build_docs.py
 
 docs-serve: docs ## Build the docs and serve them locally

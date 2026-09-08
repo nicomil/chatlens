@@ -1,21 +1,42 @@
 # chatlens
 
 Text analysis of the conversations held during a behavioural experiment. It
-extracts the **topics** (with TopicGPT, Pham et al. 2024) and the **language
-measures** — volume, emotional tone, sentiment, analytical thinking, Clout,
-Authenticity — at the pair and group level, and grafts them onto the choice
-datasets, ready for Stata or R.
+turns a chat log into numbers you can take into Stata or R, and — this is the
+part that makes it more than a measuring tool — it says **which of those numbers
+is worth using**.
+
+Six ways of reading the same conversations, each on its own page:
+
+| Page | Question it answers | Needs |
+|---|---|---|
+| **Participation** | who spoke to whom, and who never did | nothing |
+| **Words** | which terms go with the outcome | `words` extra |
+| **Narratives** | who does what to whom, and which of it matters | `narratives` extra |
+| **Emotions** | eight emotion categories, and how much of the corpus they reach | a lexicon |
+| **Topics** | what the conversations were about | an API key |
+| **Compare** | which of the above is worth building on | `words` extra |
+
+Plus the deterministic language measures — volume, emotional tone, sentiment,
+analytical thinking, Clout, Authenticity — computed at pair and group level and
+grafted onto your choice datasets.
+
+**One idea runs through all of it.** Longer messages contain more of everything,
+so a text measure that looks impressive is often measuring how much somebody
+typed. Every page that predicts anything shows length beside it, and says so when
+length wins. On the experiment this was built for, that turned out to be the
+answer twice.
 
 The code is split where the reusable part ends and the experiment-specific part
 begins. An **adapter** turns one experiment's export into the canonical message
-tables; the **core** — measures, rubric, topics, aggregation, report — works
-from those tables alone and never reads a raw export itself.
+tables; the **core** — measures, rubric, topics, aggregation, report — works from
+those tables alone and never reads a raw export itself.
 
-Two adapters ship with it. `generic_chat` needs no code at all where the
-export is already one message per row: the column names go in a configuration
-file. `otree_coalition` is the worked example of the other kind, written for a
+Two adapters ship with it. `generic_chat` needs no code at all where the export
+is already one message per row: the column names go in a configuration file.
+`otree_coalition` is the worked example of the other kind, written for a
 three-player coalition game in oTree, where the groups, the channels and the
-choices all have to be reconstructed. See §5 for how to run your own study.
+choices all have to be reconstructed. See [§5](#5-your-own-experiment) for how to
+run your own study.
 
 ## The three things to know
 
@@ -42,15 +63,16 @@ repository, so they cannot be committed by mistake.
 
 ## Quick start
 
-The same three lines on macOS, Windows and Linux:
-
 ```bash
-uv tool install chatlens        # once only
-cd my_experiment                # the folder holding input/
-chatlens all                    # merge + automatic measures
+uv tool install git+https://github.com/nicomil/chatlens.git
+chatlens dashboard
 ```
 
-Nothing to analyse yet? Try it on a synthetic study first — no data of anyone's,
+That opens the library in your browser. Create an experiment, drop the CSVs in,
+say which column is which, and press Start run — no editor, no paths, no
+configuration file to write by hand.
+
+Nothing to analyse yet? Try it on a synthetic study first — nobody's data,
 generated on the spot:
 
 ```bash
@@ -61,24 +83,33 @@ It writes a small four-player bargaining experiment with two treatments, runs
 the whole pipeline over it and leaves you a report to read. It is the same
 procedure you will run on your own data.
 
+### From the terminal instead
+
+```bash
+cd my_experiment       # the folder holding input/
+chatlens all           # merge + the automatic measures, a few seconds
+```
+
 `chatlens --help` lists every command. The main ones:
 
 | Command | What it does | API key |
 |---|---|---|
+| `chatlens dashboard` | opens the library of experiments in the browser | — |
 | `chatlens all` | merge + automatic measures, a few seconds | **no** |
 | `chatlens merge` / `chatlens analyze` | the two steps separately | no |
 | `chatlens keys` | configures the API keys, guided | — |
 | `chatlens analyze --llm --llm-replicates 2` | measures + validation rubric | yes |
 | `chatlens analyze --topics` | measures + topics with TopicGPT | yes |
+| `chatlens subtopics` | subdivides the topics a run already found | yes |
 | `chatlens all --llm --topics` | everything: rubric and topics included | yes |
-| `chatlens dashboard` | opens the library of experiments in the browser | — |
-| `chatlens experiments` | lists them from the terminal | — |
+| `chatlens experiments` | lists the experiments from the terminal | — |
 | `chatlens report` | regenerates the readable summary | — |
 | `chatlens runs` | lists the archived runs | — |
 | `chatlens runs --prune 2` | keeps the last 2 and deletes the others | — |
 | `chatlens status` | what is in input, in output and among the keys | — |
 | `chatlens demo` | writes a synthetic study and analyses it | — |
 | `chatlens install-topicgpt` | installs TopicGPT (only needed for the topics) | — |
+| `chatlens install-relatio` | installs RELATIO (optional, for the narratives) | — |
 
 **`all` is both *steps*, not everything.** It means merge plus analysis, as
 opposed to `merge` and `analyze` taken singly: it runs only the automatic
@@ -86,9 +117,6 @@ measures, needs no key at all and takes a few seconds. Adding `--llm` and
 `--topics` brings in the validation rubric and the topics, which need a key and
 take far longer. You start from `chatlens all`; you add the rest once the keys
 are there.
-
-Full documentation, the same text split into pages:
-<https://nicomil.github.io/chatlens>
 
 ## Contents
 
@@ -98,26 +126,31 @@ Full documentation, the same text split into pages:
 4. [Participant data](#4-participant-data)
 5. [Your own experiment](#5-your-own-experiment)
 6. [The analysis procedure](#6-the-analysis-procedure)
-7. [The files produced](#7-the-files-produced)
-8. [Before analysing: three filters](#8-before-analysing-three-filters)
-9. [How the measures are built](#9-how-the-measures-are-built)
-10. [TopicGPT](#10-topicgpt)
-11. [Costs and volumes](#11-costs-and-volumes)
-12. [If something does not add up](#12-if-something-does-not-add-up)
-13. [Checking the tools](#13-checking-the-tools)
-14. [Results on the pilot](#14-results-on-the-pilot)
-
----
-
+7. [The pages in the dashboard](#7-the-pages-in-the-dashboard)
+8. [The files produced](#8-the-files-produced)
+9. [Before analysing: three filters](#9-before-analysing-three-filters)
+10. [How the measures are built](#10-how-the-measures-are-built)
+11. [TopicGPT](#11-topicgpt)
+12. [Costs and volumes](#12-costs-and-volumes)
+13. [If something does not add up](#13-if-something-does-not-add-up)
+14. [Checking the tools](#14-checking-the-tools)
+15. [Results on the pilot](#15-results-on-the-pilot)
 ## 1. What it does, in brief
 
 Three independent stages, each switchable on its own.
 
-| Stage | Option | Does it need a credential? |
+| Stage | Where | Does it need a credential? |
 |---|---|---|
-| Deterministic text measures | (always on) | **no** |
+| Deterministic text measures | always on | **no** |
+| Participation — who spoke to whom | a page | **no** |
+| Words, and the comparison | a page, `words` extra | **no** |
+| Narratives | a page, `narratives` extra | **no** |
+| Emotions | a page, plus a lexicon you request | **no** |
 | Validation rubric | `--llm` | one of OpenAI, Anthropic or a local model |
 | TopicGPT | `--topics` | depends on the backend |
+
+Only the last two cost anything. Everything else runs on your machine, on data
+that never leaves it.
 
 The first stage runs on Python's standard library alone: it can be executed
 straight away, with nothing to obtain first. The other two serve, respectively,
@@ -137,8 +170,11 @@ for the experiment-specific part, `web/` for the dashboard.
 One command, the same on macOS, Windows and Linux:
 
 ```bash
-uv tool install chatlens
+uv tool install git+https://github.com/nicomil/chatlens.git
 ```
+
+Not on PyPI yet, so it installs from the repository — the command is the same
+shape and does the same thing.
 
 [uv](https://docs.astral.sh/uv/) is a single binary and installs Python itself
 if the machine has none, which is why this works on a Windows laptop with
@@ -154,16 +190,29 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-`pipx install chatlens` works just as well if you already use pipx, and so does
-`pip install chatlens` inside a virtual environment of your own.
+`pipx` and a plain `pip install` into a virtual environment of your own work the
+same way, with the same URL.
 
-This installs what the deterministic measures and the dashboard need. The
-optional stages ask for more:
+This installs what the deterministic measures and the dashboard need — about
+four megabytes, one dependency. The optional stages ask for more, and each is
+its own extra so that nothing large arrives unasked:
 
 ```bash
-uv tool install "chatlens[llm]"      # + the validation rubric
-uv tool install "chatlens[all]"      # + everything
+uv tool install "git+https://github.com/nicomil/chatlens.git#egg=chatlens[all]"
 ```
+
+| Extra | Adds | Roughly |
+|---|---|---|
+| `llm` | the validation rubric | small |
+| `topics` | TopicGPT (plus `chatlens install-topicgpt`) | small |
+| `words` | the word clouds, the coefficient tables and the comparison page | 150 MB |
+| `narratives` | the relational analysis | 500 MB with the model |
+| `all` | all four | |
+
+Every page that needs one says so, with the command already written out for the
+interpreter chatlens is running under. That last part matters: chatlens lives in
+an environment of its own, so a `pip install` typed into a shell installs
+somewhere else and the page goes on reporting the same thing missing.
 
 Check it arrived:
 
@@ -205,6 +254,64 @@ py -m venv .venv
 .venv\Scripts\python -m pip install -e ".[llm,topics]"
 .venv\Scripts\python tests\test_merge.py
 ```
+
+## Optional extras
+
+The tool itself is about four megabytes and has one dependency. Everything that
+needs a large library is an extra, absent until asked for, and the page that
+needs it says so with the exact command rather than failing.
+
+| Extra | Adds | Roughly |
+|---|---|---|
+| `llm` | the validation rubric | small |
+| `topics` | TopicGPT (plus `chatlens install-topicgpt`) | small |
+| `words` | word clouds and the coefficient tables | 150 MB |
+
+```bash
+uv tool install --reinstall "chatlens[words]"
+```
+
+**`--reinstall`, not `--force`.** An extra added to an existing installation
+needs the environment rebuilt, and `--force` alone will not rebuild one that uv
+considers current.
+
+The commands the pages print are built from the interpreter chatlens is actually
+running under. That matters more than it sounds: chatlens normally lives in its
+own environment, so a `pip install` typed into a shell installs somewhere else
+and the page goes on reporting the same thing missing.
+
+### The narratives extra
+
+```bash
+uv tool install --reinstall "chatlens[narratives]"
+python -m spacy download en_core_web_md
+```
+
+Two commands, because a language model is a separate package from the library
+that loads it: `pip install spacy` succeeds and leaves the page just as broken.
+The page prints both, each naming this installation's own interpreter.
+
+RELATIO itself is optional on top of that:
+
+```bash
+chatlens install-relatio
+```
+
+It is a command rather than a dependency because it pulls torch and transformers
+— about 1.6 GB against the four megabytes chatlens takes — and nobody should
+download that by opening a page. It is cloned into this machine's application
+data directory, not into the checkout, for the same reason TopicGPT is.
+
+The page works without it and says which route it took. The difference is what
+happens to phrases that are **not** declared entities: without the package each
+is kept under its head word, with it they are clustered and the number of
+clusters is chosen automatically. On a corpus with three known participants that
+changed nothing worth reporting — 361 against 362 for the commonest relation —
+and on one with many entities and no list of them it is the whole value.
+
+If it is installed but cannot be imported, the page falls back to the lighter
+route and says why rather than failing. The usual cause is `transformers`
+refusing to load beside Keras 3, which `pip install tf-keras` resolves.
 
 ## 3. API keys
 
@@ -567,7 +674,128 @@ unusual.
 
 ---
 
-## 7. The files produced
+## Choosing between the representations
+
+Each page turns the conversations into numbers a different way, and each looks
+reasonable on its own. The **Compare** page puts them against the same outcome,
+on the same rows and the same folds, with whole groups held out.
+
+Length is always the first row, because it is the null hypothesis of text
+analysis: longer documents contain more of everything, and a representation that
+does not beat "how much was written" has not shown that content matters. The bar
+is the higher of length and chance — length can score below 0.5, and beating it
+would then be no achievement at all.
+
+A representation that could not be built appears with the reason rather than
+being skipped. Comparing three things while the reader believes they are seeing
+five is the worse failure.
+
+**Predicting well and mattering are different questions, and the page answers
+the first.** A relation can carry a large and reliable effect and still predict
+poorly, because it appears in a fraction of the rows and brings a handful of
+variables where a bag of words brings a thousand. On the corpus this tool was
+built for, the narrative relations barely beat length as predictors while
+several of them survived a properly controlled regression — read this page to
+choose what to build on, and the narratives page to decide what is true.
+
+The strongest result is often not in the table at all, which is why whether
+anything was written appears above it: on that corpus it separated the outcome
+better than any representation of what was said, on a sample the table cannot
+see.
+
+## 7. The pages in the dashboard
+
+Everything below runs in the browser, on a local server that opens with
+`chatlens dashboard`. This is how the tool is meant to be used; the commands
+exist for scripting and for the stages that take minutes.
+
+Each page answers one question, and they are ordered so the cheap and certain
+ones come first.
+
+### Participation — who spoke to whom
+
+Every other page measures text, so it can only see the pairs that produced some.
+This one shows the **whole grid**: for every group, every ordered pair of its
+members, whether or not anything passed between them.
+
+That matters more than it sounds. A row in a chat dataset is built from a
+message, so a pair who never exchanged one leaves no row — and every text
+measure is therefore computed on a sample **conditional on having spoken**, a
+selection that is easy to forget precisely because it never appears anywhere.
+
+On the coalition experiment this page held the strongest result in the dataset:
+holding the receiver fixed, where exactly one of their possible partners had
+written to them, the outcome went to the one who wrote 357 times against 35.
+
+Needs no extra and no key. Start here.
+
+### Words — the look before the statistics
+
+A penalised regression over unigrams and bigrams against the declared outcome,
+drawn as two clouds — the terms that go with it and the terms that go against —
+and listed as a table. Downloads as PNG, SVG and CSV.
+
+The **penalty** is a control rather than a constant, and moving it is the point
+of the page: watching terms appear and disappear says how fragile the selection
+is, which a single table hides.
+
+A term being kept says it carries signal; its size says how much the penalty let
+it keep. None of it is an estimate.
+
+Needs the `words` extra.
+
+### Narratives — who does what to whom
+
+The same text read as (agent, verb, patient) relations rather than as words. Two
+properties make that worth having. A relation comes out of a **sentence**, so
+nothing has to be generalisable at the level of a whole document — which is
+where topic modelling gives up on short conversations. And a relation has a
+**direction**, which a word count cannot represent: in a study of who supports
+whom, "I support you" and "I support the other one" are opposite moves made of
+the same words.
+
+The page will not run until you name the entities, and that is deliberate. Left
+to be grouped by similarity, `i` and `you` fall together — they sit in the same
+positions and mean the same kind of thing — and the speaker stops being
+distinguishable from the person being spoken to. Nothing but the experiment can
+know which words are its participants.
+
+Needs the `narratives` extra and a language model; optionally the RELATIO
+package, which the page uses when it is installed and tells you which route it
+took.
+
+### Emotions — eight categories from a word list
+
+Counts from the NRC Emotion Lexicon, which is free for research and distributed
+through a form. The page says where to request it and where to put it.
+
+Half the page is about coverage, and that is not padding: a document containing
+none of the listed words scores zero on every category, which is an absence of
+measurement rather than an absence of feeling, and the output column cannot tell
+the two apart.
+
+### Compare — which representation to use
+
+All of them against the same outcome, on the same rows and the same folds. This
+is the page that answers the practical question, and the one to read before
+building anything on a set of columns.
+
+Length is always the first row, because it is the null hypothesis of text
+analysis: longer documents contain more of everything, and a representation that
+does not beat "how much was written" has not shown that content matters.
+
+### Settings — everything about one experiment
+
+Files and their roles, the column mapping, the treatment labels, the outcome and
+the narrative entities. All of it is written into that experiment's own
+`experiment.toml`, so the folder can be copied to a colleague complete.
+
+**What to explain** is the one to set first. Until an experiment declares an
+outcome — which column holds what the analysis should explain, and at which unit
+— the tool can only describe the text. With one declared, the pages above turn
+from descriptions into answers.
+
+## 8. The files produced
 
 Everything under `output/`.
 
@@ -731,7 +959,7 @@ are not needed for Stata.
 
 ---
 
-## 8. Before analysing: three filters
+## 9. Before analysing: three filters
 
 **`group_valid == 1`** — excludes the interrupted triads and those where at
 least one member let a timer expire, as agreed. The full sample stays available
@@ -756,7 +984,7 @@ conversation.
 
 ---
 
-## 9. How the measures are built
+## 10. How the measures are built
 
 This section is for whoever writes the paper: it says what is an exact
 replication and what is an approximation.
@@ -832,7 +1060,36 @@ is the intended use — but not with LIWC scores published elsewhere.
 
 ---
 
-## 10. TopicGPT
+## Emotions, and what a zero means
+
+The Emotions page counts words from the NRC Emotion Lexicon: eight emotions and
+two sentiments, about fourteen thousand English words. It is free for research
+and distributed through a form, so it is not shipped — the page says where to
+request it and where to put it.
+
+**A zero is two different things and the column cannot tell them apart.** A
+document scores by containing words that are on the list; one containing none
+scores zero on every category, which is an absence of measurement rather than an
+absence of feeling. Anything built on these columns should carry the unmeasured
+rows as missing, not as zeros, or the model will read "we could not tell" as
+"calm".
+
+The page therefore always shows how much of the corpus could be measured at all,
+by document length, because the shape says where the limit is:
+
+- **Falling with length** — the documents are the constraint. No word list finds
+  emotion in "ok" or "sure", and a larger one will not change that. On the corpus
+  this tool was built for, 73% of documents of seven words or fewer contained no
+  listed word, against 8% of those over thirty.
+- **High everywhere** — the word list is the constraint: a vocabulary it does not
+  cover.
+
+Category shares are computed over the documents that could be measured, not over
+all of them. Dividing by everything puts every category over the same inflated
+denominator, and an unmeasurable corpus comes out looking uniformly unemotional
+rather than unmeasured.
+
+## 11. TopicGPT
 
 The adapter **does not rewrite the algorithm**: it prepares the input in the
 expected format, invokes the official functions in the order the paper
@@ -922,7 +1179,57 @@ at a compatible gateway through `OPENAI_BASE_URL`.
 
 ---
 
-## 11. Costs and volumes
+### When most documents come back with no topic
+
+The paper's prompt asks for a topic that is *generalisable* and not specific to
+the document, and offers "None" as a legitimate answer. On a corpus where every
+group is doing the same task, "None" can be the majority answer, and the overall
+rate does not say why.
+
+The report therefore breaks it down by document length, because the **shape**
+identifies the cause and the causes call for opposite remedies:
+
+- **The rate falls with length.** Short documents are the ones returning
+  nothing, which is what a topic model should do with very little text. A
+  coarser unit of analysis leaves fewer of them.
+- **The rate is U-shaped.** The longest documents return nothing almost as often
+  as the shortest. This is not a length problem and reshaping the unit will not
+  fix it: the model is asked for one generalisable label and a long conversation
+  covering greeting, bargaining, joking and agreeing does not have one.
+
+On the corpus this tool was built for the second shape held — 82%, 67%, 62%, 83%
+across length quartiles of whole conversations — and both obvious remedies were
+tried at some expense before the shape was looked at. Seeding with example topics
+does not help either: in four configurations the model reused what it was given
+and added nothing of its own.
+
+### Second-level topics
+
+```bash
+chatlens subtopics                    # subdivides the topics of the last run
+chatlens subtopics --prompt my_examples.txt
+```
+
+The topics that survive refinement become parents and the model is asked what
+runs through the documents assigned to each. Documents are batched into the
+prompt, so a parent holding a thousand conversations costs **one call**: this is
+the cheapest phase by a wide margin.
+
+Two cautions, and the command prints the second one itself.
+
+**The examples decide the answer.** The prompt carries example subtopics, and
+Appendix D of the paper shows they control the granularity of what comes back.
+Running two prompts with different examples and comparing says considerably more
+than running one and believing it.
+
+**Check that the grounding held.** The method asks each subtopic to name the
+documents supporting it, so that it is grounded rather than invented. The command
+prints how many each one actually cited. On a parent of 1,383 documents the
+subtopics cited documents 1–10; on one of 136 they cited all 136. Both are
+failures of the same safeguard, and they mean the labels carry no prevalence:
+counting how often a subtopic was "used" would be counting an artefact.
+
+## 12. Costs and volumes
 
 On the final dataset (~1,557 participants, ~519 triads) the directed pairs will
 be about 3,100 and the groups 519.
@@ -950,7 +1257,7 @@ refused.
 
 ---
 
-## 12. If something does not add up
+## 13. If something does not add up
 
 **"Missing file: ..._messages_long.csv"** — the merge was not run:
 `chatlens merge`, or directly `chatlens all`.
@@ -1001,7 +1308,7 @@ present, without going out to the network.
 
 ---
 
-## 13. Checking the tools
+## 14. Checking the tools
 
 From a source checkout:
 
@@ -1033,7 +1340,7 @@ language, key loading and provider selection.
 
 ---
 
-## 14. Results on the pilot
+## 15. Results on the pilot
 
 Stage 1 was run on all 311 messages of the pilot of 18 August 2026.
 

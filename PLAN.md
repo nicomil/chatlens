@@ -1,5 +1,10 @@
 # Plan — bringing the new analysis into chatlens
 
+*Internal working note, not part of the published documentation. It lives at the
+repository root rather than in `docs/`, because `make docs` clears that folder
+and regenerates it from README.md — anything hand-written there is deleted on the
+next build.*
+
 Work done on the coalition-formation experiment produced several things this
 tool does not have: a check that stops a run which lost documents, a bag-of-words
 layer with word clouds, a relational analysis that is the only content measure to

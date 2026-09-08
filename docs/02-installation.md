@@ -3,8 +3,11 @@
 One command, the same on macOS, Windows and Linux:
 
 ```bash
-uv tool install chatlens
+uv tool install git+https://github.com/nicomil/chatlens.git
 ```
+
+Not on PyPI yet, so it installs from the repository — the command is the same
+shape and does the same thing.
 
 [uv](https://docs.astral.sh/uv/) is a single binary and installs Python itself
 if the machine has none, which is why this works on a Windows laptop with
@@ -20,16 +23,29 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-`pipx install chatlens` works just as well if you already use pipx, and so does
-`pip install chatlens` inside a virtual environment of your own.
+`pipx` and a plain `pip install` into a virtual environment of your own work the
+same way, with the same URL.
 
-This installs what the deterministic measures and the dashboard need. The
-optional stages ask for more:
+This installs what the deterministic measures and the dashboard need — about
+four megabytes, one dependency. The optional stages ask for more, and each is
+its own extra so that nothing large arrives unasked:
 
 ```bash
-uv tool install "chatlens[llm]"      # + the validation rubric
-uv tool install "chatlens[all]"      # + everything
+uv tool install "git+https://github.com/nicomil/chatlens.git#egg=chatlens[all]"
 ```
+
+| Extra | Adds | Roughly |
+|---|---|---|
+| `llm` | the validation rubric | small |
+| `topics` | TopicGPT (plus `chatlens install-topicgpt`) | small |
+| `words` | the word clouds, the coefficient tables and the comparison page | 150 MB |
+| `narratives` | the relational analysis | 500 MB with the model |
+| `all` | all four | |
+
+Every page that needs one says so, with the command already written out for the
+interpreter chatlens is running under. That last part matters: chatlens lives in
+an environment of its own, so a `pip install` typed into a shell installs
+somewhere else and the page goes on reporting the same thing missing.
 
 Check it arrived:
 

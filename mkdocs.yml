@@ -49,14 +49,15 @@ nav:
   - "Participant data": 04-participant-data.md
   - "Your own experiment": 05-your-own-experiment.md
   - "The analysis procedure": 06-the-analysis-procedure.md
-  - "The files produced": 07-the-files-produced.md
-  - "Before analysing: three filters": 08-before-analysing-three-filters.md
-  - "How the measures are built": 09-how-the-measures-are-built.md
-  - "TopicGPT": 10-topicgpt.md
-  - "Costs and volumes": 11-costs-and-volumes.md
-  - "If something does not add up": 12-if-something-does-not-add-up.md
-  - "Checking the tools": 13-checking-the-tools.md
-  - "Results on the pilot": 14-results-on-the-pilot.md
+  - "The pages in the dashboard": 07-the-pages-in-the-dashboard.md
+  - "The files produced": 08-the-files-produced.md
+  - "Before analysing: three filters": 09-before-analysing-three-filters.md
+  - "How the measures are built": 10-how-the-measures-are-built.md
+  - "TopicGPT": 11-topicgpt.md
+  - "Costs and volumes": 12-costs-and-volumes.md
+  - "If something does not add up": 13-if-something-does-not-add-up.md
+  - "Checking the tools": 14-checking-the-tools.md
+  - "Results on the pilot": 15-results-on-the-pilot.md
 
 extra:
   social:

@@ -32,19 +32,11 @@ Saved to /.../.env
 Permissions restricted to the owner (600).
 
 Checking the keys:
-  OK   OpenAI: key valid and in credit
+  OK   OpenAI: key valid, 87 models available
 ```
 
-If a key is wrong it says so unambiguously, and repeats the provider's own
-explanation: `FAIL OpenAI: key rejected (HTTP 401): Incorrect API key provided`.
-
-The check sends **one minimal completion**, costing a fraction of a cent, rather
-than asking the provider to list its models. Listing is free, which is exactly
-the problem: it answers successfully on a key with no credit left on it, so it
-confirms the key exists and nothing about whether it can do any work. An analysis
-would then start, spend what credit there was, and stop part-way through. A key
-that is valid but out of credit is reported separately:
-`FAIL OpenAI: no capacity — out of credit or rate limited (HTTP 429)`.
+If a key is wrong it says so unambiguously: `FAIL OpenAI: key rejected
+(HTTP 401)`.
 
 Once that is done nothing else is needed: the pipeline loads them on every run.
 

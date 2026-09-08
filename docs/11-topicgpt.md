@@ -86,6 +86,8 @@ are two roads that require no change to the authors' code: the `vertex` backend,
 which in the repository builds an `AnthropicVertex` client, or `openai` pointed
 at a compatible gateway through `OPENAI_BASE_URL`.
 
+---
+
 ### When most documents come back with no topic
 
 The paper's prompt asks for a topic that is *generalisable* and not specific to
