@@ -703,6 +703,7 @@ def page(experiment_slug: str = '') -> str:
   <h1>{_e(named) if named else 'Text analysis'}</h1>
   <span class="muted">{_e(dataset)}</span>
   {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/participation">Participation</a>' if experiment_slug else ''}
+  {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/words">Words</a>' if experiment_slug else ''}
   {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/settings">Settings</a>' if experiment_slug else ''}
 </header>
 

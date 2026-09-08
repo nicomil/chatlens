@@ -37,6 +37,7 @@ jobs:
           python tests/test_dashboard.py
           python tests/test_library.py
           python tests/test_participation.py
+          python tests/test_words.py
 
       - name: The console script works
         run: |

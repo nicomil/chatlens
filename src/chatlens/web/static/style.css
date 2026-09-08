@@ -601,3 +601,48 @@ table.grid thead th {
 }
 table.grid tbody tr:last-child td { border-bottom: 0; }
 table.grid td.num, table.grid th.num { text-align: right; white-space: nowrap; }
+
+/* --- Words -------------------------------------------------------------- */
+.wordform {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+  align-items: flex-end;
+  padding: .9rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  margin-bottom: 1rem;
+}
+.wordform .field { display: flex; flex-direction: column; gap: .25rem; }
+.wordform .rolehint { font-size: .74rem; color: var(--muted); }
+
+.clouds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.clouds figure { margin: 0; }
+.clouds img {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: #fff;
+}
+.clouds figcaption {
+  font-size: .8rem;
+  color: var(--muted);
+  padding-top: .4rem;
+}
+
+pre.cmd {
+  background: var(--band);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: .6rem .8rem;
+  overflow-x: auto;
+  font-size: .85rem;
+  margin: .3rem 0 .8rem;
+}

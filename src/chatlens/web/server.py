@@ -41,7 +41,7 @@ from urllib.parse import parse_qs, urlparse
 from chatlens import adapters
 from chatlens.core import config, library, outcome
 from chatlens.web import active, multipart, views, views_library
-from chatlens.web import views_participation
+from chatlens.web import views_participation, views_words
 from chatlens.web.runner import build_command, runner
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
@@ -266,6 +266,12 @@ class Handler(BaseHTTPRequestHandler):
                     self._html(views_library.settings_page(name), cookie=cookie)
                 elif action == 'participation':
                     self._html(views_participation.page(name), cookie=cookie)
+                elif action == 'words':
+                    self._html(views_words.page(name, query), cookie=cookie)
+                elif action == 'words/panel':
+                    self._html(views_words.panel(name, query))
+                elif action.startswith('words/'):
+                    self._words_file(name, action, query)
                 elif action == 'files':
                     self._html(views_library.files_panel(
                         name, confirm_delete=(query.get('confirm') or [''])[0]))
@@ -512,6 +518,53 @@ class Handler(BaseHTTPRequestHandler):
         config.use_experiment(experiment)
         self._html(views_library.treatments_panel(
             name, message=f'Saved {len(labels)} names.'))
+
+    def _words_file(self, name: str, action: str, query) -> None:
+        """A figure or a table, generated for the parameters in the query.
+
+        Nothing is written to disk. The page is a local server and the files it
+        offers are small, so they are produced per request rather than left
+        lying about in the workspace where a later run would have to explain
+        them.
+        """
+        found, _declared, problem, params = views_words.result(query)
+        if problem:
+            self._deny(problem)
+            return
+
+        direction = (query.get('direction') or ['positive'])[0]
+        stem = (f'{params["ngrams"]}-{params["min_df"]}-{params["penalty"]}-'
+                f'{"with" if direction == "positive" else "against"}')
+        try:
+            if action == 'words/terms.csv':
+                body = views_words.words.table_csv(found['kept']).encode('utf-8')
+                self._download(body, 'text/csv; charset=utf-8',
+                               f'terms-{params["ngrams"]}-'
+                               f'{params["penalty"]}.csv')
+                return
+            fmt = 'svg' if action.endswith('.svg') else 'png'
+            body = views_words.words.cloud_image(
+                found['kept'], direction == 'positive', fmt)
+        except ValueError as exc:
+            self._deny(str(exc))
+            return
+
+        if fmt == 'svg':
+            self._download(body, 'image/svg+xml', f'cloud-{stem}.svg')
+        else:
+            self._send(body, content_type='image/png')
+
+    def _download(self, body: bytes, content_type: str, filename: str) -> None:
+        """Offered as a file rather than rendered, with a name worth keeping."""
+        self.send_response(200)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Content-Disposition',
+                         f'attachment; filename="{filename}"')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        self.wfile.write(body)
 
     def _save_outcome(self, name: str) -> None:
         """Write [outcome], or clear it when no column is chosen."""

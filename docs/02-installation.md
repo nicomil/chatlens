@@ -71,3 +71,28 @@ py -m venv .venv
 .venv\Scripts\python -m pip install -e ".[llm,topics]"
 .venv\Scripts\python tests\test_merge.py
 ```
+
+## Optional extras
+
+The tool itself is about four megabytes and has one dependency. Everything that
+needs a large library is an extra, absent until asked for, and the page that
+needs it says so with the exact command rather than failing.
+
+| Extra | Adds | Roughly |
+|---|---|---|
+| `llm` | the validation rubric | small |
+| `topics` | TopicGPT (plus `chatlens install-topicgpt`) | small |
+| `words` | word clouds and the coefficient tables | 150 MB |
+
+```bash
+uv tool install --reinstall "chatlens[words]"
+```
+
+**`--reinstall`, not `--force`.** An extra added to an existing installation
+needs the environment rebuilt, and `--force` alone will not rebuild one that uv
+considers current.
+
+The commands the pages print are built from the interpreter chatlens is actually
+running under. That matters more than it sounds: chatlens normally lives in its
+own environment, so a `pip install` typed into a shell installs somewhere else
+and the page goes on reporting the same thing missing.
