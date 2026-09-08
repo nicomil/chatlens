@@ -39,6 +39,7 @@ jobs:
           python tests/test_participation.py
           python tests/test_words.py
           python tests/test_narratives.py
+          python tests/test_emotions.py
 
       - name: The console script works
         run: |

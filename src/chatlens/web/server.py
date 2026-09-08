@@ -41,7 +41,8 @@ from urllib.parse import parse_qs, urlparse
 from chatlens import adapters
 from chatlens.core import config, library, outcome
 from chatlens.web import active, multipart, views, views_library
-from chatlens.web import views_narratives, views_participation, views_words
+from chatlens.web import (views_emotions, views_narratives,
+                          views_participation, views_words)
 from chatlens.web.runner import build_command, runner
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
@@ -274,6 +275,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._words_file(name, action, query)
                 elif action == 'narratives':
                     self._html(views_narratives.page(name, query),
+                               cookie=cookie)
+                elif action == 'emotions':
+                    self._html(views_emotions.page(name, query),
                                cookie=cookie)
                 elif action == 'files':
                     self._html(views_library.files_panel(

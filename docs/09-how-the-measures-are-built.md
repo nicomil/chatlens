@@ -71,3 +71,32 @@ scale because it standardises them against a proprietary reference corpus. Here
 standardisation happens within the sample under analysis: the values are
 comparable *between units of the same study* — that is between treatments, which
 is the intended use — but not with LIWC scores published elsewhere.
+
+## Emotions, and what a zero means
+
+The Emotions page counts words from the NRC Emotion Lexicon: eight emotions and
+two sentiments, about fourteen thousand English words. It is free for research
+and distributed through a form, so it is not shipped — the page says where to
+request it and where to put it.
+
+**A zero is two different things and the column cannot tell them apart.** A
+document scores by containing words that are on the list; one containing none
+scores zero on every category, which is an absence of measurement rather than an
+absence of feeling. Anything built on these columns should carry the unmeasured
+rows as missing, not as zeros, or the model will read "we could not tell" as
+"calm".
+
+The page therefore always shows how much of the corpus could be measured at all,
+by document length, because the shape says where the limit is:
+
+- **Falling with length** — the documents are the constraint. No word list finds
+  emotion in "ok" or "sure", and a larger one will not change that. On the corpus
+  this tool was built for, 73% of documents of seven words or fewer contained no
+  listed word, against 8% of those over thirty.
+- **High everywhere** — the word list is the constraint: a vocabulary it does not
+  cover.
+
+Category shares are computed over the documents that could be measured, not over
+all of them. Dividing by everything puts every category over the same inflated
+denominator, and an unmeasurable corpus comes out looking uniformly unemotional
+rather than unmeasured.

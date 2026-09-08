@@ -705,6 +705,7 @@ def page(experiment_slug: str = '') -> str:
   {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/participation">Participation</a>' if experiment_slug else ''}
   {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/words">Words</a>' if experiment_slug else ''}
   {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/narratives">Narratives</a>' if experiment_slug else ''}
+  {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/emotions">Emotions</a>' if experiment_slug else ''}
   {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/settings">Settings</a>' if experiment_slug else ''}
 </header>
 
