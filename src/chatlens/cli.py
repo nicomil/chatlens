@@ -217,6 +217,20 @@ def build_parser() -> argparse.ArgumentParser:
                          help='where to clone it (default: this machine\'s '
                               'application data directory)')
 
+    sp_sub = sub.add_parser(
+        'subtopics', parents=[common],
+        help='second-level topics under the ones already found')
+    sp_sub.add_argument('--run', type=Path, default=None,
+                        help='the completed topic run to subdivide '
+                             '(default: output/topicgpt)')
+    sp_sub.add_argument('--prompt', type=Path, default=None,
+                        help="a prompt with your own example subtopics; the "
+                             "examples control the granularity of the result, "
+                             "so running two and comparing says more than one")
+    sp_sub.add_argument('--repo', type=Path, default=None)
+    sp_sub.add_argument('--api', default='openai')
+    sp_sub.add_argument('--model', default='gpt-4o')
+
     sub.add_parser('keys', parents=[common], help='configure the API keys')
     sub.add_parser('status', parents=[common],
                    help='what is in input, output and among the keys')
@@ -558,6 +572,51 @@ def cmd_status(_args) -> int:
     return 0
 
 
+def cmd_subtopics(args) -> int:
+    """Subdivide the topics a completed run already found.
+
+    Cheap: the documents are batched into the prompt, so each parent costs one
+    call. What it produces has to be read with care, and the grounding table
+    printed afterwards is how to read it.
+    """
+    from chatlens.core import config, topicgpt
+
+    config.load_env()
+    run_dir = args.run or config.TOPICS_DIR
+    repo = args.repo or config.topicgpt_repo()
+    try:
+        topic_file = topicgpt.subtopics(
+            run_dir, repo, api=args.api, model=args.model,
+            prompt_file=args.prompt)
+    except (topicgpt.TopicGPTUnavailable, topicgpt.TopicGPTIncomplete) as exc:
+        print(f'\n{exc}')
+        return 1
+
+    print()
+    print(topic_file.read_text(encoding='utf-8').rstrip())
+
+    grounding = topicgpt.subtopic_grounding(run_dir)
+    if grounding:
+        print()
+        print('  How much of what it was shown each subtopic actually cited:')
+        print(f'  {"subtopic":30s} {"cited":>7s} {"shown":>7s} {"share":>7s}')
+        for row in grounding:
+            print(f'  {row["name"][:30]:30s} {row["cited"]:7d} '
+                  f'{row["shown"]:7d} {100 * row["share"]:6.0f}%')
+        extreme = [r for r in grounding
+                   if r['shown'] > 50 and (r['share'] > 0.99 or r['share'] < 0.1)]
+        if extreme:
+            print()
+            print('  The method asks each subtopic to name the documents that')
+            print('  support it, so that it is grounded rather than invented.')
+            print('  The shares above say that did not happen: a subtopic')
+            print('  citing everything, or only the first handful of a large')
+            print('  batch, is not grounded in what it was shown. Treat these')
+            print('  labels as suggestions and not as a taxonomy, and do not')
+            print('  read prevalence from them.')
+    return 0
+
+
 COMMANDS = {
     'all': cmd_all,
     'merge': cmd_merge,
@@ -568,6 +627,7 @@ COMMANDS = {
     'experiments': cmd_experiments,
     'demo': cmd_demo,
     'install-topicgpt': cmd_install_topicgpt,
+    'subtopics': cmd_subtopics,
     'keys': cmd_keys,
     'status': cmd_status,
 }

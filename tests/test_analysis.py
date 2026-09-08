@@ -1996,5 +1996,108 @@ class KeyCheckTests(unittest.TestCase):
             return self.keys.check_openai('sk-test')
 
 
+class NoneRateTests(unittest.TestCase):
+    """The diagnostic that says which kind of "None" problem this is.
+
+    A single overall rate cannot distinguish "the short documents have too
+    little text" from "the model declines on anything that covers several
+    things", and the two call for opposite remedies.
+    """
+
+    def setUp(self):
+        from chatlens.core import report
+
+        self.report = report
+
+    def rows(self, pairs):
+        """(word count, has a topic) -> the columns the report reads."""
+        return [{'nlp_sent_wc': str(words),
+                 'nlp_sent_topics': 'Cooperation' if has else ''}
+                for words, has in pairs]
+
+    def test_falling_is_named_a_length_problem(self):
+        pairs = ([(3, False)] * 30 + [(10, False)] * 20 + [(10, True)] * 10
+                 + [(30, True)] * 25 + [(90, True)] * 30)
+        buckets = self.report._topics_by_length(self.rows(pairs))
+        reading = self.report._none_rate_reading(buckets)
+        self.assertIn('falls with length', reading)
+
+    def test_u_shaped_is_named_as_not_a_length_problem(self):
+        """The shape the coalition corpus actually had: 82/67/62/83."""
+        pairs = ([(5, False)] * 41 + [(5, True)] * 9
+                 + [(60, False)] * 33 + [(60, True)] * 17
+                 + [(150, False)] * 31 + [(150, True)] * 19
+                 + [(400, False)] * 41 + [(400, True)] * 9)
+        buckets = self.report._topics_by_length(self.rows(pairs))
+        reading = self.report._none_rate_reading(buckets)
+        self.assertIn('U-shaped', reading)
+        self.assertIn('will not fix it', reading)
+
+    def test_flat_is_named_flat(self):
+        pairs = [(w, i % 2 == 0) for w in (5, 20, 60, 200) for i in range(30)]
+        buckets = self.report._topics_by_length(self.rows(pairs))
+        self.assertIn('flat across lengths',
+                      self.report._none_rate_reading(buckets))
+
+    def test_too_few_rows_produces_nothing_rather_than_noise(self):
+        self.assertEqual(self.report._topics_by_length(
+            self.rows([(5, True)] * 10)), [])
+
+    def test_the_buckets_cover_every_row(self):
+        pairs = [(i, i % 3 == 0) for i in range(1, 121)]
+        buckets = self.report._topics_by_length(self.rows(pairs))
+        self.assertEqual(sum(b['n'] for b in buckets), 120)
+
+
+class SubtopicGroundingTests(unittest.TestCase):
+    """Whether a subtopic really cited what it was shown.
+
+    Both failures seen on real output are here: citing every document it was
+    given, and citing the first ten of thirteen hundred. They look opposite and
+    mean the same thing — the citation carries no information.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        self.dir = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def write(self, text, shown):
+        topicgpt_runner.write_jsonl(
+            self.dir / 'generation_2.jsonl',
+            [{'text': ''.join(f'Document {i}\nx\n' for i in range(1, shown + 1)),
+              'topics': text}])
+
+    def test_a_listed_citation_is_counted(self):
+        self.write('[1] Cooperation\n    [2] Strategy (Documents: 1, 2, 3): x',
+                   100)
+        found = topicgpt_runner.subtopic_grounding(self.dir)
+        self.assertEqual(found[0]['cited'], 3)
+        self.assertEqual(found[0]['shown'], 100)
+
+    def test_a_range_is_counted(self):
+        self.write('[1] Diplomacy\n    [2] Alliances (Documents: 1-136): x',
+                   136)
+        found = topicgpt_runner.subtopic_grounding(self.dir)
+        self.assertEqual(found[0]['cited'], 136)
+        self.assertEqual(found[0]['share'], 1.0)
+
+    def test_the_first_handful_of_a_large_batch_shows_as_a_tiny_share(self):
+        cited = ', '.join(str(i) for i in range(1, 11))
+        self.write(f'[1] Cooperation\n    [2] Strategy (Documents: {cited}): x',
+                   1383)
+        found = topicgpt_runner.subtopic_grounding(self.dir)
+        self.assertEqual(found[0]['cited'], 10)
+        self.assertLess(found[0]['share'], 0.01)
+
+    def test_no_output_file_is_not_a_crash(self):
+        self.assertEqual(topicgpt_runner.subtopic_grounding(self.dir), [])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

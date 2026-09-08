@@ -85,3 +85,53 @@ The paper uses OpenAI and that is the most faithful choice. To use Claude there
 are two roads that require no change to the authors' code: the `vertex` backend,
 which in the repository builds an `AnthropicVertex` client, or `openai` pointed
 at a compatible gateway through `OPENAI_BASE_URL`.
+
+### When most documents come back with no topic
+
+The paper's prompt asks for a topic that is *generalisable* and not specific to
+the document, and offers "None" as a legitimate answer. On a corpus where every
+group is doing the same task, "None" can be the majority answer, and the overall
+rate does not say why.
+
+The report therefore breaks it down by document length, because the **shape**
+identifies the cause and the causes call for opposite remedies:
+
+- **The rate falls with length.** Short documents are the ones returning
+  nothing, which is what a topic model should do with very little text. A
+  coarser unit of analysis leaves fewer of them.
+- **The rate is U-shaped.** The longest documents return nothing almost as often
+  as the shortest. This is not a length problem and reshaping the unit will not
+  fix it: the model is asked for one generalisable label and a long conversation
+  covering greeting, bargaining, joking and agreeing does not have one.
+
+On the corpus this tool was built for the second shape held — 82%, 67%, 62%, 83%
+across length quartiles of whole conversations — and both obvious remedies were
+tried at some expense before the shape was looked at. Seeding with example topics
+does not help either: in four configurations the model reused what it was given
+and added nothing of its own.
+
+### Second-level topics
+
+```bash
+chatlens subtopics                    # subdivides the topics of the last run
+chatlens subtopics --prompt my_examples.txt
+```
+
+The topics that survive refinement become parents and the model is asked what
+runs through the documents assigned to each. Documents are batched into the
+prompt, so a parent holding a thousand conversations costs **one call**: this is
+the cheapest phase by a wide margin.
+
+Two cautions, and the command prints the second one itself.
+
+**The examples decide the answer.** The prompt carries example subtopics, and
+Appendix D of the paper shows they control the granularity of what comes back.
+Running two prompts with different examples and comparing says considerably more
+than running one and believing it.
+
+**Check that the grounding held.** The method asks each subtopic to name the
+documents supporting it, so that it is grounded rather than invented. The command
+prints how many each one actually cited. On a parent of 1,383 documents the
+subtopics cited documents 1–10; on one of 136 they cited all 136. Both are
+failures of the same safeguard, and they mean the labels carry no prevalence:
+counting how often a subtopic was "used" would be counting an artefact.

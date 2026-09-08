@@ -356,7 +356,86 @@ def _topics(by_partner, aggregated) -> dict:
         counts=sorted(counts.items(), key=lambda kv: -kv[1]),
         topics=[t for t, _ in sorted(counts.items(), key=lambda kv: -kv[1])],
         per_treatment=per_treatment,
+        by_length=_topics_by_length(by_partner),
     )
+
+
+def _topics_by_length(by_partner) -> list:
+    """How often no topic came back, by how long the document was.
+
+    Worth its own table because the shape of it answers a question that the
+    overall rate cannot. TopicGPT is asked for one *generalisable* label per
+    document and may answer "None"; a high rate looks like a failure and invites
+    the two obvious remedies — seed it with examples, or feed it smaller
+    documents.
+
+    On the corpus this tool was built for the rate came out **U-shaped**: 82% for
+    the shortest quarter, 62% in the middle, 83% for the longest. The longest
+    conversations were the most likely to return nothing, because they cover
+    greeting, bargaining, joking and agreeing, and the model declines rather than
+    picking one. Neither remedy could have helped, and both were tried at some
+    expense before the shape was looked at.
+
+    A rate that falls with length means something different and the two are
+    indistinguishable from a single number.
+    """
+    rows = [r for r in by_partner if (r.get('nlp_sent_wc') or '').strip()]
+    if len(rows) < 40:
+        return []
+
+    def words(row):
+        try:
+            return float(row['nlp_sent_wc'])
+        except (TypeError, ValueError):
+            return 0.0
+
+    rows.sort(key=words)
+    quarter = len(rows) // 4
+    buckets = [rows[i * quarter: (i + 1) * quarter if i < 3 else len(rows)]
+               for i in range(4)]
+    out = []
+    for bucket in buckets:
+        if not bucket:
+            continue
+        empty = sum(1 for r in bucket
+                    if not (r.get('nlp_sent_topics') or '').strip())
+        out.append({
+            'low': int(words(bucket[0])),
+            'high': int(words(bucket[-1])),
+            'n': len(bucket),
+            'none': empty,
+            'share': empty / len(bucket),
+        })
+    return out
+
+
+def _none_rate_reading(buckets) -> str:
+    """Say which shape this is, because the remedies differ.
+
+    Falling means short documents are the problem and a coarser unit would help.
+    U-shaped means the long ones are declining too, which no amount of reshaping
+    fixes: the prompt asks for a single generalisable label and a long free
+    conversation does not have one.
+    """
+    if len(buckets) < 4:
+        return ''
+    shares = [b['share'] for b in buckets]
+    first, last, middle = shares[0], shares[-1], min(shares[1:3])
+    if last > middle + 0.05 and first > middle + 0.05:
+        return ('The rate is U-shaped: the longest documents return nothing '
+                'almost as often as the shortest. That is not a length problem '
+                'and feeding the model smaller units will not fix it — it is '
+                'asked for one generalisable label, and a long conversation '
+                'that covers several things does not have one. Seeding it with '
+                'example topics does not help either: it reuses what it is '
+                'given and adds nothing.')
+    if first > last + 0.10:
+        return ('The rate falls with length: short documents are the ones '
+                'returning nothing, which is what a topic model should do with '
+                'very little text. A coarser unit of analysis would leave fewer '
+                'of them.')
+    return ('The rate is flat across lengths, so how much was written is not '
+            'what decides whether a topic comes back.')
 
 
 def _quality(aggregated, by_partner) -> dict:
@@ -518,6 +597,14 @@ def render_markdown(data: dict) -> str:
                   f"{top['n_pairs']}.", '',
                   _md_table(['Topic', 'Pairs'],
                             [[k, v] for k, v in top['counts']])]
+        if top.get('by_length'):
+            parts += ['', '### Where no topic came back', '',
+                      _md_table(['Words', 'Pairs', 'No topic', 'Share'],
+                                [[f"{b['low']}–{b['high']}", b['n'], b['none'],
+                                  f"{100 * b['share']:.0f}%"]
+                                 for b in top['by_length']]),
+                      '',
+                      _none_rate_reading(top['by_length'])]
         if len(top['per_treatment']) > 1:
             parts += ['', _md_table(
                 ['Treatment'] + top['topics'],
@@ -687,6 +774,14 @@ def render_html(data: dict) -> str:
                  f"{top['n_pairs']}.</p>",
                  _html_table(['Topic', 'Pairs'],
                              [[k, v] for k, v in top['counts']])]
+        if top.get('by_length'):
+            body += ['<h3>Where no topic came back</h3>',
+                     _html_table(['Words', 'Pairs', 'No topic', 'Share'],
+                                 [[f"{b['low']}–{b['high']}", b['n'],
+                                   b['none'], f"{100 * b['share']:.0f}%"]
+                                  for b in top['by_length']]),
+                     f'<p>{html.escape(_none_rate_reading(top["by_length"]))}'
+                     f'</p>']
         if len(top['per_treatment']) > 1:
             body.append(_html_table(
                 ['Treatment'] + top['topics'],

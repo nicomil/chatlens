@@ -60,6 +60,10 @@ PROMPT_FILES = {
     'correction': 'prompt/correction.txt',
 }
 
+# Second-level topics are optional, so the file is checked only when they are
+# asked for: an older clone that lacks it should not stop an ordinary run.
+SUBTOPIC_PROMPT = 'prompt/generation_2.txt'
+
 # TopicGPT comments on every document with print() to stdout, while the progress
 # bar lives on stderr: each message pushes the bar onto a new line, and instead
 # of one advancing line you get hundreds. Repetitive messages are therefore
@@ -554,6 +558,124 @@ def run_topicgpt(
     verify_phase('correction', corrected_out, n_assigned)
 
     return corrected_out
+
+
+def subtopics(
+    run_dir: Path,
+    repo_path: Path,
+    api: str = 'openai',
+    model: str = 'gpt-4o',
+    prompt_file: Path | None = None,
+    verbose: bool = False,
+) -> Path:
+    """Second-level topics, following Appendix A of the paper.
+
+    The topics that survive refinement become parents, and the model is asked
+    what themes run through the documents assigned to each. Documents are
+    batched into the prompt rather than sent one per call, so a parent holding a
+    thousand conversations costs one call and not a thousand — this is by far
+    the cheapest phase, and the only one that can be run as an experiment.
+
+    Two things to know before reading the result, both observed on the corpus
+    this tool was built for.
+
+    **The examples decide the answer.** The prompt carries example subtopics, and
+    Appendix D of the paper shows they control the granularity of what comes
+    back. Passing ``prompt_file`` with different examples and comparing is the
+    honest way to use this; taking one run as the taxonomy is not.
+
+    **The grounding may not hold.** The method asks the model to cite the
+    documents supporting each subtopic, so that subtopics are grounded rather
+    than invented. On a parent holding 1,383 documents both variants tried cited
+    documents 1-10; on one holding 136 they cited all 136. At that scale the
+    citation is either the first handful or a blanket, and the subtopics
+    therefore carry no usable prevalence. Check what came back before believing
+    the labels.
+    """
+    check_installation(repo_path)
+    prompt = Path(prompt_file) if prompt_file else repo_path / SUBTOPIC_PROMPT
+    if not prompt.is_file():
+        raise TopicGPTUnavailable(
+            f'The second-level prompt is not at {prompt}.\n'
+            f'  It ships with the repository; pull the clone, or pass a prompt '
+            f'file of your own.')
+
+    parents = run_dir / 'generation_1_refined.md'
+    if not parents.is_file():
+        parents = run_dir / 'generation_1.md'
+    assignments = run_dir / 'assignment_corrected.jsonl'
+    for path in (parents, assignments):
+        if not path.is_file():
+            raise TopicGPTIncomplete(
+                f'{path.name} is missing: second-level topics start from the '
+                f'first level, so that run has to have completed its '
+                f'assignment.')
+
+    from topicgpt_python import generate_topic_lvl2
+
+    out_file = run_dir / 'generation_2.jsonl'
+    topic_file = run_dir / 'generation_2.md'
+    print('  second-level topics', flush=True)
+    with _quiet(verbose) as digest:
+        generate_topic_lvl2(
+            api=api,
+            model=model,
+            seed_file=str(parents),
+            data=str(assignments),
+            prompt_file=str(prompt),
+            out_file=str(out_file),
+            topic_file=str(topic_file),
+            verbose=verbose,
+        )
+    if digest:
+        digest.report()
+
+    # generate_topic_lvl2 records "Error" and returns normally, exactly as the
+    # other phases do.
+    rows = read_jsonl(out_file) if out_file.is_file() else []
+    failed = sum(1 for r in rows
+                 if str(r.get('topics') or '').strip() == API_ERROR)
+    if failed or not rows:
+        raise TopicGPTIncomplete(
+            f'second-level generation: {failed} of {len(rows)} prompts failed. '
+            f'Nothing usable was produced.')
+    return topic_file
+
+
+def subtopic_grounding(run_dir: Path) -> list:
+    """How many documents each subtopic actually cited, against how many it saw.
+
+    The paper's safeguard is that a subtopic must name the documents supporting
+    it. Whether that happened is checkable from the output, and is worth
+    checking: a subtopic citing the first ten of a thousand documents is not
+    grounded in them, and nothing else in the output says so.
+    """
+    import re
+
+    out_file = run_dir / 'generation_2.jsonl'
+    if not out_file.is_file():
+        return []
+    found = []
+    for row in read_jsonl(out_file):
+        shown = str(row.get('text') or '').count('Document ')
+        for line in str(row.get('topics') or '').splitlines():
+            match = re.match(r"\s*\[2\]\s*([\w\s&'-]+?)\s*\(Documents?:\s*"
+                             r"([^)]*)\)", line)
+            if not match:
+                continue
+            cited = match.group(2)
+            if '-' in cited and ',' not in cited:
+                parts = cited.split('-')
+                try:
+                    n_cited = int(parts[-1]) - int(parts[0]) + 1
+                except ValueError:
+                    n_cited = 0
+            else:
+                n_cited = len([c for c in cited.split(',') if c.strip()])
+            found.append({'name': match.group(1).strip(), 'cited': n_cited,
+                          'shown': shown,
+                          'share': n_cited / shown if shown else 0.0})
+    return found
 
 
 def parse_assignments(path: Path) -> dict:
