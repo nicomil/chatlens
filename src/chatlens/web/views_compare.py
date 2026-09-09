@@ -128,6 +128,59 @@ def _scored():
 
 
 def page(name: str, query=None) -> str:
+    """The shell, at once. The table arrives when it has been computed."""
+    from chatlens.core import config
+
+    experiment = config.EXPERIMENT
+    why = ui.disclosure(
+        'What this page is for',
+        '''<p>Each page here turns the conversations into numbers a different
+        way, and each looks reasonable on its own. This one puts them against
+        the same outcome, on the same rows and the same folds, which is the
+        only arrangement in which the comparison means anything.</p>''',
+    )
+    # Cross-validating every representation takes long enough that the page
+    # used to arrive blank and stay blank.
+    body = (f'<div id="comparepanel"'
+            f' hx-get="/experiment/{_e(name)}/compare/panel"'
+            f' hx-trigger="load" hx-swap="innerHTML">'
+            f'{ui.spinner("Scoring every representation on the same folds…")}'
+            f'</div>')
+    return ui.shell(
+        f'{experiment.name} — comparison',
+        why + '\n' + body,
+        heading='Comparison',
+        slug=name,
+        experiment_name=experiment.name,
+        current='compare',
+    )
+
+
+def _how_to_read(name: str) -> str:
+    base = f'/experiment/{_e(name)}'
+    return ui.disclosure(
+        'How to read this table, and where to go next',
+        f'''<p><b>Predicting well and mattering are different questions, and
+        this table answers the first.</b> A relation can carry a large and
+        reliable effect and still predict poorly, because it appears in a
+        fraction of the rows and brings a handful of variables where a bag of
+        words brings a thousand.</p>
+        <p>Length is first because it is the null hypothesis of text analysis:
+        longer documents contain more of everything, and a representation that
+        does not beat "how much was written" has not yet shown that content
+        matters.</p>
+        <p>"How well it separates" is the area under the ROC curve: 0.5 is a
+        coin, 1.0 is perfect. The spread beside it is how much that figure
+        moved between folds — a large one means the number is not to be read
+        closely.</p>
+        <p>From here: <a href="{base}/words">the words</a> for which terms were
+        selected, <a href="{base}/narratives">the narratives</a> for what is
+        true rather than what predicts, <a href="{base}/participation">
+        participation</a> for who spoke at all.</p>''')
+
+
+def panel(name: str) -> str:
+    """The comparison itself."""
     from chatlens.core import config
 
     experiment = config.EXPERIMENT
@@ -170,36 +223,11 @@ the same test rows — a feature set scored on a different split is not being
 compared to anything.</p>
 <div class="scroll"><table class="grid">
 <thead><tr><th>Representation</th><th class="num">Variables</th>
-<th class="num">AUC</th><th class="num">±</th>
-<th>Beats length</th></tr></thead>
+<th class="num">How well it separates</th>
+<th class="num">Spread across folds</th>
+<th>Beats length alone</th></tr></thead>
 <tbody>{rows}</tbody></table></div>
 <div class="verdictbox"><p>{_e(compare.verdict(scored))}</p></div>
-<p class="muted"><b>Predicting well and mattering are different questions, and
-this table answers the first.</b> A relation can carry a large and reliable
-effect and still predict poorly, because it appears in a fraction of the rows
-and brings a handful of variables where a bag of words brings a thousand. Read
-this page to decide which representation to build on, and the narratives page to
-decide what is true.</p>
-<p class="muted">Length is first because it is the null hypothesis of text
-analysis: longer documents contain more of everything, and a representation that
-does not beat "how much was written" has not yet shown that content matters.</p>'''
+{_how_to_read(name)}'''
 
-    # The reasoning is kept and moved: one click away rather than above the
-    # result, which is what used to push the figures below the fold.
-    why = ui.disclosure(
-        'What this page is for',
-        '''<p>Each page here turns the conversations into numbers a different way,
-        and each looks reasonable on its own. This one puts them
-        against the same outcome, on the same rows and the same
-        folds, which is the only arrangement in which the comparison
-        means anything.</p>''',
-    )
-    return ui.shell(
-        f'{experiment.name} — comparison',
-        why + '\n' + body,
-        heading='Comparison',
-        slug=name,
-        experiment_name=experiment.name,
-        current='compare',
-        htmx=False,
-    )
+    return body

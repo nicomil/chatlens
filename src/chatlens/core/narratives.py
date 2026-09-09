@@ -120,6 +120,18 @@ def available() -> tuple:
     return (not broken), broken
 
 
+def forget_route() -> None:
+    """Ask again next time whether RELATIO can be imported.
+
+    The answer is cached for the life of the process, which is right — the
+    import is slow and its failure mode is a dependency clash that will not
+    resolve itself. But the page offers a "check again" control, and without
+    this that control could only ever repeat the cached answer, so someone who
+    had just run the install command was told to run it again.
+    """
+    _ROUTE.clear()
+
+
 def extract_with_relatio(messages, entities, model='en_core_web_sm',
                          clusters=None, unit_key=None):
     """The published package, on its dependency-parsing path.

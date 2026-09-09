@@ -746,3 +746,30 @@ iframe {
 /* The control that stops a run sits at the end of the log's header, away from
    everything that starts one. */
 .loghead .stop { margin-left: var(--space-3); }
+
+/* --- The participation grid ---------------------------------------------- */
+
+/* Rows are who wrote, columns who was written to. The silent cells are the
+   point of the table, so they are the ones that are marked. */
+table.grid.matrix th { font-size: var(--text-xs); color: var(--muted); }
+table.grid.matrix tbody th {
+  text-transform: none; letter-spacing: 0; white-space: nowrap;
+  font-weight: 600; color: var(--ink);
+}
+table.grid.matrix td.diag { color: var(--rule); }
+table.grid.matrix td.silent {
+  color: var(--ko); font-weight: 600; background: var(--band);
+}
+
+/* --- Emotions ------------------------------------------------------------ */
+
+/* Eight emotions and two sentiments against one denominator: a column of
+   percentages makes the reader do the comparison the bars do for them. */
+table.hist.emotions tbody th {
+  text-align: left; font-weight: 500; white-space: nowrap;
+  color: var(--ink); font-size: var(--text-sm);
+}
+table.hist.emotions td.barcell { width: 55%; }
+/* The two sentiments are not eight more emotions, and reading them as if they
+   were double-counts the same words. */
+table.hist .bar.sentiment { background: var(--muted); }

@@ -198,5 +198,15 @@ class RequirementNoticeTests(unittest.TestCase):
         self.assertIn('RELATIO', labels)
 
 
+class CheckAgainTests(unittest.TestCase):
+    """The control that re-runs the dependency check."""
+
+    def test_forgetting_the_route_lets_the_answer_change(self):
+        from chatlens.core import narratives
+        narratives._ROUTE['relatio'] = 'a stale failure'
+        narratives.forget_route()
+        self.assertEqual(narratives._ROUTE, {})
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

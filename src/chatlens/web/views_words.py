@@ -157,15 +157,17 @@ def _controls(name: str, params: dict) -> str:
   <label class="field"><span class="rolename">Terms</span>
     <select name="ngrams">{options(list(words.NGRAMS), params["ngrams"])}</select>
   </label>
-  <label class="field"><span class="rolename">In at least</span>
+  <label class="field"><span class="rolename">Present in at least</span>
     <select name="min_df">{options([str(m) for m in words.MIN_DF],
                                    str(params["min_df"]))}</select>
-    <span class="rolehint">documents</span>
+    <span class="rolehint">documents — rarer terms are dropped before
+      fitting</span>
   </label>
-  <label class="field"><span class="rolename">Penalty</span>
+  <label class="field"><span class="rolename">How selective</span>
     <select name="penalty">{options([str(p) for p in words.PENALTIES],
                                     str(params["penalty"]))}</select>
-    <span class="rolehint">lower keeps fewer terms</span>
+    <span class="rolehint">lower keeps fewer terms; watching them appear and
+      disappear says how fragile the selection is</span>
   </label>
 </form>'''
 
@@ -305,8 +307,14 @@ def page(name: str, query) -> str:
 
     experiment = config.EXPERIMENT
     needs = _requirements_panel()
-    body = needs if needs else f'''{_controls(name, _params(query))}
-<div id="wordpanel">{panel(name, query)}</div>'''
+    params = _params(query)
+    query_string = (f'ngrams={params["ngrams"]}&min_df={params["min_df"]}'
+                    f'&penalty={params["penalty"]}')
+    body = needs if needs else f'''{_controls(name, params)}
+<div id="wordpanel"
+     hx-get="/experiment/{_e(name)}/words/panel?{query_string}"
+     hx-trigger="load" hx-swap="innerHTML">{ui.spinner(
+         'Fitting the model and drawing the figures…')}</div>'''
 
     # The reasoning is kept and moved: one click away rather than above the
     # result, which is what used to push the figures below the fold.

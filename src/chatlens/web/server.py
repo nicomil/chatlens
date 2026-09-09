@@ -304,12 +304,16 @@ class Handler(BaseHTTPRequestHandler):
                     self._html(views_words.panel(name, query))
                 elif action.startswith('words/'):
                     self._words_file(name, action, query)
+                elif action == 'narratives/panel':
+                    self._html(views_narratives.panel(name))
                 elif action == 'narratives':
                     self._html(views_narratives.page(name, query),
                                cookie=cookie)
                 elif action == 'emotions':
                     self._html(views_emotions.page(name, query),
                                cookie=cookie)
+                elif action == 'compare/panel':
+                    self._html(views_compare.panel(name))
                 elif action == 'compare':
                     self._html(views_compare.page(name, query),
                                cookie=cookie)

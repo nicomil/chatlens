@@ -154,5 +154,46 @@ class BinomialTests(unittest.TestCase):
         self.assertEqual(participation.binomial_p(0, 0), 1.0)
 
 
+class SeatMatrixTests(unittest.TestCase):
+    """The grid the page is named after, which it never drew."""
+
+    def setUp(self):
+        from chatlens.core import participation
+        self.participation = participation
+
+    def _cells(self, spec):
+        return {key: {'messages': n, 'words': n * 3}
+                for key, n in spec.items()}
+
+    def test_a_direction_nobody_used_is_a_zero_and_not_a_gap(self):
+        cells = self._cells({
+            ('g1', '1', '2'): 2, ('g1', '2', '1'): 0,
+            ('g2', '1', '2'): 1, ('g2', '2', '1'): 0,
+        })
+        grid = self.participation.seat_matrix(cells)
+        self.assertEqual(grid['seats'], ['1', '2'])
+        self.assertEqual(grid['cells'][('1', '2')]['groups'], 2)
+        self.assertEqual(grid['cells'][('2', '1')]['groups'], 0)
+        self.assertEqual(grid['cells'][('2', '1')]['possible'], 2)
+
+    def test_a_seat_only_some_groups_have_counts_against_those_groups(self):
+        """Otherwise a group of three would drag down every cell of a design
+        that is mostly groups of four."""
+        cells = self._cells({
+            ('g1', '1', '2'): 1, ('g1', '2', '1'): 1,
+            ('g2', '1', '2'): 1, ('g2', '2', '1'): 1,
+            ('g2', '1', '3'): 1, ('g2', '3', '1'): 0,
+        })
+        grid = self.participation.seat_matrix(cells)
+        self.assertEqual(grid['cells'][('1', '3')]['possible'], 1)
+        self.assertEqual(grid['cells'][('1', '3')]['groups'], 1)
+        self.assertEqual(grid['sizes'], [2, 3])
+
+    def test_a_design_with_too_many_seats_declines_to_draw_one(self):
+        cells = self._cells({('g1', str(a), str(b)): 1
+                             for a in range(20) for b in range(20) if a != b})
+        self.assertFalse(self.participation.seat_matrix(cells)['comparable'])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

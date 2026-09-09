@@ -57,6 +57,29 @@ def _texts_and_source():
     return [words_module.clean(r.get(column)) for r in rows], path
 
 
+def _bars(rows) -> str:
+    """The categories as a chart rather than a second table.
+
+    Eight emotions and two sentiments, each a share of the same denominator:
+    a column of percentages makes the reader do the comparison the bars do for
+    them. The numbers stay, on the right, because the shares are the finding.
+    """
+    if not rows:
+        return ui.empty('No category was found in any document.')
+    top = max(r['share'] for r in rows) or 1
+    bars = ''.join(
+        f'<tr><th>{_e(r["category"])}</th>'
+        f'<td class="barcell"><span class="bar {_e(r["kind"])}" '
+        f'style="width:{100 * r["share"] / top:.1f}%"></span></td>'
+        f'<td class="num">{r["documents"]}</td>'
+        f'<td class="num">{100 * r["share"]:.0f}%</td></tr>'
+        for r in rows)
+    return (f'<div class="scroll"><table class="hist emotions">'
+            f'<thead><tr><th>Category</th><th></th>'
+            f'<th class="num">Documents</th><th class="num">Share</th>'
+            f'</tr></thead><tbody>{bars}</tbody></table></div>')
+
+
 def panel() -> str:
     if not nrc.available():
         return _missing_panel()
@@ -79,10 +102,23 @@ def panel() -> str:
         f'<td class="num">{100 * b["share"]:.0f}%</td></tr>'
         for b in cover['buckets'])
 
-    totals = ''.join(
-        f'<tr><td>{_e(r["category"])}</td><td>{_e(r["kind"])}</td>'
-        f'<td class="num">{r["documents"]}</td>'
-        f'<td class="num">{100 * r["share"]:.0f}%</td></tr>' for r in rows)
+    totals = _bars(rows)
+
+    unmeasured = 100 - 100 * cover['share_measured']
+    caveat = ui.notice(
+        f'{unmeasured:.0f}% of the documents contain no word from the lexicon '
+        f'at all, so they score zero on every category. That is a correct '
+        f'reading and not a gap — but those rows are overwhelmingly the short '
+        f'ones, which is why length belongs in any model built on these '
+        f'columns.', 'warn')
+    zeros = ui.disclosure(
+        'Why the zeros stay in',
+        '''<p>A zero is a real value: a message with no frightening word in it
+        did not frighten anyone, and those rows belong in the analysis. What
+        the figures above are for is that the all-zero rows are <b>the short
+        ones</b>, so these columns carry a signal about length as well as one
+        about emotion. Keep the zeros and put length in the model, the same way
+        every other page here does.</p>''')
 
     return f'''<p class="muted">{len(marked)} words in the lexicon, read from
 <b>{_e(nrc.lexicon_path().name)}</b>. Scored on
@@ -97,23 +133,18 @@ def panel() -> str:
     <div class="l">could be measured at all</div></div>
 </div>
 
+{caveat}
+
 <h3>Where nothing could be measured</h3>
 <div class="scroll"><table class="grid">
 <thead><tr><th>Words</th><th class="num">Documents</th>
 <th class="num">No emotion word</th><th class="num">Share</th></tr></thead>
 <tbody>{buckets}</tbody></table></div>
 <p class="muted">{_e(cover["note"])}</p>
-<p class="muted">A zero is a real value: a message with no frightening word in
-it did not frighten anyone, and those rows belong in the analysis. What the
-figures above are for is that the all-zero rows are <b>the short ones</b>, so
-these columns carry a signal about length as well as one about emotion. Keep the
-zeros and put length in the model, the same way every other page here does.</p>
+{zeros}
 
 <h3>What the measured documents contain</h3>
-<div class="scroll"><table class="grid">
-<thead><tr><th>Category</th><th>Kind</th><th class="num">Documents</th>
-<th class="num">Share</th></tr></thead>
-<tbody>{totals}</tbody></table></div>
+{totals}
 <p class="muted">Shares are of the {cover["measured"]} documents that could be
 measured, not of all {cover["documents"]}. Over all of them every category would
 be divided by the same inflated denominator, and a corpus that cannot be

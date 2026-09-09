@@ -108,6 +108,48 @@ def grid(messages, members) -> dict:
     return cells
 
 
+def seat_matrix(cells) -> dict:
+    """The whole sender × receiver grid, summed across groups.
+
+    One matrix per group would be forty-eight matrices; this is the one table
+    that answers the question the page exists for — which directions were used
+    and which stayed silent — by counting, for each ordered pair of seats, in
+    how many groups anything at all went that way.
+
+    It only means something where the seats are the same positions in every
+    group, which is the usual design and not a universal one; `comparable`
+    says whether that held.
+    """
+    seats = sorted({seat for _g, sender, receiver in cells
+                    for seat in (sender, receiver)},
+                   key=lambda s: (len(s), s))
+    groups = {group for group, _s, _r in cells}
+
+    matrix = {}
+    for (group, sender, receiver), cell in cells.items():
+        entry = matrix.setdefault((sender, receiver),
+                                  {'messages': 0, 'words': 0, 'groups': 0,
+                                   'possible': 0})
+        entry['messages'] += cell['messages']
+        entry['words'] += cell['words']
+        entry['possible'] += 1
+        if cell['messages']:
+            entry['groups'] += 1
+
+    # Each cell counts against the groups in which that pair existed at all,
+    # so groups of different sizes do not distort it — a seat that only some
+    # groups have is measured against those groups. What the table cannot
+    # survive is a design with dozens of seats, where it stops being readable.
+    sizes = {len({s for g, s, _r in cells if g == group}) for group in groups}
+    return {
+        'seats': seats,
+        'cells': matrix,
+        'groups': len(groups),
+        'sizes': sorted(sizes),
+        'comparable': bool(seats) and len(seats) <= 12,
+    }
+
+
 def coverage(cells, members) -> dict:
     """How much of the possible communication actually happened."""
     used = sum(1 for c in cells.values() if c['messages'])

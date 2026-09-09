@@ -167,6 +167,11 @@ def _result(experiment):
     return value, ''
 
 
+# Enough to see what the corpus is made of without turning the page into a
+# concordance.
+SHOWN = 12
+
+
 def panel(name: str) -> str:
     from chatlens.core import config
 
@@ -182,10 +187,18 @@ def panel(name: str) -> str:
     if problem:
         return body + f'<p class="formerror">{_e(problem)}</p>' 
 
-    common = found['frequencies'].most_common(12)
-    rows = ''.join(
-        f'<tr><td><code>{_e(a)} | {_e(v)} | {_e(p)}</code></td>'
-        f'<td class="num">{n}</td></tr>' for (a, v, p), n in common)
+    common = found['frequencies'].most_common(SHOWN)
+    rows = [(f'<b>{_e(a)}</b>', _e(v), _e(p), str(n))
+            for (a, v, p), n in common]
+    total = len(found['frequencies'])
+    caption = ('' if total <= len(rows) else
+               f'The {len(rows)} most frequent of {total} relations.')
+    table = ui.table(['Who', 'does what', 'to whom', 'Units'], rows,
+                     numeric={3}, caption=caption,
+                     empty_message='No relation was extracted. Either the '
+                                   'declared entities appear in none of the '
+                                   'messages, or the messages are too short '
+                                   'to have a subject and an object.')
     how = ('Extracted with the <b>RELATIO package</b> (Ash, Gauthier and Widmer, '
            '<i>Political Analysis</i> 2024), which also clusters the phrases '
            'that are not declared entities and chooses how many clusters to '
@@ -195,9 +208,7 @@ def panel(name: str) -> str:
     body += f'''<h3>What was said</h3>
 <p class="muted">{len(found["per_unit"])} units carry at least one relation, and
 {len(found["frequencies"])} distinct relations were found. {how}</p>
-<div class="scroll"><table class="grid">
-<thead><tr><th>Relation</th><th class="num">Units</th></tr></thead>
-<tbody>{rows}</tbody></table></div>'''
+{table}'''
 
     tested = found.get('tested')
     if found.get('problem'):
@@ -207,14 +218,17 @@ def panel(name: str) -> str:
                  '<p class="muted">Declare a binary outcome under Settings and '
                  'this becomes a test rather than a list.</p>')
     else:
-        result_rows = ''.join(
-            f'<tr><td><code>{_e(r["narrative"][0])} | {_e(r["narrative"][1])} '
-            f'| {_e(r["narrative"][2])}</code></td>'
-            f'<td class="num">{r["documents"]}</td>'
-            f'<td class="num">{r["odds"]:.2f}</td>'
-            f'<td class="num">{r["q"]:.4f}</td>'
-            f'<td>{"yes" if r["q"] < 0.10 else ""}</td></tr>'
-            for r in tested['results'])
+        result_rows = ui.table(
+            ['Who', 'does what', 'to whom', 'Units', 'Odds', 'q', 'Survives'],
+            [(f'<b>{_e(r["narrative"][0])}</b>', _e(r['narrative'][1]),
+              _e(r['narrative'][2]), str(r['documents']),
+              f'{r["odds"]:.2f}', f'{r["q"]:.4f}',
+              'yes' if r['q'] < 0.10 else '')
+             for r in tested['results']],
+            numeric={3, 4, 5},
+            empty_message='No relation appeared in enough units to be worth '
+                          'testing, so there is nothing in this table. That '
+                          'is the result, not a gap.')
         body += f'''<h3>Which of them matter</h3>
 <p class="muted">Every relation appearing in {narratives.MIN_DOCUMENTS} or more
 units is tested — {tested["tested"]} of {tested["candidates"]} candidates —
@@ -223,10 +237,7 @@ by group. <b>q</b> carries a Benjamini-Hochberg correction across the whole
 family: reporting the one that came out significant, out of dozens tried, is how
 a list of nothing becomes a finding. {tested["survivors"]} survive at
 q&nbsp;&lt;&nbsp;0.10.</p>
-<div class="scroll"><table class="grid">
-<thead><tr><th>Relation</th><th class="num">Units</th><th class="num">Odds</th>
-<th class="num">q</th><th>Survives</th></tr></thead>
-<tbody>{result_rows}</tbody></table></div>
+{result_rows}
 <p class="muted">A relation naming a participant mixes the cases where that
 participant is the one being addressed with the cases where they are not, and
 those can be opposite moves. Reading direction properly needs the addressee's
@@ -238,8 +249,20 @@ def page(name: str, query=None) -> str:
     from chatlens.core import config
 
     experiment = config.EXPERIMENT
+    if (query or {}).get('checked'):
+        # "Check again" has to be able to reach a different answer than the
+        # one already cached, or it is a link that reloads the same sentence.
+        narratives.forget_route()
+        _CACHE.clear()
     needs = _requirements_panel(experiment.narrative_model)
-    body = needs if needs else f'<div id="narrativepanel">{panel(name)}</div>'
+    # Parsing every message with spaCy takes from seconds to minutes, and the
+    # page used to do it before sending a single byte: a blank window with a
+    # spinning tab, indistinguishable from a hang.
+    body = needs if needs else (
+        f'<div id="narrativepanel"'
+        f' hx-get="/experiment/{_e(name)}/narratives/panel"'
+        f' hx-trigger="load" hx-swap="innerHTML">'
+        f'{ui.spinner("Reading the grammar of every message…")}</div>')
 
     # The reasoning is kept and moved: one click away rather than above the
     # result, which is what used to push the figures below the fold.

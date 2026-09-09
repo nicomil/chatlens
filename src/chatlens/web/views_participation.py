@@ -87,6 +87,55 @@ def _outcomes(by_partner_path, outcome):
     return values, ''
 
 
+def _matrix(grid: dict) -> str:
+    """The grid itself, which this page was named after and never showed.
+
+    Rows are who wrote, columns are who was written to, and the number in each
+    cell is the share of groups in which anything at all went that way. A cell
+    at zero is the finding: it is a direction nobody used, and it is invisible
+    in every other page here because those pages can only measure text that
+    exists.
+    """
+    if not grid['seats']:
+        return ui.empty('No pairs to lay out yet.')
+    if not grid['comparable']:
+        return ui.empty(
+            f'This design has {len(grid["seats"])} seats, too many to lay out '
+            f'as a readable grid. The distribution below still holds.')
+
+    seats = grid['seats']
+    head = ''.join(f'<th class="num">to {_e(s)}</th>' for s in seats)
+    rows = []
+    for sender in seats:
+        cells = []
+        for receiver in seats:
+            if sender == receiver:
+                cells.append('<td class="num diag">·</td>')
+                continue
+            entry = grid['cells'].get((sender, receiver))
+            if not entry or not entry['possible']:
+                cells.append('<td class="num">—</td>')
+                continue
+            share = entry['groups'] / entry['possible']
+            classes = 'num' + (' silent' if not entry['groups'] else '')
+            cells.append(
+                f'<td class="{classes}" '
+                f'title="{entry["groups"]} of {entry["possible"]} groups, '
+                f'{entry["messages"]} messages">{100 * share:.0f}%</td>')
+        rows.append(f'<tr><th>from {_e(sender)}</th>{"".join(cells)}</tr>')
+
+    sizes = grid.get('sizes') or []
+    mixed = ('' if len(sizes) < 2 else
+             f' — the groups here are not all the same size ('
+             f'{", ".join(str(s) for s in sizes)} people)')
+    return (f'<div class="scroll"><table class="grid matrix">'
+            f'<thead><tr><th></th>{head}</tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table></div>'
+            f'<p class="muted">The share of groups in which that direction '
+            f'carried at least one message, counted against the groups that '
+            f'had both seats{mixed}. A zero is a direction nobody used.</p>')
+
+
 def _histogram(pairs, total_label) -> str:
     """A bar per count, because the shape is the point and a list hides it."""
     if not pairs:
@@ -206,9 +255,11 @@ excluded.</p>'''
                          'so that two candidates can be compared against the '
                          'same person.</p>')
 
+    matrix = _matrix(participation.seat_matrix(cells))
     body = f'''{warning}
 <h2>The grid</h2>
 {stats}
+{matrix}
 {grid_note}
 {_histogram(cover["directions_histogram"], "How many groups used that many")}
 {sections}'''
