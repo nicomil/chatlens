@@ -291,27 +291,27 @@ Two commands, because a language model is a separate package from the library
 that loads it: `pip install spacy` succeeds and leaves the page just as broken.
 The page prints both, each naming this installation's own interpreter.
 
-RELATIO itself is optional on top of that:
+RELATIO comes with it, as a command rather than a dependency:
 
 ```bash
 chatlens install-relatio
 ```
 
-It is a command rather than a dependency because it pulls torch and transformers
-— about 1.6 GB against the four megabytes chatlens takes — and nobody should
-download that by opening a page. It is cloned into this machine's application
-data directory, not into the checkout, for the same reason TopicGPT is.
+A command because it pulls torch and transformers — about 1.6 GB against the
+four megabytes chatlens takes — and nobody should download that by opening a
+page. It is cloned into this machine's application data directory, not into the
+checkout, for the same reason TopicGPT is. From the repository rather than PyPI,
+where the release fails to build.
 
-The page works without it and says which route it took. The difference is what
-happens to phrases that are **not** declared entities: without the package each
-is kept under its head word, with it they are clustered and the number of
-clusters is chosen automatically. On a corpus with three known participants that
-changed nothing worth reporting — 361 against 362 for the commonest relation —
-and on one with many entities and no list of them it is the whole value.
+**The narratives page does not work without it, on purpose.** The extraction is
+RELATIO's method: it parses the sentences, clusters the phrases that are not
+declared entities, and chooses how many clusters to use. Approximating that
+would produce numbers nobody could attribute to the paper, so the page waits for
+the package instead.
 
-If it is installed but cannot be imported, the page falls back to the lighter
-route and says why rather than failing. The usual cause is `transformers`
-refusing to load beside Keras 3, which `pip install tf-keras` resolves.
+If it is installed but cannot be imported, the page says why rather than
+failing quietly. The usual cause is `transformers` refusing to load beside
+Keras 3, which `pip install tf-keras` resolves.
 
 ## 3. API keys
 
@@ -760,9 +760,12 @@ positions and mean the same kind of thing — and the speaker stops being
 distinguishable from the person being spoken to. Nothing but the experiment can
 know which words are its participants.
 
-Needs the `narratives` extra and a language model; optionally the RELATIO
-package, which the page uses when it is installed and tells you which route it
-took.
+Needs the `narratives` extra, a language model, and the RELATIO package —
+`chatlens install-relatio`. The package is required rather than optional, and
+that is deliberate: the extraction is its method, and an approximation of
+somebody else's published pipeline is not that pipeline. A result from one could
+not honestly be attributed to the paper, so the page waits for the package
+instead of substituting anything of ours.
 
 ### Emotions — eight categories from a word list
 

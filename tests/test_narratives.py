@@ -16,59 +16,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
 from chatlens.core import narratives  # noqa: E402
 
-try:
-    import spacy
-    NLP = spacy.load('en_core_web_md')
-except Exception:                        # noqa: BLE001 - an optional extra
-    NLP = None
-
-
-@unittest.skipIf(NLP is None, 'spaCy or its model is not installed')
-class TripleTests(unittest.TestCase):
-    ENTITIES = {'i', 'you', 'we', 'purple', 'orange'}
-
-    def triples(self, text):
-        return narratives.triples(NLP(text), self.ENTITIES)
-
-    def test_a_plain_clause(self):
-        self.assertIn(('i', 'support', 'you'), self.triples('I support you'))
-
-    def test_the_direction_is_kept(self):
-        """The distinction a bag of words cannot represent."""
-        one = self.triples('I support you')
-        other = self.triples('You support me')
-        self.assertIn(('i', 'support', 'you'), one)
-        self.assertIn(('you', 'support', 'i'), other)
-        self.assertNotEqual(one, other)
-
-    def test_naming_a_third_party_is_a_different_relation(self):
-        self.assertIn(('i', 'support', 'purple'),
-                      self.triples('I will support purple'))
-
-    def test_negation_changes_the_verb(self):
-        found = self.triples('I do not support you')
-        self.assertTrue(any(v.startswith('not ') for _a, v, _p in found))
-
-    def test_an_entity_inside_a_longer_phrase_is_still_found(self):
-        """Matching is per token, so an entity buried in a phrase is found."""
-        found = self.triples('I will support the purple player')
-        self.assertTrue(any(p == 'purple' for _a, _v, p in found), found)
-
-    def test_an_entity_in_adjective_position_is_found(self):
-        """Participants named by colour are tagged as adjectives, so "I am
-        orange" puts the entity in an adjectival complement. Without `acomp`
-        every statement of who someone is would be silently dropped."""
-        found = self.triples('I am orange')
-        self.assertIn(('i', 'be', 'orange'), found)
-
-    def test_a_clause_without_an_object_produces_nothing(self):
-        self.assertEqual(self.triples('I agree'), [])
-
-    def test_an_unmatched_phrase_falls_back_to_its_head(self):
-        found = self.triples('We should split the bonus')
-        self.assertTrue(any(p == 'bonus' for _a, _v, p in found))
-
-
 class FrequencyTests(unittest.TestCase):
     def test_a_relation_used_twice_in_one_unit_counts_once(self):
         """Units, not mentions: saying it twice is not two pieces of evidence."""
@@ -168,55 +115,58 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(experiment.Experiment({}).narrative_entities, [])
 
 
-class RouteTests(unittest.TestCase):
-    """Which implementation runs, and what happens when the big one is broken."""
+class AvailabilityTests(unittest.TestCase):
+    """Whether RELATIO can run, and what is said when it cannot.
 
-    def test_a_present_but_unimportable_package_falls_back_and_says_why(self):
+    There is no fallback. The extraction is RELATIO's method, and an
+    approximation of somebody else's published pipeline is not that pipeline —
+    a result from one could not honestly be attributed to the paper. So the page
+    waits for the package rather than substituting anything of ours.
+    """
+
+    def setUp(self):
+        narratives._ROUTE.clear()
+
+    tearDown = setUp
+
+    def test_a_present_but_unimportable_package_is_not_available(self):
         """RELATIO pulls transformers, which refuses to load beside Keras 3.
 
-        Looking for the package on the filesystem is not enough here: it is
-        present and unusable, and a check that only looked would send the page
-        down a route that raises.
+        Looking for it on the filesystem is not enough: it is present and
+        unusable, and a check that only looked would send the page into an
+        import that raises.
         """
         import unittest.mock
 
         from chatlens.core import optional
 
-        narratives._ROUTE.clear()
-        real_import = __builtins__['__import__'] if isinstance(
-            __builtins__, dict) else __builtins__.__import__
+        real = __import__
 
         def broken(name, *args, **kwargs):
             if name == 'relatio':
                 raise ValueError('Keras 3 is not supported')
-            return real_import(name, *args, **kwargs)
+            return real(name, *args, **kwargs)
 
         with unittest.mock.patch.object(optional, 'have', lambda m: True), \
                 unittest.mock.patch('builtins.__import__', broken):
-            route, note = narratives.available_route()
-        narratives._ROUTE.clear()
-        self.assertEqual(route, 'spacy')
-        self.assertIn('cannot be imported', note)
-        self.assertIn('Keras 3', note)
+            ready, why = narratives.available()
+        self.assertFalse(ready)
+        self.assertIn('Keras 3', why)
 
-    def test_without_either_there_is_no_route(self):
+    def test_not_installed_says_so(self):
         import unittest.mock
 
         from chatlens.core import optional
 
-        narratives._ROUTE.clear()
         with unittest.mock.patch.object(optional, 'have', lambda m: False):
-            route, _note = narratives.available_route()
-        self.assertEqual(route, '')
+            ready, why = narratives.available()
+        self.assertFalse(ready)
+        self.assertEqual(why, 'not installed')
 
-    def test_the_light_route_is_used_when_asked_for(self):
-        import unittest.mock
-
-        from chatlens.core import optional
-
-        with unittest.mock.patch.object(optional, 'have', lambda m: True):
-            route, _note = narratives.available_route(prefer_package=False)
-        self.assertEqual(route, 'spacy')
+    def test_there_is_no_reimplementation_to_fall_back_to(self):
+        """The guarantee, as a test: nothing here extracts relations itself."""
+        self.assertFalse(hasattr(narratives, 'extract'))
+        self.assertFalse(hasattr(narratives, 'triples'))
 
 
 class RequirementNoticeTests(unittest.TestCase):
@@ -230,13 +180,22 @@ class RequirementNoticeTests(unittest.TestCase):
                             for c in commands))
         self.assertTrue(any('spacy download' not in c for c in commands))
 
-    def test_each_command_names_this_interpreter(self):
+    def test_each_command_is_one_the_user_can_run_as_shown(self):
+        """Either this interpreter by full path, or a chatlens command."""
         from chatlens.web import views_narratives
 
         for requirement in views_narratives.requirements('en_core_web_md'):
             self.assertTrue(requirement.command.startswith(sys.executable)
-                            or 'uv tool' in requirement.command,
+                            or 'uv tool' in requirement.command
+                            or requirement.command.startswith('chatlens '),
                             requirement.command)
+
+    def test_relatio_is_listed_as_required(self):
+        from chatlens.web import views_narratives
+
+        labels = [r.label for r in
+                  views_narratives.requirements('en_core_web_md')]
+        self.assertIn('RELATIO', labels)
 
 
 if __name__ == '__main__':

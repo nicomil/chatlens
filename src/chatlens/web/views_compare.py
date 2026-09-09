@@ -94,13 +94,15 @@ def _scored():
 
     per_unit = terms = None
     key_of = None
-    if experiment.narrative_entities and optional.have('spacy'):
+    # Only with the package: the relations are RELATIO's method, and this table
+    # would otherwise compare a representation nobody could reproduce.
+    if experiment.narrative_entities and narratives.available()[0]:
         messages_path = views_participation._latest(config.MERGED_DIR,
                                                     '_messages_long.csv')
         if messages_path is not None:
-            per_unit = narratives.extract(
+            per_unit = narratives.extract_with_relatio(
                 views_participation._read(messages_path),
-                experiment.narrative_entities, experiment.narrative_model)
+                experiment.narrative_entities)
             counts = narratives.frequencies(per_unit)
             terms = [n for n, c in counts.items()
                      if c >= narratives.MIN_DOCUMENTS]

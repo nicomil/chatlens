@@ -31,62 +31,26 @@ thing — and the speaker and the person spoken to stop being distinguishable,
 which in a game about who supports whom erases the entire question. Nothing but
 the experiment can know which words are its participants.
 
-Phrases that match nothing declared are kept under their head word, which is a
-crude stand-in for RELATIO's clustering. Where the full package is installed it
-is used instead and does the clustering properly.
+Phrases that match nothing declared are clustered by RELATIO itself, and how
+many clusters to use is its choice too.
+
+**The extraction is RELATIO's, not ours.** This module prepares the input,
+passes the declared entities to the package's own `known_entities` mechanism,
+and maps what comes back onto the experiment's keys. It does not reimplement the
+method: an approximation of somebody else's published pipeline is not the
+pipeline, and results from it could not honestly be attributed to the paper.
+That is why the page refuses to run without the package rather than falling back
+to something of ours.
 """
 
 from __future__ import annotations
 
 from collections import Counter, defaultdict
 
-SUBJECT = {'nsubj', 'nsubjpass', 'csubj'}
-# `acomp` is here because entities are often adjectives. Participants named by
-# colour are tagged ADJ, so "I am orange" and "I back purple" put the entity in
-# an adjectival complement rather than a direct object, and without this the
-# relations that identify who someone is are silently never extracted.
-OBJECT = {'dobj', 'dative', 'attr', 'oprd', 'pobj', 'acomp'}
-
 # A narrative has to appear this often before it is worth testing. Below it the
 # estimate is driven by a handful of rows and the multiple-testing correction
 # has to carry a family of noise.
 MIN_DOCUMENTS = 25
-
-
-def _head(token, entities) -> str:
-    """The argument, as a declared entity when it names one.
-
-    Matching is by token rather than by whole phrase: "my favourite colour is
-    purple" names purple, and requiring the phrase to *be* "purple" would miss
-    it. The head word is the fallback, so an unmatched phrase still carries
-    something rather than being dropped.
-    """
-    for child in token.subtree:
-        lemma = child.lemma_.lower()
-        if lemma in entities:
-            return lemma
-    return token.lemma_.lower()
-
-
-def triples(doc, entities):
-    """(agent, verb, patient) for every clause that has all three."""
-    found = []
-    for token in doc:
-        if token.pos_ not in ('VERB', 'AUX'):
-            continue
-        subjects = [c for c in token.children if c.dep_ in SUBJECT]
-        objects = [c for c in token.children if c.dep_ in OBJECT]
-        objects += [g for c in token.children if c.dep_ == 'prep'
-                    for g in c.children if g.dep_ == 'pobj']
-        if not subjects or not objects:
-            continue
-        negated = any(c.dep_ == 'neg' for c in token.children)
-        verb = ('not ' if negated else '') + token.lemma_.lower()
-        for subject in subjects:
-            for obj in objects:
-                found.append((_head(subject, entities), verb,
-                              _head(obj, entities)))
-    return found
 
 
 def _default_unit_key(message):
@@ -97,43 +61,30 @@ def _default_unit_key(message):
 _ROUTE = {}
 
 
-def available_route(prefer_package=True) -> tuple:
-    """Which implementation this machine can run, and why not the other.
+def available() -> tuple:
+    """Whether RELATIO can actually run here, and why not when it cannot.
 
-    Returns ``(route, note)``. The two answer the same question and differ in
-    what happens to the phrases that are *not* declared entities: the light
-    route keeps each under its head word, the package clusters them and chooses
-    how many clusters to use. On a corpus with three known participants that
-    changed nothing; on one with many entities and no list of them it is the
-    whole value.
+    Returns ``(ready, reason)``.
 
-    RELATIO is **imported** rather than looked for, which the rest of this
-    codebase deliberately avoids doing. Checking the filesystem is the right
-    test for a library that imports cleanly, and RELATIO does not: it pulls
+    The package is **imported**, not looked for, which the rest of this codebase
+    deliberately avoids doing. Checking the filesystem is the right test for a
+    library that imports cleanly, and RELATIO does not: it pulls
     sentence-transformers, which pulls transformers, which refuses to load
-    beside Keras 3. The package is then present and unusable, and a check that
-    only looked would send the page down a route that raises. The import is
-    attempted once and the answer kept.
+    beside Keras 3. Present and unusable is a state a check that only looks
+    cannot see. The import is attempted once and the answer kept.
     """
     from chatlens.core import optional
 
-    if prefer_package and optional.have('relatio'):
-        if 'relatio' not in _ROUTE:
-            try:
-                import relatio  # noqa: F401
-                _ROUTE['relatio'] = ''
-            except Exception as exc:            # noqa: BLE001 - any failure
-                _ROUTE['relatio'] = str(exc).strip().splitlines()[-1][:200]
-        broken = _ROUTE['relatio']
-        if not broken:
-            return 'relatio', ''
-        if optional.have('spacy'):
-            return 'spacy', (f'RELATIO is installed but cannot be imported '
-                             f'here ({broken}), so the lighter route was used.')
-        return '', broken
-    if optional.have('spacy'):
-        return 'spacy', ''
-    return '', ''
+    if not optional.have('relatio'):
+        return False, 'not installed'
+    if 'relatio' not in _ROUTE:
+        try:
+            import relatio  # noqa: F401
+            _ROUTE['relatio'] = ''
+        except Exception as exc:            # noqa: BLE001 - any failure
+            _ROUTE['relatio'] = str(exc).strip().splitlines()[-1][:200]
+    broken = _ROUTE['relatio']
+    return (not broken), broken
 
 
 def extract_with_relatio(messages, entities, model='en_core_web_sm',
@@ -189,29 +140,6 @@ def extract_with_relatio(messages, entities, model='en_core_web_sm',
             verb = 'not ' + verb
         message = messages[doc_ids[position]]
         per_unit[unit_key(message)].add((agent, verb, patient))
-    return dict(per_unit)
-
-
-def extract(messages, entities, model='en_core_web_md', unit_key=None):
-    """Narratives per unit of analysis, from the messages.
-
-    ``unit_key`` maps a message to the row it belongs to; the default is the
-    directed pair, which is where a relation between two people lives.
-    """
-    import spacy
-
-    nlp = spacy.load(model)
-    entities = set(entities or ())
-    if unit_key is None:
-        def unit_key(m):
-            return (m.get('group_uid'), str(m.get('sender_id_in_group')),
-                    str(m.get('receiver_id_in_group')))
-
-    texts = [str(m.get('body') or '').strip() for m in messages]
-    per_unit = defaultdict(set)
-    for message, doc in zip(messages, nlp.pipe(texts, batch_size=256)):
-        for relation in triples(doc, entities):
-            per_unit[unit_key(message)].add(relation)
     return dict(per_unit)
 
 

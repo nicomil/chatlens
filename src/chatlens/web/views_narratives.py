@@ -18,12 +18,17 @@ def _e(text) -> str:
 
 
 def requirements(model: str):
-    """Three absences, three commands.
+    """Four absences, four commands.
 
     They are listed separately because they are separately missing and
     separately fixed. `pip install spacy` succeeds and leaves the page just as
     broken, because a language model is a different package from the library
     that loads it, and nothing in the first command hints at the second.
+
+    RELATIO is required rather than optional. The extraction is its method, and
+    an approximation of somebody else's published pipeline is not that pipeline
+    — results from one could not honestly be attributed to the paper. So the
+    page waits for the package instead of substituting anything of ours.
     """
     install = optional.install_command('narratives', ['spacy', 'statsmodels'])
     return [
@@ -37,6 +42,11 @@ def requirements(model: str):
             model, f'the {model} language model',
             optional.model_command(model), size='about 40 MB',
             note='the English model spaCy parses with'),
+        optional.Requirement(
+            'relatio', 'RELATIO', 'chatlens install-relatio',
+            size='about 1.6 GB — it brings torch and transformers',
+            note='extracts the relations; this page is its method, so it is '
+                 'required and not approximated'),
     ]
 
 
@@ -115,14 +125,12 @@ def _result(experiment):
         return None, 'no messages'
     messages = views_participation._read(messages_path)
 
-    route, route_note = narratives.available_route()
-    if route == 'relatio':
-        per_unit = narratives.extract_with_relatio(
-            messages, experiment.narrative_entities)
-    else:
-        per_unit = narratives.extract(messages, experiment.narrative_entities,
-                                      experiment.narrative_model)
-    value = {'per_unit': per_unit, 'route': route, 'route_note': route_note,
+    ready, why = narratives.available()
+    if not ready:
+        return None, f'relatio unusable: {why}'
+    per_unit = narratives.extract_with_relatio(
+        messages, experiment.narrative_entities)
+    value = {'per_unit': per_unit,
              'frequencies': narratives.frequencies(per_unit), 'tested': None}
 
     if declared and declared['kind'] == 'binary':
@@ -167,23 +175,18 @@ def panel(name: str) -> str:
     if problem == 'no messages':
         return body + ('<p class="muted">No messages table yet. Run the '
                        'analysis once.</p>')
+    if problem:
+        return body + f'<p class="formerror">{_e(problem)}</p>' 
 
     common = found['frequencies'].most_common(12)
     rows = ''.join(
         f'<tr><td><code>{_e(a)} | {_e(v)} | {_e(p)}</code></td>'
         f'<td class="num">{n}</td></tr>' for (a, v, p), n in common)
-    route = found.get('route')
-    if route == 'relatio':
-        how = ('Extracted with the <b>RELATIO package</b>, which also clusters '
-               'the phrases that are not declared entities and chooses how many '
-               'clusters to use.')
-    elif found.get('route_note'):
-        how = _e(found['route_note'])
-    else:
-        how = ('Extracted with <b>spaCy dependency parsing</b>. Phrases that '
-               'are not declared entities are kept under their head word rather '
-               'than clustered; <code>chatlens install-relatio</code> adds the '
-               'package that clusters them, at about 1.6 GB.')
+    how = ('Extracted with the <b>RELATIO package</b> (Ash, Gauthier and Widmer, '
+           '<i>Political Analysis</i> 2024), which also clusters the phrases '
+           'that are not declared entities and chooses how many clusters to '
+           'use. The method is theirs; this tool prepares the input and reads '
+           'the output.')
 
     body += f'''<h3>What was said</h3>
 <p class="muted">{len(found["per_unit"])} units carry at least one relation, and

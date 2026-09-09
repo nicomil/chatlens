@@ -55,9 +55,12 @@ positions and mean the same kind of thing — and the speaker stops being
 distinguishable from the person being spoken to. Nothing but the experiment can
 know which words are its participants.
 
-Needs the `narratives` extra and a language model; optionally the RELATIO
-package, which the page uses when it is installed and tells you which route it
-took.
+Needs the `narratives` extra, a language model, and the RELATIO package —
+`chatlens install-relatio`. The package is required rather than optional, and
+that is deliberate: the extraction is its method, and an approximation of
+somebody else's published pipeline is not that pipeline. A result from one could
+not honestly be attributed to the paper, so the page waits for the package
+instead of substituting anything of ours.
 
 ### Emotions — eight categories from a word list
 

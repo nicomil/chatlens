@@ -110,7 +110,8 @@ def build(rows, outcome_column, text_column, group_column='group_uid',
     else:
         sets.append({'name': 'Narrative relations', 'matrix': None,
                      'kind': 'narratives',
-                     'why': 'not extracted — see the narratives page'})
+                     'why': 'needs RELATIO and declared entities — '
+                            'see the narratives page'})
 
     return {'y': y, 'groups': groups, 'sets': sets, 'rows': len(usable)}
 
