@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import html
 import threading
 
+from chatlens.web import ui
 from chatlens.core import narratives, optional
 
 _CACHE = {}
@@ -13,8 +13,7 @@ _LOCK = threading.Lock()
 _WORDS = ['spacy', 'statsmodels']
 
 
-def _e(text) -> str:
-    return html.escape(str(text if text is not None else ''))
+_e = ui.esc
 
 
 def requirements(model: str):
@@ -242,23 +241,22 @@ def page(name: str, query=None) -> str:
     needs = _requirements_panel(experiment.narrative_model)
     body = needs if needs else f'<div id="narrativepanel">{panel(name)}</div>'
 
-    return f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_e(experiment.name)} — narratives</title>
-<link rel="stylesheet" href="/static/style.css">
-<script src="/static/htmx.min.js"></script>
-</head><body class="library">
-<header>
-  <a class="back-link" href="/experiment/{_e(name)}">&larr;
-    {_e(experiment.name)}</a>
-  <h1>Narratives</h1>
-</header>
-<main class="single">
-<p class="muted">The text read as relations — who does what to whom — rather
-than as words. A relation has a direction, which a word count does not: in a
-study of who supports whom, "I support you" and "I support the other one" are
-opposite moves made of the same words.</p>
-{body}
-</main>
-</body></html>'''
+    # The reasoning is kept and moved: one click away rather than above the
+    # result, which is what used to push the figures below the fold.
+    why = ui.disclosure(
+        'What this page is for',
+        '''<p>The text read as relations — who does what to whom — rather than as
+        words. A relation has a direction, which a word count does
+        not: in a study of who supports whom, "I support you" and "I
+        support the other one" are opposite moves made of the same
+        words.</p>''',
+    )
+    return ui.shell(
+        f'{experiment.name} — narratives',
+        why + '\n' + body,
+        heading='Narratives',
+        slug=name,
+        experiment_name=experiment.name,
+        current='narratives',
+        htmx=True,
+    )

@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import html
 import threading
 
+from chatlens.web import ui
 from chatlens.core import compare, optional
 
 _CACHE = {}
 _LOCK = threading.Lock()
 
 
-def _e(text) -> str:
-    return html.escape(str(text if text is not None else ''))
+_e = ui.esc
 
 
 def _participation_line(name: str) -> str:
@@ -185,22 +184,22 @@ decide what is true.</p>
 analysis: longer documents contain more of everything, and a representation that
 does not beat "how much was written" has not yet shown that content matters.</p>'''
 
-    return f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_e(experiment.name)} — comparison</title>
-<link rel="stylesheet" href="/static/style.css">
-</head><body class="library">
-<header>
-  <a class="back-link" href="/experiment/{_e(name)}">&larr;
-    {_e(experiment.name)}</a>
-  <h1>Which representation to use</h1>
-</header>
-<main class="single">
-<p class="muted">Each page here turns the conversations into numbers a different
-way, and each looks reasonable on its own. This one puts them against the same
-outcome, on the same rows and the same folds, which is the only arrangement in
-which the comparison means anything.</p>
-{body}
-</main>
-</body></html>'''
+    # The reasoning is kept and moved: one click away rather than above the
+    # result, which is what used to push the figures below the fold.
+    why = ui.disclosure(
+        'What this page is for',
+        '''<p>Each page here turns the conversations into numbers a different way,
+        and each looks reasonable on its own. This one puts them
+        against the same outcome, on the same rows and the same
+        folds, which is the only arrangement in which the comparison
+        means anything.</p>''',
+    )
+    return ui.shell(
+        f'{experiment.name} — comparison',
+        why + '\n' + body,
+        heading='Comparison',
+        slug=name,
+        experiment_name=experiment.name,
+        current='compare',
+        htmx=False,
+    )

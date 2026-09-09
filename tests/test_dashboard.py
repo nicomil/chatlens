@@ -500,6 +500,19 @@ class LibraryRoutingTests(unittest.TestCase):
         self.assertEqual(response.status, 404)
         self.assertIn('does-not-exist', body)
 
+    def test_the_404_does_not_echo_markup_from_the_url(self):
+        """The message quotes the path, and the path is written by whoever
+        sends the request."""
+        response, body = self.get('/experiment/%3Cb%3Ex%3C/b%3E')
+        self.assertEqual(response.status, 404)
+        self.assertNotIn('<b>', body)
+
+    def test_an_unknown_words_download_is_a_404_not_a_word_cloud(self):
+        """Anything under words/ that was not the CSV used to fall through to
+        the image branch and be answered with a figure."""
+        response, _body = self.get('/experiment/first-study/words/anything')
+        self.assertEqual(response.status, 404)
+
     def test_traversal_in_the_url_is_refused(self):
         for attempt in ('/experiment/..', '/experiment/../../etc',
                         '/experiment/First%20Study'):

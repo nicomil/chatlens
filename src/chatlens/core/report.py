@@ -623,51 +623,61 @@ def render_markdown(data: dict) -> str:
 
 # --- HTML rendering --------------------------------------------------------
 
-HTML_STYLE = """
-:root {
-  --paper: #fbfbfd; --ink: #16181d; --soft: #4a5060; --muted: #6b7183;
-  --rule: #e1e3ec; --accent: #2f4c8c; --band: #f3f4f8;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #0f1116; --ink: #e9ebf1; --soft: #c2c7d4; --muted: #929aac;
-    --rule: #262a35; --accent: #8aa8ec; --band: #171a21;
-  }
-}
-* { box-sizing: border-box; }
-body {
-  background: var(--paper); color: var(--ink); margin: 0;
-  padding: 3rem 1.5rem 5rem; line-height: 1.6;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-main { max-width: 60rem; margin: 0 auto; }
-h1 { font-size: 1.9rem; margin: 0 0 .3rem; letter-spacing: -.02em; }
+def html_style() -> str:
+    """The interface's own stylesheet, inlined.
+
+    The report used to carry a second copy of the design: its own palette, its
+    own font stack, its own stat tile, and an `h2` that meant a section heading
+    where the same tag meant a small label in the page embedding it. The two
+    had already drifted — one dark value differed — and there was no reason for
+    them to be two.
+
+    It is inlined rather than linked because a report is opened from the
+    filesystem as often as through the server, and a link to `/static` is dead
+    the moment the file is moved or sent to a colleague. Self-contained is the
+    property that matters for a document meant to be shared.
+    """
+    shared = Path(__file__).resolve().parent.parent / 'web' / 'static' / 'style.css'
+    try:
+        base = shared.read_text(encoding='utf-8')
+    except OSError:
+        base = ''
+    return base + REPORT_STYLE
+
+
+# The report is a document rather than an interface: it has no navigation, no
+# controls and a wider measure, and its headings are the headings of a paper.
+# Only the differences live here; everything else comes from the stylesheet
+# above.
+REPORT_STYLE = """
+body { padding: var(--space-8) var(--space-6); line-height: 1.6; }
+main { max-width: 60rem; margin: 0 auto; padding: 0; }
+h1 { font-size: var(--text-2xl); margin: 0 0 var(--space-1); letter-spacing: -.02em; }
 h2 {
-  font-size: 1.2rem; margin: 2.4rem 0 .8rem; padding-bottom: .3rem;
-  border-bottom: 1px solid var(--rule);
+  font-size: var(--text-xl); text-transform: none; letter-spacing: 0;
+  color: var(--ink); font-weight: 600;
+  margin: var(--space-7) 0 var(--space-4);
+  padding-bottom: var(--space-1); border-bottom: 1px solid var(--rule);
 }
-p { margin: .6rem 0; max-width: 62ch; }
-.meta { color: var(--muted); font-size: .9rem; margin-bottom: 1.5rem; }
-.scroll { overflow-x: auto; margin: .8rem 0; }
-table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+p { margin: var(--space-3) 0; max-width: 62ch; }
+.meta { color: var(--muted); font-size: var(--text-sm); margin-bottom: var(--space-6); }
+.scroll { margin: var(--space-4) 0; }
+table { border-collapse: collapse; width: 100%; font-size: var(--text-base); }
 th, td {
-  text-align: left; padding: .45rem .8rem .45rem 0;
+  text-align: left; padding: var(--space-2) var(--space-4) var(--space-2) 0;
   border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums;
 }
-th { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
-     color: var(--muted); font-weight: 600; white-space: nowrap; }
+th {
+  font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); font-weight: 600; white-space: nowrap;
+}
 td:not(:first-child), th:not(:first-child) { text-align: right; }
-.cards { display: flex; flex-wrap: wrap; gap: 1px; background: var(--rule);
-         border: 1px solid var(--rule); margin: 1rem 0; }
-.card { background: var(--paper); padding: .8rem 1.1rem; flex: 1 1 8rem; }
-.card .v { font-size: 1.6rem; font-weight: 600; letter-spacing: -.02em;
-           font-variant-numeric: tabular-nums; }
-.card .l { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em;
-           color: var(--muted); }
-.note { background: var(--band); border-left: 3px solid var(--accent);
-        padding: .8rem 1.1rem; margin: .5rem 0; font-size: .93rem;
-        color: var(--soft); }
-.caption { color: var(--muted); font-size: .87rem; }
+.note {
+  background: var(--band); border-left: 3px solid var(--accent);
+  padding: var(--space-4) var(--space-5); margin: var(--space-2) 0;
+  font-size: var(--text-base); color: var(--soft);
+}
+.caption { color: var(--muted); font-size: var(--text-sm); }
 """
 
 
@@ -704,8 +714,8 @@ def render_html(data: dict) -> str:
         f"<p class=\"meta\">Run of {html.escape(data['generated'])}"
         + (f" &middot; stages: {html.escape(', '.join(data['stages']))}"
            if data.get('stages') else '') + "</p>",
-        '<div class="cards">',
-        *(f'<div class="card"><div class="v">{v}</div>'
+        '<div class="stats">',
+        *(f'<div class="stat"><div class="v">{v}</div>'
           f'<div class="l">{l}</div></div>' for v, l in cards),
         '</div>',
     ]
@@ -797,7 +807,7 @@ def render_html(data: dict) -> str:
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f'<title>Text analysis — {html.escape(data["stem"])}</title>'
-        f'<style>{HTML_STYLE}</style></head><body><main>'
+        f'<style>{html_style()}</style></head><body><main>'
         + ''.join(body) + '</main></body></html>'
     )
 

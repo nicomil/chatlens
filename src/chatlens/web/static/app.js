@@ -65,3 +65,25 @@
     }
   });
 })();
+
+// The theme. Three states rather than two: the toggle switches between light
+// and dark, and until it is used the page follows the system. The choice is
+// remembered in this browser only — there is nothing on the server to keep it
+// in, and it is a preference about a screen, not about the data.
+(function () {
+  var button = document.getElementById('themetoggle');
+  if (!button) { return; }
+
+  function current() {
+    var set = document.documentElement.getAttribute('data-theme');
+    if (set) { return set; }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? 'dark' : 'light';
+  }
+
+  button.addEventListener('click', function () {
+    var next = current() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('chatlens-theme', next); } catch (e) { /* private mode */ }
+  });
+})();

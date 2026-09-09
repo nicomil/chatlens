@@ -15,6 +15,7 @@ import html
 from pathlib import Path
 
 from chatlens import adapters
+from chatlens.web import ui
 from chatlens.core import library
 
 ADAPTERS = ('generic_chat', 'otree_coalition')
@@ -39,8 +40,7 @@ ADAPTER_HELP = {
 }
 
 
-def _e(text) -> str:
-    return html.escape(str(text if text is not None else ''))
+_e = ui.esc
 
 
 def _size(n: int) -> str:
@@ -180,30 +180,20 @@ def library_panel(error: str = '') -> str:
 
 
 def library_page() -> str:
-    return f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>chatlens</title>
-<link rel="stylesheet" href="/static/style.css">
-<script src="/static/htmx.min.js"></script>
-</head><body class="library">
-<header>
-  <h1>chatlens</h1>
-  <span class="muted">text analysis of experiment conversations</span>
-</header>
-
-<main class="single">
-  {library_panel()}
-
-  <h2>Where these live</h2>
-  <p class="muted path">{_e(library.ROOT)}</p>
-  <p class="muted">Each experiment is an ordinary folder holding its files and
-  its results, so one can be copied to a colleague or included in a backup.
-  This folder is not somewhere you would come across by accident: if these are
-  participant data, make sure your backup covers it.</p>
-</main>
-<script src="/static/app.js"></script>
-</body></html>'''
+    where = ui.disclosure(
+        'Where these live, and what to back up',
+        f'''<p class="path">{_e(library.ROOT)}</p>
+        <p>Each experiment is an ordinary folder holding its files and its
+        results, so one can be copied to a colleague or included in a backup.
+        This folder is not somewhere you would come across by accident: if
+        these are participant data, make sure your backup covers it.</p>''',
+    )
+    return ui.shell(
+        'chatlens',
+        f'{library_panel()}\n{where}',
+        heading='chatlens',
+        subtitle='text analysis of experiment conversations',
+    )
 
 
 # --- the column mapping ----------------------------------------------------
@@ -595,20 +585,8 @@ def settings_page(name: str) -> str:
     state = ('<span class="badge ok">ready to run</span>' if ready
              else f'<span class="badge warn">needs {_e(missing)}</span>')
 
-    return f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_e(experiment.name)} — settings</title>
-<link rel="stylesheet" href="/static/style.css">
-<script src="/static/htmx.min.js"></script>
-</head><body class="library">
-<header>
-  <a class="back-link" href="/experiment/{_e(name)}">&larr; {_e(experiment.name)}</a>
-  <h1>Settings</h1>
-  {state}
-</header>
+    body = f'''{state}
 
-<main class="single">
   <h2>Files</h2>
   <div id="files">{files_panel(name)}</div>
 
@@ -622,7 +600,13 @@ def settings_page(name: str) -> str:
   <div id="outcome">{outcome_panel(name)}</div>
 
   <h2>Where this experiment lives</h2>
-  <p class="muted path">{_e(config.WORKSPACE)}</p>
-</main>
-<script src="/static/app.js"></script>
-</body></html>'''
+  <p class="muted path">{_e(config.WORKSPACE)}</p>'''
+
+    return ui.shell(
+        f'{experiment.name} — settings',
+        body,
+        heading='Settings',
+        slug=name,
+        experiment_name=experiment.name,
+        current='settings',
+    )

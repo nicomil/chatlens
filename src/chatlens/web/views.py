@@ -11,10 +11,10 @@ cannot drift apart.
 
 from __future__ import annotations
 
-import html
 import re
 from pathlib import Path
 
+from chatlens.web import ui
 from chatlens.core import archive, config
 from chatlens.web import active
 from chatlens.web.runner import runner
@@ -138,7 +138,14 @@ def estimate_panel(form=None) -> str:
 
     if form.get('llm'):
         levels = [v for v in form.get('llm_level', []) if v in counts]
-        replicates = int((form.get('llm_replicates') or ['1'])[0] or 1)
+        # The runner validates this field; the estimate did not, and `int()`
+        # on a value from the browser raised inside a handler with no try
+        # around it. An unreadable figure means one rating, which is what the
+        # form's own default says.
+        try:
+            replicates = max(1, int((form.get('llm_replicates') or ['1'])[0] or 1))
+        except (TypeError, ValueError):
+            replicates = 1
         n = sum(counts[lv] for lv in levels) * replicates
         if n:
             calls += n
@@ -169,8 +176,7 @@ def _help(text: str) -> str:
     return f'<span class="help" data-tip="{_e(text)}">?</span>' 
 
 
-def _e(text) -> str:
-    return html.escape(str(text))
+_e = ui.esc
 
 
 # --- fragments -------------------------------------------------------------
@@ -691,27 +697,7 @@ def page(experiment_slug: str = '') -> str:
     experiment = getattr(config, 'EXPERIMENT', None)
     named = experiment.name if experiment and experiment.name else ''
 
-    return f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Text Analysis</title>
-<link rel="stylesheet" href="/static/style.css">
-<script src="/static/htmx.min.js"></script>
-</head><body>
-<header>
-  {'<a class="back-link" href="/">&larr; Experiments</a>' if experiment_slug else ''}
-  <h1>{_e(named) if named else 'Text analysis'}</h1>
-  <span class="muted">{_e(dataset)}</span>
-  {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/participation">Participation</a>' if experiment_slug else ''}
-  {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/words">Words</a>' if experiment_slug else ''}
-  {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/narratives">Narratives</a>' if experiment_slug else ''}
-  {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/emotions">Emotions</a>' if experiment_slug else ''}
-  {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/compare">Compare</a>' if experiment_slug else ''}
-  {f'<a class="settings-link" href="/experiment/{_e(experiment_slug)}/settings">Settings</a>' if experiment_slug else ''}
-</header>
-
-<main>
-  <section class="col col-side">
+    body = f'''<section class="col col-side">
     <h2>Status</h2>
     <div id="status">{status_panel()}</div>
     <h2>Start a run</h2>
@@ -726,8 +712,16 @@ def page(experiment_slug: str = '') -> str:
     <h2>Report</h2>
     <div id="report">{report_panel()}</div>
   </section>
-</main>
 
-<div id="after" hidden></div>
-<script src="/static/app.js"></script>
-</body></html>'''
+<div id="after" hidden></div>'''
+
+    return ui.shell(
+        named or 'Text analysis',
+        body,
+        heading=named or 'Text analysis',
+        subtitle=dataset,
+        slug=experiment_slug or '',
+        experiment_name=named,
+        current='',
+        wide=True,
+    )

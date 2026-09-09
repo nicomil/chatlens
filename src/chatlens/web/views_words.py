@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import html
 import threading
 
+from chatlens.web import ui
 from chatlens.core import optional, words
 
 REQUIREMENTS = [
@@ -36,8 +36,7 @@ _CACHE = {}
 _LOCK = threading.Lock()
 
 
-def _e(text) -> str:
-    return html.escape(str(text if text is not None else ''))
+_e = ui.esc
 
 
 def _params(query) -> dict:
@@ -211,39 +210,94 @@ def panel(name: str, query) -> str:
 
     warning = ''
     if found['penalty_did_nothing']:
-        warning = ('<p class="formerror">Every term survived, so the penalty is '
-                   'not selecting anything. Lower it.</p>')
+        warning = ui.notice(
+            'Every term survived, so the penalty is not selecting anything. '
+            'Lower it.', 'warn')
 
-    rows = ''.join(
-        f'<tr><td><code>{_e(t["term"])}</code></td>'
-        f'<td class="num">{t["coef"]:+.3f}</td>'
-        f'<td>{"outcome" if t["coef"] > 0 else "not outcome"}</td>'
-        f'<td class="num">{t["documents"]}</td></tr>'
-        for t in found['kept'][:40])
+    kept = found['kept']
+    shown = kept[:TABLE_ROWS]
+    rows = [
+        (f'<code>{_e(t["term"])}</code>',
+         f'{t["coef"]:+.3f}',
+         'goes with it' if t['coef'] > 0 else 'goes against it',
+         str(t['documents']))
+        for t in shown
+    ]
+    caption = ''
+    if len(kept) > len(shown):
+        # It used to cut at forty and say nothing, so a reader had no way of
+        # knowing whether they were looking at the whole selection.
+        caption = (f'The {len(shown)} largest of {len(kept)} terms. '
+                   f'The full list is in the CSV below.')
+
+    clouds = _clouds(found, label, base, query_string)
+
+    summary = (f'{found["rows"]} rows across {found["groups"]} groups, '
+               f'{100 * found["share"]:.0f}% positive. {found["vocabulary"]} '
+               f'terms appear in at least {found["min_df"]} documents; '
+               f'<b>{len(kept)}</b> survive the penalty.')
 
     return f'''{warning}
-<p class="muted">{found["rows"]} rows across {found["groups"]} groups,
-{100 * found["share"]:.0f}% positive. {found["vocabulary"]} terms appear in at
-least {found["min_df"]} documents; <b>{len(found["kept"])}</b> survive the
-penalty.</p>
+<p class="muted">{summary}</p>
 {baseline}
-<div class="clouds">
-  <figure><img src="{base}/cloud.png?direction=positive&amp;{query_string}"
-       alt="terms that go with {label}">
-    <figcaption>Goes with {label}</figcaption></figure>
-  <figure><img src="{base}/cloud.png?direction=negative&amp;{query_string}"
-       alt="terms that go against {label}">
-    <figcaption>Goes against it</figcaption></figure>
-</div>
-<p class="muted">Each word is sized by the size of its coefficient. Downloads:
-<a href="{base}/cloud.svg?direction=positive&amp;{query_string}">SVG, with</a> ·
-<a href="{base}/cloud.svg?direction=negative&amp;{query_string}">SVG, against</a> ·
-<a href="{base}/terms.csv?{query_string}">the coefficients as CSV</a></p>
+{clouds}
 <h3>The terms</h3>
-<div class="scroll"><table class="grid">
-<thead><tr><th>Term</th><th class="num">Coefficient</th><th>Direction</th>
-<th class="num">Documents</th></tr></thead>
-<tbody>{rows}</tbody></table></div>'''
+{ui.table(["Term", "Coefficient", "Direction", "Documents"], rows,
+          numeric={1, 3}, caption=caption,
+          empty_message="No term survived the penalty, so there is nothing to "
+                        "list. Raise the penalty to keep more of them.")}'''
+
+
+# Enough to see the shape of the selection without turning the page into a
+# spreadsheet; the CSV below the table holds all of it.
+TABLE_ROWS = 40
+
+
+def _clouds(found, label: str, base: str, query_string: str) -> str:
+    """The two figures, or the reason there are none.
+
+    They used to be emitted whatever happened: with nothing surviving the
+    penalty the page still wrote two `<img>` tags, the requests behind them
+    answered 403, and the reader was left looking at two broken-image icons
+    with no explanation. That state is in the documentation's own screenshots.
+    """
+    from chatlens.core import words as words_core
+
+    figures = []
+    for positive, caption, ink in (
+            (True, f'Goes with {label}', 'var(--accent)'),
+            (False, 'Goes against it', 'var(--ko)')):
+        try:
+            svg = words_core.cloud_svg(found['kept'], positive)
+        except ValueError:
+            continue
+        except Exception as exc:  # noqa: BLE001 - a figure is not the page
+            figures.append(
+                f'<figure><div class="empty"><p>This figure could not be '
+                f'drawn: {_e(exc)}</p></div>'
+                f'<figcaption>{caption}</figcaption></figure>')
+            continue
+        figures.append(
+            f'<figure style="--cloud-ink: {ink}" '
+            f'aria-label="terms that {_e(caption.lower())}">{svg}'
+            f'<figcaption>{_e(caption)}</figcaption></figure>')
+
+    if not figures:
+        return ui.empty(
+            'No term survived the penalty in either direction, so there is '
+            'nothing to draw. Raise the penalty above and the figures come '
+            'back.')
+
+    downloads = (
+        f'<p class="muted">Each word is sized by the size of its coefficient. '
+        f'Downloads: '
+        f'<a href="{base}/cloud.svg?direction=positive&amp;{query_string}">'
+        f'SVG, with</a> · '
+        f'<a href="{base}/cloud.svg?direction=negative&amp;{query_string}">'
+        f'SVG, against</a> · '
+        f'<a href="{base}/terms.csv?{query_string}">the coefficients as CSV</a>'
+        f'</p>')
+    return f'<div class="clouds">{"".join(figures)}</div>{downloads}'
 
 
 def page(name: str, query) -> str:
@@ -254,23 +308,21 @@ def page(name: str, query) -> str:
     body = needs if needs else f'''{_controls(name, _params(query))}
 <div id="wordpanel">{panel(name, query)}</div>'''
 
-    return f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_e(experiment.name)} — words</title>
-<link rel="stylesheet" href="/static/style.css">
-<script src="/static/htmx.min.js"></script>
-</head><body class="library">
-<header>
-  <a class="back-link" href="/experiment/{_e(name)}">&larr;
-    {_e(experiment.name)}</a>
-  <h1>Words</h1>
-</header>
-<main class="single">
-<p class="muted">The look before the statistics: which terms go with the
-outcome, and which against. A penalised regression picks them, so a term being
-here says it carries signal and its size says how much the penalty let it keep
-— none of it is an estimate.</p>
-{body}
-</main>
-</body></html>'''
+    # The reasoning is kept and moved: one click away rather than above the
+    # result, which is what used to push the figures below the fold.
+    why = ui.disclosure(
+        'What this page is for',
+        '''<p>The look before the statistics: which terms go with the outcome, and
+        which against. A penalised regression picks them, so a term
+        being here says it carries signal and its size says how much
+        the penalty let it keep — none of it is an estimate.</p>''',
+    )
+    return ui.shell(
+        f'{experiment.name} — words',
+        why + '\n' + body,
+        heading='Words',
+        slug=name,
+        experiment_name=experiment.name,
+        current='words',
+        htmx=True,
+    )

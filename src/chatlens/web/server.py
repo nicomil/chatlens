@@ -40,7 +40,7 @@ from urllib.parse import parse_qs, urlparse
 
 from chatlens import adapters
 from chatlens.core import config, library, outcome
-from chatlens.web import active, multipart, views, views_library
+from chatlens.web import active, multipart, ui, views, views_library
 from chatlens.web import (views_compare, views_emotions,
                           views_narratives,
                           views_participation, views_words)
@@ -174,8 +174,28 @@ class Handler(BaseHTTPRequestHandler):
     def _html(self, markup: str, status=200, cookie: str = ''):
         self._send(markup.encode('utf-8'), status=status, cookie=cookie)
 
-    def _deny(self, explanation: str):
-        self._html(f'<h1>403</h1><p>{explanation}</p>', status=403)
+    def _error(self, code: int, headline: str, explanation: str = ''):
+        """An error page, with whatever it says escaped.
+
+        The views were disciplined about this and the router was not: three
+        404s and the 403 interpolated an exception message straight into the
+        body, and one of those messages quotes the path from the URL — which
+        arrives percent-encoded and is not decoded before being echoed. The
+        content security policy is what kept that from being script injection;
+        it should not have been the only thing.
+        """
+        detail = f'<p>{ui.esc(explanation)}</p>' if explanation else ''
+        self._html(
+            ui.shell(headline, f'{detail}<p><a href="/">Back to the '
+                               f'experiments</a></p>', heading=headline,
+                     htmx=False),
+            status=code)
+
+    def _deny(self, explanation: str = ''):
+        self._error(403, 'Not allowed', explanation)
+
+    def _not_found(self, explanation: str = ''):
+        self._error(404, 'Not found', explanation)
 
     def _file(self, path: Path, base: Path):
         """Serve a file, refusing any path outside its root."""
@@ -183,10 +203,10 @@ class Handler(BaseHTTPRequestHandler):
             resolved = path.resolve()
             resolved.relative_to(base.resolve())
         except (ValueError, OSError):
-            self._html('<h1>404</h1>', status=404)
+            self._not_found()
             return
         if not resolved.is_file():
-            self._html('<h1>404</h1>', status=404)
+            self._not_found()
             return
         content_type = CONTENT_TYPES.get(resolved.suffix, 'application/octet-stream')
         self._send(resolved.read_bytes(), content_type=content_type)
@@ -233,7 +253,7 @@ class Handler(BaseHTTPRequestHandler):
             # Folder name only: no paths, no traversal.
             name = route[len('/run/'):].strip('/')
             if '/' in name or name in ('', '.', '..'):
-                self._html('<h1>404</h1>', status=404)
+                self._not_found()
             else:
                 self._html(views.run_detail(name))
         elif route == '/report.html':
@@ -248,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route.startswith('/static/'):
             self._file(STATIC_DIR / route[len('/static/'):], STATIC_DIR)
         else:
-            self._html('<h1>404</h1>', status=404)
+            self._not_found()
 
     def _experiment_get(self, name: str, action: str, cookie: str,
                         query=None) -> None:
@@ -301,16 +321,16 @@ class Handler(BaseHTTPRequestHandler):
                 elif action.startswith('run/'):
                     run = action[len('run/'):].strip('/')
                     if '/' in run or run in ('', '.', '..'):
-                        self._html('<h1>404</h1>', status=404)
+                        self._not_found()
                     else:
                         self._html(views.run_detail(run))
                 elif action.startswith('runs/'):
                     self._file(config.OUTPUT_DIR / 'runs' / action[len('runs/'):],
                                config.OUTPUT_DIR / 'runs')
                 else:
-                    self._html('<h1>404</h1>', status=404)
+                    self._not_found()
         except active.Unknown as exc:
-            self._html(f'<h1>404</h1><p>{exc}</p>', status=404)
+            self._not_found(str(exc))
 
     def do_POST(self):  # noqa: N802
         route = urlparse(self.path).path
@@ -333,11 +353,14 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if route not in ('/run', '/estimate'):
-            self._html('<h1>404</h1>', status=404)
+            self._not_found()
             return
 
-        length = int(self.headers.get('Content-Length') or 0)
-        form = parse_qs(self.rfile.read(length).decode('utf-8'))
+        length = self._body_length()
+        if length is None:
+            self._deny('That request body is not one this page can read.')
+            return
+        form = parse_qs(self.rfile.read(length).decode('utf-8', 'replace'))
 
         if route == '/estimate':
             self._html(views.estimate_panel(form))
@@ -350,13 +373,32 @@ class Handler(BaseHTTPRequestHandler):
         self._html(views.log_panel())
 
 
+    # A form is a handful of short fields; a body larger than this is not
+    # one, and the uploads have their own route.
+    MAX_FORM = 1_000_000
+
+    def _body_length(self):
+        """The declared length, or None if it is not a length.
+
+        `int()` on a header is `int()` on whatever was sent. A non-numeric
+        Content-Length raised inside the handler, which has no try around it,
+        so the traceback went to stderr and the client got a dead connection.
+        """
+        raw = self.headers.get('Content-Length') or '0'
+        try:
+            length = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return length if 0 <= length <= self.MAX_FORM else None
+
     def _form(self) -> dict:
         """A urlencoded body, with a cap: this is not where files arrive."""
-        length = int(self.headers.get('Content-Length') or 0)
-        if length > 1_000_000:
-            self._deny('That form is far too large.')
+        length = self._body_length()
+        if length is None:
+            self._deny('That request body is not one this page can read.')
             return {}
-        return parse_qs(self.rfile.read(length).decode('utf-8'))
+        # Malformed bytes are the sender's problem, not a reason to fall over.
+        return parse_qs(self.rfile.read(length).decode('utf-8', 'replace'))
 
     def _create_experiment(self) -> None:
         form = self._form()
@@ -385,17 +427,25 @@ class Handler(BaseHTTPRequestHandler):
         try:
             path = library.path_for(library.slug(name))
         except library.LibraryError as exc:
-            self._html(f'<h1>404</h1><p>{exc}</p>', status=404)
+            self._not_found(str(exc))
             return
         if not path.is_dir():
-            self._html('<h1>404</h1>', status=404)
+            self._not_found()
             return
 
         destination = path / 'input'
+        # Uploads are the one route where a large body is legitimate, so the
+        # cap is the upload's own rather than the form's — but the header
+        # still has to be a number.
+        try:
+            declared = int(self.headers.get('Content-Length') or 0)
+        except (TypeError, ValueError):
+            self._deny('That upload did not say how large it is.')
+            return
         try:
             _fields, files = multipart.parse(
                 self.rfile,
-                int(self.headers.get('Content-Length') or 0),
+                declared,
                 self.headers.get('Content-Type', ''),
                 save_dir=destination,
                 max_bytes=views_library.MAX_UPLOAD,
@@ -552,6 +602,14 @@ class Handler(BaseHTTPRequestHandler):
         lying about in the workspace where a later run would have to explain
         them.
         """
+        # An allow-list, because there was none: anything under `words/`
+        # that was not the CSV fell through to the image branch, so
+        # `/words/anything` answered with a word cloud.
+        if action not in ('words/terms.csv', 'words/cloud.png',
+                          'words/cloud.svg'):
+            self._not_found(f'No such download: {action.split("/", 1)[-1]}')
+            return
+
         found, _declared, problem, params = views_words.result(query)
         if problem:
             self._deny(problem)
@@ -567,7 +625,7 @@ class Handler(BaseHTTPRequestHandler):
                                f'terms-{params["ngrams"]}-'
                                f'{params["penalty"]}.csv')
                 return
-            fmt = 'svg' if action.endswith('.svg') else 'png'
+            fmt = 'svg' if action == 'words/cloud.svg' else 'png'
             body = views_words.words.cloud_image(
                 found['kept'], direction == 'positive', fmt)
         except ValueError as exc:
@@ -671,9 +729,9 @@ class Handler(BaseHTTPRequestHandler):
                 elif action == 'estimate':
                     self._html(views.estimate_panel(self._form()))
                 else:
-                    self._html('<h1>404</h1>', status=404)
+                    self._not_found()
         except (active.Unknown, library.LibraryError) as exc:
-            self._html(f'<h1>404</h1><p>{exc}</p>', status=404)
+            self._not_found(str(exc))
 
 
 def serve(host='127.0.0.1', port=8765, open_browser=True, library_mode=True):

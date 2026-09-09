@@ -12,6 +12,7 @@ that came from outside.
 
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -100,6 +101,72 @@ class AnalysisPageTests(unittest.TestCase):
                          views_compare.page('bare-study')):
                 if '<tbody></tbody>' in page.replace('\n', ''):
                     self.fail('a table was rendered with no rows in it')
+
+
+class ConcurrencyTests(unittest.TestCase):
+    """A slow page must not stop the rest of the dashboard.
+
+    The words, narratives and comparison pages take from seconds to minutes,
+    and they used to hold one process-wide mutex for the whole of it — so the
+    log poll that shows a run progressing was frozen by a page looking at that
+    same run's output.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        library.use_library(Path(self.tmp.name))
+        library.ensure_root()
+        library.create('One', 'generic_chat')
+        library.create('Two', 'generic_chat')
+
+    def _enter(self, name, holding, done, entered=None):
+        def run():
+            with active.experiment(name):
+                if entered is not None:
+                    entered.set()
+                holding.wait(5)
+            done.set()
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        return thread
+
+    def test_two_requests_for_the_same_experiment_do_not_queue(self):
+        holding, first_done = threading.Event(), threading.Event()
+        entered = threading.Event()
+        self._enter('one', holding, first_done, entered)
+        self.assertTrue(entered.wait(5), 'the first request never started')
+
+        second_holding, second_done = threading.Event(), threading.Event()
+        second_entered = threading.Event()
+        self._enter('one', second_holding, second_done, second_entered)
+
+        self.assertTrue(
+            second_entered.wait(2),
+            'a second request for the same experiment waited for the first')
+        second_holding.set()
+        holding.set()
+        self.assertTrue(first_done.wait(5) and second_done.wait(5))
+
+    def test_a_request_for_another_experiment_waits_its_turn(self):
+        """The state really is shared, so this one has to queue."""
+        holding, first_done = threading.Event(), threading.Event()
+        entered = threading.Event()
+        self._enter('one', holding, first_done, entered)
+        self.assertTrue(entered.wait(5))
+
+        other_holding, other_done = threading.Event(), threading.Event()
+        other_entered = threading.Event()
+        other_holding.set()
+        self._enter('two', other_holding, other_done, other_entered)
+
+        self.assertFalse(
+            other_entered.wait(0.5),
+            'a second experiment was activated while the first was in flight')
+        holding.set()
+        self.assertTrue(first_done.wait(5))
+        self.assertTrue(other_entered.wait(5), 'it never got its turn')
+        self.assertTrue(other_done.wait(5))
 
 
 if __name__ == '__main__':

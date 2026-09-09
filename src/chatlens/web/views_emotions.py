@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import html
 
+from chatlens.web import ui
 from chatlens.core import nrc
 
 
-def _e(text) -> str:
-    return html.escape(str(text if text is not None else ''))
+_e = ui.esc
 
 
 def _missing_panel() -> str:
@@ -125,22 +124,22 @@ def page(name: str, query=None) -> str:
     from chatlens.core import config
 
     experiment = config.EXPERIMENT
-    return f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_e(experiment.name)} — emotions</title>
-<link rel="stylesheet" href="/static/style.css">
-</head><body class="library">
-<header>
-  <a class="back-link" href="/experiment/{_e(name)}">&larr;
-    {_e(experiment.name)}</a>
-  <h1>Emotions</h1>
-</header>
-<main class="single">
-<p class="muted">Eight emotions and two sentiments, from a word list. A document
-containing none of its words scores zero everywhere, which is a correct reading
-and not a gap — but those rows are overwhelmingly the short ones, so the tables
-below show how many there are and where they sit.</p>
-{panel()}
-</main>
-</body></html>'''
+    # The reasoning is kept and moved: one click away rather than above the
+    # result, which is what used to push the figures below the fold.
+    why = ui.disclosure(
+        'What this page is for',
+        '''<p>Eight emotions and two sentiments, from a word list. A document
+        containing none of its words scores zero everywhere, which
+        is a correct reading and not a gap — but those rows are
+        overwhelmingly the short ones, so the tables below show how
+        many there are and where they sit.</p>''',
+    )
+    return ui.shell(
+        f'{experiment.name} — emotions',
+        why + '\n' + panel(),
+        heading='Emotions',
+        slug=name,
+        experiment_name=experiment.name,
+        current='emotions',
+        htmx=False,
+    )

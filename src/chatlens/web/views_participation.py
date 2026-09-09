@@ -8,20 +8,14 @@ strongest result on the experiment it was built for turned out to be.
 from __future__ import annotations
 
 import csv
-import html
 from pathlib import Path
+
+from chatlens.web import ui
 
 csv.field_size_limit(10 ** 7)
 
 
-def _e(text) -> str:
-    """Escape anything, not just strings.
-
-    `html.escape` calls `.replace` on what it is given, and `Path.replace` is a
-    real method that means something else entirely — so passing a Path raises
-    from inside the escaper rather than being rejected at the door.
-    """
-    return html.escape(str(text if text is not None else ''))
+_e = ui.esc
 
 
 def _read(path: Path):
@@ -224,23 +218,24 @@ excluded.</p>'''
 def _shell(name: str, experiment, body: str) -> str:
     from chatlens.core import config
 
-    return f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_e(experiment.name)} — participation</title>
-<link rel="stylesheet" href="/static/style.css">
-</head><body class="library">
-<header>
-  <a class="back-link" href="/experiment/{_e(name)}">&larr;
-    {_e(experiment.name)}</a>
-  <h1>Participation</h1>
-</header>
-<main class="single">
-<p class="muted">Every other page measures text, so it can only see the pairs
-that produced some. This one shows the whole grid, including the pairs where
-nothing was said — which is not missing data when speaking is a choice.</p>
-{body}
-<h2>Where this experiment lives</h2>
-<p class="muted path">{_e(config.WORKSPACE)}</p>
-</main>
-</body></html>'''
+    # The reasoning is kept and moved: the grid is the page's whole argument,
+    # and it used to sit under three lines explaining it.
+    why = ui.disclosure(
+        'What this page is for',
+        '''<p>Every other page measures text, so it can only see the pairs
+        that produced some. This one shows the whole grid, including the
+        pairs where nothing was said — which is not missing data when
+        speaking is a choice.</p>''',
+    )
+    where = (f'<h2>Where this experiment lives</h2>'
+             f'<p class="muted path">{ui.esc(config.WORKSPACE)}</p>')
+
+    return ui.shell(
+        f'{experiment.name} — participation',
+        f'{why}\n{body}\n{where}',
+        heading='Participation',
+        slug=name,
+        experiment_name=experiment.name,
+        current='participation',
+        htmx=False,
+    )

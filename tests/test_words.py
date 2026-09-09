@@ -193,5 +193,51 @@ class OptionalDependencyTests(unittest.TestCase):
             self.assertEqual(views_words._requirements_panel(), '')
 
 
+class CloudSvgTests(unittest.TestCase):
+    """The figure on the page, which is no longer a raster on a white slab."""
+
+    def setUp(self):
+        try:
+            import wordcloud  # noqa: F401
+        except ImportError:
+            self.skipTest('the words extra is not installed')
+        from chatlens.core import words
+        self.words = words
+        self.selected = [
+            {'term': 'trust', 'coef': 0.9, 'documents': 8},
+            {'term': 'not enough', 'coef': -0.7, 'documents': 6},
+            {'term': 'split it', 'coef': 0.4, 'documents': 5},
+        ]
+
+    def test_it_is_text_and_not_a_picture_of_text(self):
+        svg = self.words.cloud_svg(self.selected, True)
+        self.assertTrue(svg.startswith('<svg'))
+        self.assertIn('>trust</text>', svg)
+        self.assertNotIn('<image', svg)
+
+    def test_every_word_carries_the_width_it_was_laid_out_with(self):
+        """Without it the drawing depends on the reader having the font the
+        layout was measured with, and the words overlap when they do not."""
+        svg = self.words.cloud_svg(self.selected, True)
+        self.assertEqual(svg.count('<text'), svg.count('textLength='))
+        self.assertIn('lengthAdjust="spacingAndGlyphs"', svg)
+
+    def test_the_colour_is_left_to_the_page(self):
+        svg = self.words.cloud_svg(self.selected, True)
+        self.assertIn('var(--cloud-ink', svg)
+
+    def test_a_direction_with_nothing_in_it_says_so(self):
+        empty = [{'term': 'trust', 'coef': 0.9, 'documents': 8}]
+        with self.assertRaises(ValueError):
+            self.words.cloud_svg(empty, False)
+
+    def test_the_same_terms_draw_the_same_figure(self):
+        """A figure that moves when nothing changed cannot be compared with
+        the one in yesterday's notes."""
+        first = self.words.cloud_svg(self.selected, True)
+        second = self.words.cloud_svg(self.selected, True)
+        self.assertEqual(first, second)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

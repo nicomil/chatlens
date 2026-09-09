@@ -162,28 +162,26 @@ def fit(rows, text_column, outcome_column, group_column='group_uid',
     }
 
 
-def cloud_image(selected, positive: bool, fmt: str = 'png') -> bytes:
-    """One cloud per direction, each word sized by |coefficient|.
-
-    Two clouds rather than one coloured both ways: a reader looking at a single
-    image cannot tell a large word that predicts the outcome from a large word
-    that predicts its absence, and the distinction is the whole point.
-    """
-    import io
-
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-    from wordcloud import WordCloud
-
+def _weights(selected, positive: bool) -> dict:
     weights = {t['term']: abs(t['coef']) for t in selected
                if (t['coef'] > 0) == positive}
     if not weights:
         raise ValueError('No terms in that direction survived the penalty.')
+    return weights
 
-    colour = '#2f4c8c' if positive else '#a33a2a'
-    cloud = WordCloud(
-        width=1600, height=900, background_color='white',
+
+def _lay_out(weights, colour: str, background=None):
+    """The layout itself, shared by both outputs.
+
+    `random_state=0` is not decoration: without it the same coefficients draw a
+    different picture on every request, and a figure that moves when nothing
+    changed cannot be compared with the one in yesterday's notes.
+    """
+    from wordcloud import WordCloud
+
+    return WordCloud(
+        width=1600, height=900,
+        background_color=background, mode='RGB' if background else 'RGBA',
         color_func=lambda *a, **k: colour, prefer_horizontal=0.9,
         relative_scaling=0.6,
         # The bigrams are already terms of the model; letting the library
@@ -191,13 +189,109 @@ def cloud_image(selected, positive: bool, fmt: str = 'png') -> bytes:
         collocations=False, random_state=0,
     ).generate_from_frequencies(weights)
 
+
+# The placeholder the layout is coloured with before the colour is handed over
+# to the stylesheet. Any value would do as long as nothing else in the document
+# uses it.
+_INK = '#010203'
+
+
+def _text_box(font, word):
+    """Width, and the offsets that put the baseline where the layout put it.
+
+    Pillow moved this API; the private call is the one the layout itself used,
+    so it is tried first and the public one is the fallback.
+    """
+    try:
+        (size_x, _size_y), (offset_x, offset_y) = font.font.getsize(word)
+    except AttributeError:  # pragma: no cover - depends on the Pillow version
+        left, top, right, _bottom = font.getbbox(word)
+        size_x, offset_x, offset_y = right, left, top
+    ascent, _descent = font.getmetrics()
+    return size_x - offset_x, -offset_x, ascent - offset_y
+
+
+def cloud_svg(selected, positive: bool) -> str:
+    """The cloud as real text in real SVG, coloured by the page.
+
+    The page used to show a matplotlib raster on a white canvas: a bright slab
+    in the middle of a dark interface, fixed at the colours chosen when it was
+    drawn, reflowing the page when it finally arrived because it carried no
+    dimensions. This is vector text instead — it inherits the theme through a
+    custom property, scales, and can be selected and searched like text.
+
+    Every word carries the width the layout measured for it, as `textLength`.
+    Without that the figure depends on the browser having the font the layout
+    was computed with, and it does not: the library's own SVG export embeds
+    that font, Chrome lays the text out before it arrives, and the words
+    overlap. Fixing the width makes the drawing correct in whatever font is
+    used to render it.
+
+    Two clouds rather than one coloured both ways: a reader looking at a single
+    image cannot tell a large word that predicts the outcome from a large word
+    that predicts its absence, and the distinction is the whole point.
+    """
+    from xml.sax.saxutils import escape
+
+    from PIL import Image, ImageFont
+
+    cloud = _lay_out(_weights(selected, positive), _INK)
+    scale = getattr(cloud, 'scale', 1)
+    width, height = cloud.width * scale, cloud.height * scale
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
+        f'height="{height}" viewBox="0 0 {width} {height}" '
+        f'preserveAspectRatio="xMidYMid meet" role="img">',
+        # The colour is handed to the stylesheet: that is what makes the figure
+        # follow the light and the dark theme without being redrawn.
+        '<style>text{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;'
+        'fill:var(--cloud-ink,currentColor)}</style>',
+    ]
+
+    for (word, _count), font_size, (y, x), orientation, _colour in cloud.layout_:
+        size = int(font_size * scale)
+        font = ImageFont.truetype(cloud.font_path, size)
+        text_width, min_x, max_y = _text_box(font, word)
+        left, top = x * scale, y * scale
+        if orientation == Image.ROTATE_90:
+            transform = f'translate({left + max_y},{top + text_width}) rotate(-90)'
+        else:
+            transform = f'translate({left + min_x},{top + max_y})'
+        parts.append(
+            f'<text transform="{transform}" font-size="{size}" '
+            f'textLength="{text_width}" lengthAdjust="spacingAndGlyphs">'
+            f'{escape(word)}</text>')
+
+    parts.append('</svg>')
+    return ''.join(parts)
+
+
+def cloud_image(selected, positive: bool, fmt: str = 'png',
+                colour: str = None, background: str = 'white') -> bytes:
+    """The same cloud as a file to keep: PNG for a slide, SVG for a paper.
+
+    This one stays on a white ground by default, because it leaves the
+    interface: a figure destined for a document should not carry the colours of
+    the screen it was exported from.
+    """
+    import io
+
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    if colour is None:
+        colour = '#2f4c8c' if positive else '#a33a2a'
+    cloud = _lay_out(_weights(selected, positive), colour, background=background)
+
     figure, axes = plt.subplots(figsize=(11, 6.2), dpi=170)
     axes.imshow(cloud, interpolation='bilinear')
     axes.axis('off')
     figure.tight_layout(pad=0.2)
     buffer = io.BytesIO()
     figure.savefig(buffer, format=fmt, bbox_inches='tight',
-                   facecolor='white')
+                   facecolor=background or 'none')
     plt.close(figure)
     return buffer.getvalue()
 

@@ -12,11 +12,22 @@ the workspace per request without holding anything would let a log poll for one
 experiment interleave with a settings page for another, and each would read the
 other's paths.
 
-So a lock, held for the length of the part that reads or writes that state.
-Rendering a page is quick — it reads a few files and formats HTML — so
-serialising it costs nothing anyone can perceive. What must **not** be done
-inside the lock is anything slow: an upload streams to disk first and only then
-takes it to record the result.
+So a guard, held for the length of the part that reads or writes that state.
+It is not a plain mutex, and the reason is what that assumption cost. Rendering
+a page is usually quick, but three of them are not: the words page fits a
+model, the narratives page parses every message with spaCy, the comparison page
+cross-validates. Under one mutex those minutes stopped the whole dashboard,
+including the log poll that is supposed to show a run progressing.
+
+The observation that fixes it is that requests for the **same** experiment do
+not conflict at all: the state they share is already set to what they both
+want. Only a switch between experiments needs exclusivity. So this counts the
+requests in flight and lets any number of them through as long as they concern
+the same experiment; one for a different experiment waits until the last of
+them has left.
+
+In the ordinary case — one person, one experiment open, the log polling while
+something computes — nothing waits for anything.
 """
 
 from __future__ import annotations
@@ -27,9 +38,14 @@ from pathlib import Path
 
 from chatlens.core import config, experiment as experiment_module, library
 
-# Re-entrant: a view that activates an experiment may call another that does
-# the same, and the second must not deadlock on the first.
-_LOCK = threading.RLock()
+# The condition guards `_active` and `_depth`; waiting on it is how a request
+# for another experiment stays out of the way.
+_LOCK = threading.Condition()
+
+# The experiment every request in flight is about, and how many of them there
+# are. `None` means nobody holds it and the next arrival may take it.
+_active = None
+_depth = 0
 
 # The URL every fragment of the current page hangs off. Empty in
 # single-workspace mode, where the endpoints sit at the root as they always
@@ -62,31 +78,53 @@ def experiment(name: str):
     if not path.is_dir():
         raise Unknown(f'There is no experiment called "{name}".')
 
-    global BASE
+    global BASE, _active, _depth
+
     with _LOCK:
-        previous_workspace = config.WORKSPACE
-        previous_experiment = config.EXPERIMENT
-        previous_base = BASE
-        try:
+        # Anyone asking for the experiment already loaded joins it; anyone
+        # asking for a different one waits for the last of them to leave.
+        while _active is not None and _active != name:
+            _LOCK.wait()
+        first = _depth == 0
+        if first:
+            _saved['workspace'] = config.WORKSPACE
+            _saved['experiment'] = config.EXPERIMENT
+            _saved['base'] = BASE
             config.use_workspace(path)
             config.use_experiment(experiment_module.load(path))
             BASE = f'/experiment/{name}'
-            yield path
-        finally:
-            BASE = previous_base
-            config.use_workspace(previous_workspace)
-            if previous_experiment is not None:
-                # Restores the input patterns along with the object: they are
-                # the adapter's, and the adapter belongs to the experiment.
-                config.use_experiment(previous_experiment)
-            else:
-                config.EXPERIMENT = None
+        _active = name
+        _depth += 1
+
+    try:
+        yield path
+    finally:
+        with _LOCK:
+            _depth -= 1
+            if _depth == 0:
+                _active = None
+                BASE = _saved['base']
+                config.use_workspace(_saved['workspace'])
+                if _saved['experiment'] is not None:
+                    # Restores the input patterns along with the object: they
+                    # are the adapter's, and the adapter belongs to the
+                    # experiment.
+                    config.use_experiment(_saved['experiment'])
+                else:
+                    config.EXPERIMENT = None
+                _LOCK.notify_all()
+
+
+# What to put back when the last request for an experiment leaves. One dict
+# rather than three globals, because the three are only ever set and restored
+# together.
+_saved = {'workspace': None, 'experiment': None, 'base': ''}
 
 
 @contextlib.contextmanager
 def held():
-    """Just the lock, for a view that reads the current state without changing
-    it."""
+    """Just the guard, for a view that reads the current state without
+    changing it."""
     with _LOCK:
         yield
 
