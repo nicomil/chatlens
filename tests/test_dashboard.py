@@ -500,6 +500,17 @@ class LibraryRoutingTests(unittest.TestCase):
         self.assertEqual(response.status, 404)
         self.assertIn('does-not-exist', body)
 
+    def test_a_run_can_be_stopped_from_the_page(self):
+        """`Runner.stop` has always existed and has always been tested; until
+        now nothing in the interface called it."""
+        response, _body = self.post('/experiment/first-study/stop', '')
+        self.assertEqual(response.status, 200)
+
+    def test_the_failure_badge_says_what_happened_not_only_a_number(self):
+        from chatlens.web import views
+        self.assertIn('missing', views.EXIT_MEANING[3])
+        self.assertIn('request', views.EXIT_MEANING[-15])
+
     def test_the_404_does_not_echo_markup_from_the_url(self):
         """The message quotes the path, and the path is written by whoever
         sends the request."""
@@ -527,6 +538,22 @@ class LibraryRoutingTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertIn('Third Study', body)
         self.assertIn('First Study', body)
+
+    def test_the_example_can_be_made_from_the_page(self):
+        """The empty library invites you to press a button that, until now,
+        did not exist anywhere in the interface.
+
+        One test rather than two because the library is shared across the
+        methods of this class: made and made-again are one sequence.
+        """
+        response, body = self.post('/experiments/example', '')
+        self.assertEqual(response.status, 200)
+        self.assertIn('Example ready', body)
+        self.assertIn('demo', self.get('/')[1].lower())
+
+        response, body = self.post('/experiments/example', '')
+        self.assertEqual(response.status, 200)
+        self.assertIn('already', body)
 
     def test_a_duplicate_name_is_a_message_in_the_form(self):
         """Something to correct, not an error page."""

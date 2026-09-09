@@ -157,9 +157,11 @@ class Handler(BaseHTTPRequestHandler):
     # --- responses --------------------------------------------------------
 
     def _send(self, body: bytes, content_type='text/html; charset=utf-8',
-              status=200, cookie: str = ''):
+              status=200, cookie: str = '', extra_headers=()):
         self.send_response(status)
         self.send_header('Content-Type', content_type)
+        for header, value in extra_headers:
+            self.send_header(header, value)
         self.send_header('Content-Length', str(len(body)))
         # Pages are generated on every request: never cache them.
         self.send_header('Cache-Control', 'no-store')
@@ -171,8 +173,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _html(self, markup: str, status=200, cookie: str = ''):
-        self._send(markup.encode('utf-8'), status=status, cookie=cookie)
+    def _html(self, markup: str, status=200, cookie: str = '',
+              extra_headers=()):
+        self._send(markup.encode('utf-8'), status=status, cookie=cookie,
+                   extra_headers=extra_headers)
+
+    def _go(self, where: str) -> None:
+        """Send the browser somewhere else after a change that leaves the
+        current page describing something that is no longer there."""
+        self._html(f'<p>Moved to <a href="{ui.esc(where)}">{ui.esc(where)}</a>'
+                   f'.</p>', extra_headers=(('HX-Redirect', where),))
 
     def _error(self, code: int, headline: str, explanation: str = ''):
         """An error page, with whatever it says escaped.
@@ -352,6 +362,14 @@ class Handler(BaseHTTPRequestHandler):
             self._create_experiment()
             return
 
+        if route == '/experiments/example':
+            self._create_example()
+            return
+
+        if route == '/stop':
+            self._stop_run()
+            return
+
         if route not in ('/run', '/estimate'):
             self._not_found()
             return
@@ -366,11 +384,7 @@ class Handler(BaseHTTPRequestHandler):
             self._html(views.estimate_panel(form))
             return
 
-        if not runner.start(build_command(form)):
-            self._html('<div class="logbody empty">A run is already in '
-                       'progress: wait for it to finish.</div>')
-            return
-        self._html(views.log_panel())
+        self._start_run(form)
 
 
     # A form is a handful of short fields; a body larger than this is not
@@ -414,6 +428,72 @@ class Handler(BaseHTTPRequestHandler):
             self._html(views_library.library_panel(error=str(exc)))
             return
         self._html(views_library.library_panel())
+
+    def _start_run(self, form: dict) -> None:
+        """Start a run, and say so in the log when it cannot start.
+
+        `Popen` was called with nothing around it: a missing interpreter or a
+        permission error came out as a traceback, and the runner had already
+        recorded the command, so the page then showed a run that never began.
+        """
+        try:
+            started = runner.start(build_command(form))
+        except OSError as exc:
+            self._html(views.log_body_message(
+                f'The run could not be started: {exc}'))
+            return
+        if not started:
+            self._html(views.log_body_message(
+                'A run is already in progress: wait for it to finish, or stop '
+                'it from the header above.'))
+            return
+        self._html(views.log_panel())
+
+    def _stop_run(self) -> None:
+        """Ask the run to stop.
+
+        The runner could always do this and nothing offered it. Terminate
+        rather than kill: the pipeline writes what it has and the paid ratings
+        already in the cache stay paid for.
+        """
+        if not runner.stop():
+            self._html(views.log_head())
+            return
+        self._html(views.log_head())
+
+    def _create_example(self) -> None:
+        """The synthetic study, made from the interface.
+
+        The empty library has always invited the reader to press "Try an
+        example". There was no such control anywhere: the demo existed as a
+        command, which is the one place somebody who has just opened a
+        dashboard is not. This is that button.
+
+        It writes the files and the configuration and stops there. Running is
+        the next press, and it is the thing the example is meant to show.
+        """
+        from chatlens.core import demo
+
+        name = 'Example study (synthetic)'
+        try:
+            path = library.create(name, adapter='generic_chat')
+        except library.LibraryError:
+            # Already made: send them to it rather than refusing.
+            self._html(views_library.library_panel(
+                message='The example is already in your library.'))
+            return
+
+        try:
+            made = demo.create(path)
+        except OSError as exc:
+            self._html(views_library.library_panel(
+                error=f'The example could not be written: {exc}'))
+            return
+
+        self._html(views_library.library_panel(
+            message=f'Example ready: {made["n_groups"]} groups, '
+                    f'{made["n_messages"]} messages, nobody real. Open it and '
+                    f'press Start run.'))
 
     def _upload(self, name: str) -> None:
         """Receive files into an experiment's input/ folder.
@@ -696,8 +776,12 @@ class Handler(BaseHTTPRequestHandler):
     def _experiment_post(self, name: str, action: str) -> None:
         try:
             if action == 'archive':
+                # Nothing is deleted: a marker file takes it out of the list
+                # and the folder stays exactly where it was. The page it was
+                # asked from is now about something not in the library, so the
+                # browser is sent back to the library itself.
                 library.archive(library.slug(name))
-                self._html(views_library.library_panel())
+                self._go('/')
                 return
 
             if action == 'upload':
@@ -705,7 +789,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             with active.experiment(name):
-                if action == 'files/delete':
+                if action == 'stop':
+                    self._stop_run()
+                elif action == 'files/delete':
                     self._delete_file(name)
                 elif action == 'input':
                     self._assign_role(name)
@@ -720,12 +806,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif action == 'adapter':
                     self._set_adapter(name)
                 elif action == 'run':
-                    if not runner.start(build_command(self._form())):
-                        self._html('<div class="logbody empty">A run is '
-                                   'already in progress: wait for it to '
-                                   'finish.</div>')
-                        return
-                    self._html(views.log_panel())
+                    self._start_run(self._form())
                 elif action == 'estimate':
                     self._html(views.estimate_panel(self._form()))
                 else:

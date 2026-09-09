@@ -403,15 +403,51 @@ def log_body() -> str:
             f'{_phases(lines)}{rendered}</div>')
 
 
+# What a non-zero exit actually means, where we know. A run that ended badly
+# used to be reported as `exit 3` and nothing else: the number is the one thing
+# on the page that the reader can do nothing with.
+EXIT_MEANING = {
+    1: 'stopped with an error — the last lines of the log say which',
+    2: 'the options were not understood',
+    3: 'a file or a setting the run needed was missing',
+    -15: 'stopped on request',
+    -2: 'stopped on request',
+    -9: 'killed',
+}
+
+
+def _stop_button() -> str:
+    """Offered while something is running.
+
+    `Runner.stop` has always existed and has always been tested; nothing in the
+    interface called it. Someone who started a paid run with the wrong model
+    had to go and kill the terminal.
+    """
+    return (f'<button class="btn quiet stop" hx-post="{active.base()}/stop"'
+            f' hx-target="#loghead" hx-swap="outerHTML">Stop the run</button>')
+
+
+def log_body_message(text: str) -> str:
+    """A single line where the log would be. The router used to build this
+    markup itself, in two places, with the wording different in each."""
+    return f'<div class="logbody empty">{_e(text)}</div>'
+
+
 def log_head() -> str:
     state = runner.snapshot()
+    control = ''
     if state['running']:
         badge = '<span class="badge run">running</span>'
+        control = _stop_button()
     elif state['command']:
         code = state['returncode']
         ok = code == 0
-        badge = (f'<span class="badge {"ok" if ok else "ko"}">'
-                 f'{"completed" if ok else f"exit {code}"}</span>')
+        if ok:
+            badge = '<span class="badge ok">completed</span>'
+        else:
+            meaning = EXIT_MEANING.get(code, 'stopped before it finished')
+            badge = (f'<span class="badge ko">{_e(meaning)}</span>'
+                     f'<span class="muted small">exit {_e(code)}</span>')
     else:
         return '<div id="loghead" class="loghead"></div>'
 
@@ -427,7 +463,7 @@ def log_head() -> str:
     short = short.split(' --topicgpt-repo')[0]
     return (f'<div id="loghead" class="loghead">{badge}'
             f'<code title="{_e(command)}">{_e(short)}</code>'
-            f'<span class="muted when">{when}</span></div>')
+            f'<span class="muted when">{when}</span>{control}</div>')
 
 
 def log_panel() -> str:

@@ -154,6 +154,14 @@ treatment = "treatment"
 [treatments]
 open       = "Open chat"
 restricted = "Restricted chat"
+
+# Without this the descriptive pages work and the four that explain something
+# do not, so the example would demonstrate half the tool.
+[outcome]
+column = "accepted"
+kind   = "binary"
+unit   = "sender_group"
+label  = "Offer accepted"
 '''
 
 

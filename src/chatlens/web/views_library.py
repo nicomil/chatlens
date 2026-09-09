@@ -129,12 +129,23 @@ def _card(entry: dict) -> str:
     )
 
 
+EXAMPLE_BUTTON = (
+    '<button class="btn quiet" hx-post="/experiments/example" '
+    'hx-target="#library" hx-swap="innerHTML">Try an example</button>')
+
+
 def library_list() -> str:
     entries = library.entries()
     if not entries:
-        return ('<p class="muted empty-library">No experiments yet. '
-                'Make one to get started, or press <b>Try an example</b> to see '
-                'the whole procedure on data that belongs to nobody.</p>')
+        # The button this sentence names did not exist. It was the first thing
+        # a new user read, and pressing what it told them to press was not
+        # possible: the demo was a command line away, which is the one place
+        # somebody opening a dashboard is not.
+        return ui.empty(
+            'No experiments yet. Make one from your own export, or try the '
+            'example — a synthetic study that belongs to nobody, with the '
+            'whole procedure already set up on it.',
+            action=EXAMPLE_BUTTON)
     return '<div class="cards experiments">' + ''.join(
         _card(e) for e in entries) + '</div>'
 
@@ -169,13 +180,32 @@ def new_form(error: str = '') -> str:
 </form>'''
 
 
-def library_panel(error: str = '') -> str:
-    """The whole middle of the library page, swapped as one piece."""
+def library_panel(error: str = '', message: str = '') -> str:
+    """The whole middle of the library page, swapped as one piece.
+
+    The experiments come first and the form to make another is folded away.
+    It used to be the other way round: a returning user, who wants to open one
+    of the studies they already have, met a small card and then a form filling
+    the screen for the thing they were not doing.
+    """
+    entries = library.entries()
+    note = ui.notice(_e(message), 'good') if message else ''
+    # Open when there is nothing to choose from instead, or when the last
+    # attempt failed and the message is inside it.
+    unfolded = ' open' if error or not entries else ''
+    # "Another" is wrong when there is not a first one yet.
+    summary = 'Add another experiment' if entries else 'New experiment'
+
     return f'''<div id="library">
+  {note}
   <h2>Experiments</h2>
   {library_list()}
-  <h2>New experiment</h2>
-  {new_form(error)}
+  <details class="explain newexp"{unfolded}>
+    <summary>{summary}</summary>
+    <div class="explainbody">{new_form(error)}</div>
+  </details>
+  {'' if not entries else '<p class="muted">' + EXAMPLE_BUTTON
+   + ' &nbsp;a synthetic study, set up and ready to run.</p>'}
 </div>'''
 
 
@@ -208,6 +238,20 @@ ROLE_LABELS = {
 }
 
 REQUIRED_ROLES = ('group', 'sender', 'receiver', 'body')
+
+# The adapters' input roles, said in words. The dropdown listed the raw keys —
+# "wide", "chat", "participants" — which name the concept inside the code and
+# not the file the person is looking at.
+INPUT_LABELS = {
+    'messages': 'the messages, one per row',
+    'participants': 'the participants, one per row',
+    'wide': "oTree's all-apps-wide export",
+    'chat': "oTree's chat messages export",
+}
+
+
+def _input_label(role: str) -> str:
+    return INPUT_LABELS.get(role, role)
 
 
 def files_panel(name: str, message: str = '', error: str = '',
@@ -245,10 +289,10 @@ def files_panel(name: str, message: str = '', error: str = '',
             for candidate in patterns:
                 mark = ' selected' if candidate == role else ''
                 options.append(f'<option value="{_e(candidate)}"{mark}>'
-                               f'{_e(candidate)}</option>')
+                               f'{_e(_input_label(candidate))}</option>')
             label = (
                 f'<select name="role" hx-post="{_base(name)}/input"'
-                f' hx-vals=\'{{"file": "{_e(path.name)}"}}\''
+                f' {ui.hx_vals(file=path.name)}'
                 f' hx-target="#files" hx-swap="innerHTML"'
                 f' hx-trigger="change">{"".join(options)}</select>')
             if confirm_delete == path.name:
@@ -258,7 +302,7 @@ def files_panel(name: str, message: str = '', error: str = '',
                 action = (
                     f'<span class="confirm">Remove it?'
                     f'<button class="danger" hx-post="{_base(name)}/files/delete"'
-                    f' hx-vals=\'{{"file": "{_e(path.name)}"}}\''
+                    f' {ui.hx_vals(file=path.name)}'
                     f' hx-target="#files" hx-swap="innerHTML">Yes, remove</button>'
                     f'<button hx-get="{_base(name)}/files"'
                     f' hx-target="#files" hx-swap="innerHTML">Keep</button>'
@@ -266,7 +310,7 @@ def files_panel(name: str, message: str = '', error: str = '',
             else:
                 action = (
                     f'<button class="linkish" hx-get="{_base(name)}/files"'
-                    f' hx-vals=\'{{"confirm": "{_e(path.name)}"}}\''
+                    f' {ui.hx_vals(confirm=path.name)}'
                     f' hx-target="#files" hx-swap="innerHTML">remove</button>')
             rows.append(
                 f'<tr><td>{_e(path.name)}</td>'
@@ -315,23 +359,11 @@ def _adapter_suggestion(name: str, files) -> str:
         f'experiment is set to read them as '
         f'<b>{_e(ADAPTER_HELP[config.EXPERIMENT.adapter][0])}</b>. '
         f'<button class="linkish" hx-post="{_base(name)}/adapter" '
-        f'hx-vals=\'{{"adapter": "{_e(looks_like)}"}}\' '
+        f'{ui.hx_vals(adapter=looks_like)} '
         f'hx-target="#files" hx-swap="innerHTML">'
         f'Read them as {_e(title)} instead</button></p>')
 
 
-# --- the column mapping ----------------------------------------------------
-
-ROLE_LABELS = {
-    'group': ('Group', 'what puts participants in the same conversation'),
-    'sender': ('Sender', 'who wrote the message'),
-    'receiver': ('Recipient', 'who it was addressed to'),
-    'body': ('Text', 'the message itself'),
-    'timestamp': ('Time', 'when it was sent — epoch seconds or ISO 8601'),
-    'treatment': ('Treatment', 'the experimental condition'),
-}
-
-REQUIRED_ROLES = ('group', 'sender', 'receiver', 'body')
 
 
 def _messages_file():
@@ -405,7 +437,7 @@ def columns_panel(name: str, message: str = '', error: str = '') -> str:
 <p class="muted">Read from <b>{_e(path.name)}</b>, {len(columns)} columns.</p>
 <form hx-post="{_base(name)}/columns" hx-target="#columns" hx-swap="innerHTML">
   <div class="mapping">{rows}</div>
-  <button type="submit" class="primary">Save the mapping</button>
+  <button type="submit" class="primary">Save</button>
 </form>'''
 
 
@@ -449,7 +481,7 @@ what the report will print.</p>
 <form hx-post="{_base(name)}/treatments" hx-target="#treatments"
       hx-swap="innerHTML">
   <div class="mapping">{fields}</div>
-  <button type="submit" class="primary">Save the names</button>
+  <button type="submit" class="primary">Save</button>
 </form>'''
 
 
@@ -570,9 +602,43 @@ read from the dataset built for the unit you choose.</p>
              placeholder="optional, for the report">
       <span class="rolehint">how it should read on a page</span></label>
   </div>
-  <button type="submit" class="primary">Save the outcome</button>
+  <button type="submit" class="primary">Save</button>
 </form>
 {summary}'''
+
+
+def _step(number: int, title: str, done: bool, body: str,
+          note: str = '') -> str:
+    """One numbered step of the setup, with whether it is finished.
+
+    It was one long scroll of four sections with three differently-worded save
+    buttons and nothing saying which of them still needed attention. Which is
+    the first question anyone has on this page.
+    """
+    mark = ('<span class="badge ok">done</span>' if done else
+            '<span class="badge warn">to do</span>')
+    hint = f'<p class="muted">{note}</p>' if note else ''
+    return f'''<section class="step{" done" if done else ""}">
+  <h2><span class="stepnum">{number}</span>{ui.esc(title)}{mark}</h2>
+  {hint}
+  {body}
+</section>'''
+
+
+def _steps_done(experiment) -> dict:
+    """Which parts of the setup are settled, from the file itself."""
+    from chatlens.core import config
+
+    declared = experiment.declared
+    ready, _missing = readiness(config.WORKSPACE, experiment.adapter,
+                                declared.get('input'))
+    columns = declared.get('columns') or {}
+    return {
+        'files': ready,
+        'columns': all(columns.get(role) for role in REQUIRED_ROLES),
+        'treatments': bool(declared.get('treatments')),
+        'outcome': bool((declared.get('outcome') or {}).get('column')),
+    }
 
 
 def settings_page(name: str) -> str:
@@ -580,27 +646,53 @@ def settings_page(name: str) -> str:
     from chatlens.core import config
 
     experiment = config.EXPERIMENT
+    done = _steps_done(experiment)
     ready, missing = readiness(config.WORKSPACE, experiment.adapter,
                                experiment.declared.get('input'))
-    state = ('<span class="badge ok">ready to run</span>' if ready
-             else f'<span class="badge warn">needs {_e(missing)}</span>')
+
+    if ready and all(done.values()):
+        state = ui.notice('Everything is set. The run is on the '
+                          f'<a href="{_base(name)}">overview</a>.', 'good')
+    elif ready:
+        state = ui.notice(
+            'Ready to run. The steps still marked "to do" are the ones the '
+            'pages that explain an outcome need — the descriptive ones work '
+            'without them.', 'info')
+    else:
+        state = ui.notice(f'Not ready yet: {_e(missing)} still missing.',
+                          'warn')
+
+    where = ui.disclosure(
+        'Where this experiment lives',
+        f'<p class="path">{_e(config.WORKSPACE)}</p>')
+
+    # The route existed and nothing in the interface reached it. Opening the
+    # disclosure is the confirmation step: the button is not somewhere a
+    # mis-aimed click lands.
+    remove = ui.disclosure(
+        'Take this experiment out of the list',
+        f'''<p>Nothing is deleted. A marker file hides it from the library and
+        the folder stays exactly where it is, with the data and the results in
+        it — delete that file to bring it back.</p>
+        <p><button class="btn danger" hx-post="{_base(name)}/archive"
+           hx-target="body">Take it out of the list</button></p>''')
 
     body = f'''{state}
-
-  <h2>Files</h2>
-  <div id="files">{files_panel(name)}</div>
-
-  <h2>Which column is which</h2>
-  <div id="columns">{columns_panel(name)}</div>
-
-  <h2>Treatments</h2>
-  <div id="treatments">{treatments_panel(name)}</div>
-
-  <h2>What to explain</h2>
-  <div id="outcome">{outcome_panel(name)}</div>
-
-  <h2>Where this experiment lives</h2>
-  <p class="muted path">{_e(config.WORKSPACE)}</p>'''
+{_step(1, "The files", done["files"],
+       f'<div id="files">{files_panel(name)}</div>',
+       "The export, and what each file is taken for.")}
+{_step(2, "Which column is which", done["columns"],
+       f'<div id="columns">{columns_panel(name)}</div>',
+       "Four of them are needed; the other two are used if they are there.")}
+{_step(3, "Treatments", done["treatments"],
+       f'<div id="treatments">{treatments_panel(name)}</div>',
+       "How each condition should be named in the report.")}
+{_step(4, "What to explain", done["outcome"],
+       f'<div id="outcome">{outcome_panel(name)}</div>',
+       "The column the analysis should predict. Without it the descriptive "
+       "pages still work and the four that explain something do not.")}
+{where}
+{remove}'''
 
     return ui.shell(
         f'{experiment.name} — settings',
