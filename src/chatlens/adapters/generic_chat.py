@@ -113,6 +113,21 @@ def build_messages(raw, columns) -> tuple[list[dict], dict]:
     return messages, skipped
 
 
+def transcript(messages) -> str:
+    """One turn per line, in the order they were sent.
+
+    The sender is named so a transcript reads as a conversation rather than a
+    wall of text. Chronological where there are timestamps, and in file order
+    where there are none — an arbitrary order is still better than shuffling.
+    """
+    if not messages:
+        return ''
+    ordered = sorted(messages, key=lambda m: str(m.get('timestamp') or ''))
+    return '\n'.join(
+        f"{m.get('sender_id_in_group')}->{m.get('receiver_id_in_group')}: "
+        f"{m.get('body') or ''}" for m in ordered)
+
+
 def build_tables(messages, participants, columns):
     """The two tables the measures get grafted onto.
 
@@ -122,10 +137,19 @@ def build_tables(messages, participants, columns):
     """
     treatments, sessions = {}, {}
     pairs, people = set(), set()
+    # The transcript belongs on the row. Without it the built tables carry the
+    # measures but not the text they were computed from, and every page that
+    # needs both — which term goes with the outcome, which relation, which
+    # emotion — has nothing to read. The coalition adapter has always emitted
+    # it; this one did not, and the gap only showed on a walk through the
+    # interface, not in any test.
+    sent, received = defaultdict(list), defaultdict(list)
     for message in messages:
         group = message['group_uid']
         sender = message['sender_id_in_group']
         receiver = message['receiver_id_in_group']
+        sent[(group, sender, receiver)].append(message)
+        received[(group, receiver, sender)].append(message)
         pairs.add((group, sender, receiver))
         people.update({(group, sender), (group, receiver)})
         treatments.setdefault(group, message.get('treatment', ''))
@@ -147,6 +171,9 @@ def build_tables(messages, participants, columns):
             'focal_id_in_group': focal,
             'partner_id_in_group': partner,
             'dyad_key': schema.dyad_key(focal, partner),
+            'sent_transcript_text': transcript(sent.get((group, focal, partner))),
+            'recv_transcript_text': transcript(
+                received.get((group, focal, partner))),
         }
         for group, focal, partner in sorted(pairs)
     ]
@@ -158,6 +185,11 @@ def build_tables(messages, participants, columns):
             'session_code': sessions.get(group, ''),
             'treatment': treatments.get(group, ''),
             'focal_id_in_group': who,
+            # Everything this person wrote in the group, whoever it went to.
+            'sent_transcript_text': transcript(
+                [m for key, group_messages in sent.items()
+                 if key[0] == group and key[1] == who
+                 for m in group_messages]),
         }
         extra = attributes.get((group, who))
         if extra:

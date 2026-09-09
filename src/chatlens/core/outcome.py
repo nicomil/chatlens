@@ -55,6 +55,24 @@ DATASET_OF = {
 }
 
 
+# What counts as a yes and a no. Kept in one place because five modules had
+# their own copy of the list, and a column of "yes"/"no" — which is what a
+# roster exported from a spreadsheet usually holds — was binary to a reader and
+# not binary to any of them.
+TRUE = frozenset({'1', 'true', 'yes', 'y', 't'})
+FALSE = frozenset({'0', 'false', 'no', 'n', 'f'})
+
+
+def as_binary(value):
+    """1, 0, or None when the value says neither."""
+    text = str(value if value is not None else '').strip().lower()
+    if text in TRUE:
+        return 1
+    if text in FALSE:
+        return 0
+    return None
+
+
 class OutcomeError(ValueError):
     """The declaration cannot be used as it stands."""
 
@@ -123,12 +141,11 @@ def describe(rows, outcome) -> dict:
     if outcome['kind'] == 'binary':
         counts = Counter(str(v).strip() for v in present)
         summary['values'] = counts.most_common(6)
-        binary = set(counts) <= {'0', '1', 'True', 'False', 'true', 'false'}
-        if not binary:
+        if any(as_binary(v) is None for v in counts):
             summary['note'] = (f'{len(counts)} distinct values, which is not '
                                f'binary. Change the kind, or the column.')
             return summary
-        ones = sum(n for v, n in counts.items() if v in ('1', 'True', 'true'))
+        ones = sum(n for v, n in counts.items() if as_binary(v) == 1)
         summary['positive'] = ones
         summary['share'] = ones / len(present)
         # An outcome that almost never happens cannot be predicted from a few

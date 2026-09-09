@@ -128,9 +128,16 @@ def _result(experiment):
     ready, why = narratives.available()
     if not ready:
         return None, f'relatio unusable: {why}'
-    per_unit = narratives.extract_with_relatio(
-        messages, experiment.narrative_entities)
-    value = {'per_unit': per_unit,
+    # The unit comes from the outcome when there is one: relations extracted per
+    # directed pair cannot be joined to rows that are one per person.
+    unit = (declared or {}).get('unit', 'dyad_directed')
+    message_key, row_key = narratives.keys_for(unit)
+    try:
+        per_unit = narratives.extract_with_relatio(
+            messages, experiment.narrative_entities, unit_key=message_key)
+    except ValueError as exc:
+        return None, str(exc)
+    value = {'per_unit': per_unit, 'unit': unit,
              'frequencies': narratives.frequencies(per_unit), 'tested': None}
 
     if declared and declared['kind'] == 'binary':
@@ -149,9 +156,7 @@ def _result(experiment):
 
             try:
                 value['tested'] = narratives.which_matter(
-                    per_unit, rows, declared['column'],
-                    key_of=lambda r: (r['group_uid'], r['focal_id_in_group'],
-                                      r['partner_id_in_group']),
+                    per_unit, rows, declared['column'], key_of=row_key,
                     words_of=words_of if text_column else (lambda r: 0),
                     group_of=lambda r: r['group_uid'])
             except ValueError as exc:

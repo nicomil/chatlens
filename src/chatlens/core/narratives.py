@@ -58,6 +58,39 @@ def _default_unit_key(message):
             str(message.get('receiver_id_in_group')))
 
 
+def keys_for(unit: str):
+    """How to key a message and a dataset row, for one unit of analysis.
+
+    Both sides have to agree or the join finds nothing, and they are written in
+    different places — the messages carry sender and receiver, the built rows
+    carry focal and partner. Returning the pair together is what stops them
+    drifting apart, which they had: the narratives page keyed rows by directed
+    pair whatever the outcome's unit was, and raised a KeyError the moment an
+    experiment declared one per person.
+    """
+    if unit == 'dyad_directed':
+        return (_default_unit_key,
+                lambda r: (r['group_uid'], r['focal_id_in_group'],
+                           r['partner_id_in_group']))
+    if unit == 'dyad':
+        def message_key(m):
+            a, b = sorted([str(m.get('sender_id_in_group')),
+                           str(m.get('receiver_id_in_group'))])
+            return (m.get('group_uid'), a, b)
+
+        def row_key(r):
+            a, b = sorted([r['focal_id_in_group'], r['partner_id_in_group']])
+            return (r['group_uid'], a, b)
+
+        return message_key, row_key
+    if unit == 'sender_group':
+        return (lambda m: (m.get('group_uid'),
+                           str(m.get('sender_id_in_group'))),
+                lambda r: (r['group_uid'], r['focal_id_in_group']))
+    return (lambda m: (m.get('group_uid'),),
+            lambda r: (r['group_uid'],))
+
+
 _ROUTE = {}
 
 
@@ -117,15 +150,34 @@ def extract_with_relatio(messages, entities, model='en_core_web_sm',
                                              only_triplets=False)
     processed = preprocessor.process_roles(roles, max_length=50)
 
+    # PCA and UMAP reduce the phrase embeddings before clustering, and both
+    # need more phrases than dimensions to reduce to — RELATIO asks for 50
+    # components, and a small study can easily have fewer distinct phrases than
+    # that. Reducing 23 phrases to 50 dimensions is not a thing that can be
+    # done, and the package raises rather than skipping it. Turning the two
+    # steps off below the threshold keeps the clustering, which is the part
+    # being used here; it is the same method on a corpus that does not need
+    # reducing.
+    phrases = {p for row in processed
+               for key in ('ARG0', 'ARG1')
+               for p in [str(row.get(key) or '').strip()] if p}
+    reduce = len(phrases) > 60
+
     model_kwargs = dict(
-        clustering='kmeans', PCA=True, UMAP=True,
+        clustering='kmeans', PCA=reduce, UMAP=reduce,
         roles_considered=['ARG0', 'B-V', 'B-ARGM-NEG', 'ARG1'],
         roles_with_known_entities=['ARG0', 'ARG1'],
         known_entities=list(entities or ()),
         assignment_to_known_entities='character_matching',
         roles_with_unknown_entities=['ARG0', 'ARG1'])
     narrative_model = NarrativeModel(**model_kwargs)
-    narrative_model.fit(processed)
+    try:
+        narrative_model.fit(processed)
+    except ValueError as exc:
+        raise ValueError(
+            f'RELATIO could not cluster this corpus: {exc}. It has '
+            f'{len(phrases)} distinct phrases, which may be too few for the '
+            f'package to group.') from None
     predicted = narrative_model.predict(processed)
 
     doc_ids = sentences['id'].tolist()
@@ -169,17 +221,18 @@ def which_matter(per_unit, rows, outcome_column, key_of, words_of,
     import numpy as np
     import statsmodels.api as sm
 
+    from chatlens.core import outcome as outcome_module
+
     usable = []
     for row in rows:
-        raw = str(row.get(outcome_column, '')).strip()
-        if raw not in ('0', '1', 'True', 'False', 'true', 'false'):
+        if outcome_module.as_binary(row.get(outcome_column)) is None:
             continue
         usable.append(row)
     if len(usable) < 50:
         raise ValueError(f'Only {len(usable)} rows carry the outcome. There is '
                          f'not enough here to test anything.')
 
-    y = np.array([int(str(r[outcome_column]).strip() in ('1', 'True', 'true'))
+    y = np.array([outcome_module.as_binary(r[outcome_column])
                   for r in usable])
     if len(set(y)) < 2:
         raise ValueError('Every row has the same outcome: nothing to separate.')

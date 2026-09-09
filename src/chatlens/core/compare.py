@@ -48,17 +48,17 @@ def build(rows, outcome_column, text_column, group_column='group_uid',
     import numpy as np
     from sklearn.feature_extraction.text import CountVectorizer
 
+    from chatlens.core import outcome as outcome_module
     from chatlens.core import words as words_module
 
     usable = [r for r in rows
-              if str(r.get(outcome_column, '')).strip() in
-              ('0', '1', 'True', 'False', 'true', 'false')
+              if outcome_module.as_binary(r.get(outcome_column)) is not None
               and words_module.clean(r.get(text_column)).strip()]
     if len(usable) < 50:
         raise ValueError(f'Only {len(usable)} rows have both text and an '
                          f'outcome: not enough to compare anything on.')
 
-    y = np.array([int(str(r[outcome_column]).strip() in ('1', 'True', 'true'))
+    y = np.array([outcome_module.as_binary(r[outcome_column])
                   for r in usable])
     if len(set(y)) < 2:
         raise ValueError('Every row has the same outcome: nothing to separate.')

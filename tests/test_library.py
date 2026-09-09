@@ -596,6 +596,26 @@ class OutcomeTests(unittest.TestCase):
                                      'unit': 'nope'})
         self.assertEqual(len(problems), 3)
 
+    def test_yes_and_no_count_as_binary(self):
+        """What a roster exported from a spreadsheet actually holds.
+
+        Five modules each carried their own list of what a yes looks like, and
+        none of them included the word "yes" — so the demo's own outcome column
+        was binary to a reader and not binary to the tool.
+        """
+        rows = [{'y': 'yes'}] * 30 + [{'y': 'no'}] * 70
+        found = outcome.describe(rows, {'column': 'y', 'kind': 'binary'})
+        self.assertTrue(found['usable'])
+        self.assertEqual(found['positive'], 30)
+
+    def test_the_readings_agree_across_spellings(self):
+        for true in ('1', 'yes', 'TRUE', 'y', 't'):
+            self.assertEqual(outcome.as_binary(true), 1, true)
+        for false in ('0', 'no', 'False', 'n', 'f'):
+            self.assertEqual(outcome.as_binary(false), 0, false)
+        for neither in ('maybe', '', None, '2'):
+            self.assertIsNone(outcome.as_binary(neither), neither)
+
     def test_a_binary_column_is_summarised(self):
         rows = [{'y': '1'}] * 30 + [{'y': '0'}] * 70
         found = outcome.describe(rows, {'column': 'y', 'kind': 'binary'})

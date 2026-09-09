@@ -67,6 +67,8 @@ def _sources():
 
 def _outcomes(by_partner_path, outcome):
     """The declared outcome, keyed by directed pair, if there is one."""
+    from chatlens.core import outcome as outcome_module
+
     if by_partner_path is None or not outcome:
         return {}, ''
     if outcome['unit'] != 'dyad_directed':
@@ -84,11 +86,10 @@ def _outcomes(by_partner_path, outcome):
                     f'"{_e(column)}".')
     values = {}
     for row in rows:
-        raw = str(row.get(column, '')).strip()
-        if raw in ('0', '1', 'True', 'False', 'true', 'false'):
+        found = outcome_module.as_binary(row.get(column))
+        if found is not None:
             values[(row['group_uid'], row['focal_id_in_group'],
-                    row['partner_id_in_group'])] = int(
-                        raw in ('1', 'True', 'true'))
+                    row['partner_id_in_group'])] = found
     return values, ''
 
 

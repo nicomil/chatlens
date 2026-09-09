@@ -100,14 +100,19 @@ def _scored():
         messages_path = views_participation._latest(config.MERGED_DIR,
                                                     '_messages_long.csv')
         if messages_path is not None:
-            per_unit = narratives.extract_with_relatio(
-                views_participation._read(messages_path),
-                experiment.narrative_entities)
+            message_key, key_of = narratives.keys_for(declared['unit'])
+            try:
+                per_unit = narratives.extract_with_relatio(
+                    views_participation._read(messages_path),
+                    experiment.narrative_entities, unit_key=message_key)
+            except ValueError:
+                # The comparison still stands without that row, and the
+                # narratives page explains why it is absent.
+                per_unit = None
             counts = narratives.frequencies(per_unit)
             terms = [n for n, c in counts.items()
                      if c >= narratives.MIN_DOCUMENTS]
-            key_of = (lambda r: (r['group_uid'], r['focal_id_in_group'],
-                                 r['partner_id_in_group']))
+
 
     try:
         assembled = compare.build(rows, declared['column'], text_column,

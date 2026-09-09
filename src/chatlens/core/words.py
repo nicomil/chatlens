@@ -84,15 +84,16 @@ def fit(rows, text_column, outcome_column, group_column='group_uid',
     from sklearn.metrics import roc_auc_score
     from sklearn.model_selection import GroupKFold
 
+    from chatlens.core import outcome as outcome_module
+
     usable = [r for r in rows
-              if str(r.get(outcome_column, '')).strip() in
-              ('0', '1', 'True', 'False', 'true', 'false')
+              if outcome_module.as_binary(r.get(outcome_column)) is not None
               and clean(r.get(text_column)).strip()]
     if len(usable) < 50:
         raise ValueError(f'Only {len(usable)} rows have both text and an '
                          f'outcome. There is not enough here to fit anything.')
 
-    y = np.array([int(str(r[outcome_column]).strip() in ('1', 'True', 'true'))
+    y = np.array([outcome_module.as_binary(r[outcome_column])
                   for r in usable])
     if len(set(y)) < 2:
         raise ValueError('Every row has the same outcome: nothing to separate.')
