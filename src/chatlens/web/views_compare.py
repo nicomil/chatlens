@@ -58,7 +58,7 @@ def _participation_line(name: str) -> str:
   {within["chose_silent"]} — {100 * within["share"]:.0f}%.</p>
   <p class="note">On a different sample from the table below, which can only see
   the rows that carry text, so it is not a row in it. See
-  <a href="/experiment/{_e(name)}/participation">Participation</a>.</p>
+  <a href="/experiment/{_e(name)}/findings/participation">Participation</a>.</p>
 </div>'''
 
 
@@ -127,34 +127,6 @@ def _scored():
     return value, ''
 
 
-def page(name: str, query=None) -> str:
-    """The shell, at once. The table arrives when it has been computed."""
-    from chatlens.core import config
-
-    experiment = config.EXPERIMENT
-    why = ui.disclosure(
-        'What this page is for',
-        '''<p>Each page here turns the conversations into numbers a different
-        way, and each looks reasonable on its own. This one puts them against
-        the same outcome, on the same rows and the same folds, which is the
-        only arrangement in which the comparison means anything.</p>''',
-    )
-    # Cross-validating every representation takes long enough that the page
-    # used to arrive blank and stay blank.
-    body = (f'<div id="comparepanel"'
-            f' hx-get="/experiment/{_e(name)}/compare/panel"'
-            f' hx-trigger="load" hx-swap="innerHTML">'
-            f'{ui.spinner("Scoring every representation on the same folds…")}'
-            f'</div>')
-    return ui.shell(
-        f'{experiment.name} — comparison',
-        why + '\n' + body,
-        heading='Comparison',
-        slug=name,
-        experiment_name=experiment.name,
-        current='compare',
-    )
-
 
 def _how_to_read(name: str) -> str:
     base = f'/experiment/{_e(name)}'
@@ -173,9 +145,9 @@ def _how_to_read(name: str) -> str:
         coin, 1.0 is perfect. The spread beside it is how much that figure
         moved between folds — a large one means the number is not to be read
         closely.</p>
-        <p>From here: <a href="{base}/words">the words</a> for which terms were
-        selected, <a href="{base}/narratives">the narratives</a> for what is
-        true rather than what predicts, <a href="{base}/participation">
+        <p>From here: <a href="{base}/findings/words">the words</a> for which terms were
+        selected, <a href="{base}/findings/narratives">the narratives</a> for what is
+        true rather than what predicts, <a href="{base}/findings/participation">
         participation</a> for who spoke at all.</p>''')
 
 
@@ -185,7 +157,7 @@ def panel(name: str) -> str:
 
     if problem == 'no outcome':
         body = ('<p class="muted">Nothing to compare against. Declare an '
-                f'outcome under <a href="/experiment/{_e(name)}/settings">'
+                f'outcome under <a href="/experiment/{_e(name)}/step/outcome">'
                 'Settings</a>.</p>')
     elif problem == 'not binary':
         body = ('<p class="muted">This page compares how well each '

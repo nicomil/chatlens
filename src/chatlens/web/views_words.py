@@ -152,7 +152,7 @@ def _controls(name: str, params: dict) -> str:
             out.append(f'<option value="{_e(value)}"{mark}>{_e(label)}</option>')
         return ''.join(out)
 
-    return f'''<form class="wordform" hx-get="/experiment/{_e(name)}/words/panel"
+    return f'''<form class="wordform" hx-get="/experiment/{_e(name)}/findings/words/panel"
       hx-target="#wordpanel" hx-swap="innerHTML" hx-trigger="change">
   <label class="field"><span class="rolename">Terms</span>
     <select name="ngrams">{options(list(words.NGRAMS), params["ngrams"])}</select>
@@ -179,7 +179,7 @@ def panel(name: str, query) -> str:
     if problem == 'no outcome':
         return ('<p class="muted">No outcome is declared, so there is nothing '
                 f'for the words to predict. Set one under <a href="/experiment/'
-                f'{_e(name)}/settings">Settings</a>.</p>')
+                f'{_e(name)}/step/outcome">Settings</a>.</p>')
     if problem == 'no dataset':
         return ('<p class="muted">The dataset for that unit has not been built '
                 'yet. Run the analysis once.</p>')
@@ -192,7 +192,7 @@ def panel(name: str, query) -> str:
     label = _e(declared['label'] or declared['column'])
     query_string = (f'ngrams={params["ngrams"]}&min_df={params["min_df"]}'
                     f'&penalty={params["penalty"]}')
-    base = f'/experiment/{_e(name)}/words'
+    base = f'/experiment/{_e(name)}/findings/words'
 
     baseline = ''
     if found['auc_words'] is not None and found['auc_length'] is not None:
@@ -302,35 +302,20 @@ def _clouds(found, label: str, base: str, query_string: str) -> str:
     return f'<div class="clouds">{"".join(figures)}</div>{downloads}'
 
 
-def page(name: str, query) -> str:
-    from chatlens.core import config
-
-    experiment = config.EXPERIMENT
+def body(name: str, query=None) -> str:
+    """The controls, and a panel that arrives when the model has been fitted."""
+    query = query or {}
     needs = _requirements_panel()
+    if needs:
+        return needs
     params = _params(query)
     query_string = (f'ngrams={params["ngrams"]}&min_df={params["min_df"]}'
                     f'&penalty={params["penalty"]}')
-    body = needs if needs else f'''{_controls(name, params)}
-<div id="wordpanel"
-     hx-get="/experiment/{_e(name)}/words/panel?{query_string}"
-     hx-trigger="load" hx-swap="innerHTML">{ui.spinner(
-         'Fitting the model and drawing the figures…')}</div>'''
+    return (f'{_controls(name, params)}'
+            f'<div id="wordpanel"'
+            f' hx-get="/experiment/{_e(name)}/findings/words/panel'
+            f'?{query_string}"'
+            f' hx-trigger="load" hx-swap="innerHTML">'
+            f'{ui.spinner("Fitting the model and drawing the figures…")}</div>')
 
-    # The reasoning is kept and moved: one click away rather than above the
-    # result, which is what used to push the figures below the fold.
-    why = ui.disclosure(
-        'What this page is for',
-        '''<p>The look before the statistics: which terms go with the outcome, and
-        which against. A penalised regression picks them, so a term
-        being here says it carries signal and its size says how much
-        the penalty let it keep — none of it is an estimate.</p>''',
-    )
-    return ui.shell(
-        f'{experiment.name} — words',
-        why + '\n' + body,
-        heading='Words',
-        slug=name,
-        experiment_name=experiment.name,
-        current='words',
-        htmx=True,
-    )
+

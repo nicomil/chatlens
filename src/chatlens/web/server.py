@@ -40,10 +40,10 @@ from urllib.parse import parse_qs, urlparse
 
 from chatlens import adapters
 from chatlens.core import config, library, outcome
-from chatlens.web import active, multipart, ui, views, views_library
-from chatlens.web import (views_compare, views_emotions,
-                          views_narratives,
-                          views_participation, views_words)
+from chatlens.web import active, multipart, ui, views, views_findings
+from chatlens.web import views_library
+from chatlens.web import (views_narratives,
+                          views_words)
 from chatlens.web.runner import build_command, runner
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
@@ -196,8 +196,9 @@ class Handler(BaseHTTPRequestHandler):
         """
         detail = f'<p>{ui.esc(explanation)}</p>' if explanation else ''
         self._html(
-            ui.shell(headline, f'{detail}<p><a href="/">Back to the '
-                               f'experiments</a></p>', heading=headline,
+            ui.shell(headline,
+                     f'<h1 class="question">{ui.esc(headline)}</h1>{detail}'
+                     f'<p><a href="/">Back to your studies</a></p>',
                      htmx=False),
             status=code)
 
@@ -293,30 +294,27 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with active.experiment(name):
                 if not action:
-                    self._html(views.page(experiment_slug=name), cookie=cookie)
-                elif action == 'settings':
-                    self._html(views_library.settings_page(name), cookie=cookie)
-                elif action == 'participation':
-                    self._html(views_participation.page(name), cookie=cookie)
-                elif action == 'words':
-                    self._html(views_words.page(name, query), cookie=cookie)
-                elif action == 'words/panel':
+                    # The study's address opens where the work is: the first
+                    # step that is not finished, or the findings once they
+                    # exist. It used to open on the run screen whatever state
+                    # the study was in.
+                    self._go(_where_to_resume(name))
+                elif action.startswith('step/'):
+                    self._html(_step_page(name, action.split('/', 1)[1]),
+                               cookie=cookie)
+                elif action == 'findings':
+                    self._html(views_findings.page(name, '', query),
+                               cookie=cookie)
+                elif action == 'findings/words/panel':
                     self._html(views_words.panel(name, query))
-                elif action.startswith('words/'):
-                    self._words_file(name, action, query)
-                elif action == 'narratives/panel':
-                    self._html(views_narratives.panel(name))
-                elif action == 'narratives':
-                    self._html(views_narratives.page(name, query),
-                               cookie=cookie)
-                elif action == 'emotions':
-                    self._html(views_emotions.page(name, query),
-                               cookie=cookie)
-                elif action == 'compare/panel':
-                    self._html(views_compare.panel(name))
-                elif action == 'compare':
-                    self._html(views_compare.page(name, query),
-                               cookie=cookie)
+                elif action.startswith('findings/words/'):
+                    self._words_file(name, action.split('findings/', 1)[1],
+                                     query)
+                elif action.startswith('findings/'):
+                    self._html(
+                        views_findings.page(name, action.split('/', 1)[1],
+                                            query),
+                        cookie=cookie)
                 elif action == 'files':
                     self._html(views_library.files_panel(
                         name, confirm_delete=(query.get('confirm') or [''])[0]))
@@ -817,6 +815,37 @@ class Handler(BaseHTTPRequestHandler):
                     self._not_found()
         except (active.Unknown, library.LibraryError) as exc:
             self._not_found(str(exc))
+
+
+def _where_to_resume(name: str) -> str:
+    """The first step that is not finished, or the findings.
+
+    A study is a sequence, and the address of a study should land on the part
+    of it that is unfinished rather than always on the same screen.
+    """
+    from chatlens.core import config
+    from chatlens.web import study as study_state
+
+    state = study_state.step_state(config.EXPERIMENT)
+    for key, _label, _hint in ui.STEPS:
+        kind = state.get(key)
+        kind = kind[0] if isinstance(kind, tuple) else kind
+        if kind != ui.DONE:
+            if key == 'findings':
+                break
+            return f'/experiment/{name}/step/{key}'
+    return f'/experiment/{name}/findings'
+
+
+def _step_page(name: str, step: str) -> str:
+    """One of the four steps, or the first one if the name is not one."""
+    pages = {
+        'data': views_library.step_data,
+        'columns': views_library.step_columns,
+        'outcome': views_library.step_outcome,
+        'run': lambda slug: views.page(experiment_slug=slug),
+    }
+    return pages.get(step, views_library.step_data)(name)
 
 
 def serve(host='127.0.0.1', port=8765, open_browser=True, library_mode=True):

@@ -1,17 +1,27 @@
-"""One page shell, one set of components, one way to escape text.
+"""The shape of every screen: the spine, the register, the canvas.
 
-The interface grew a page at a time, and each page brought its own `<!doctype>`,
-its own header and its own copy of `html.escape`. Seven shells is seven places
-to change a stylesheet link, seven headers that drifted apart, and — because one
-of those copies is in the router rather than a view — one place where text from
-the URL reached the browser unescaped.
+A study has a life — files, columns, a question, a run, findings — and this
+module makes that life the structure of the interface rather than something the
+reader has to hold in their head while choosing between seven sibling pages.
 
-This module is the single place. A view returns its body; `shell` puts the page
-around it. A view needs a table, a figure, an empty state; it asks for one here
-rather than writing the markup again slightly differently.
+Three zones, and every screen is made of them:
 
-Nothing in here knows what a page means. The judgement about *what* to show
-stays in the view; this is only about how it looks once decided.
+``spine``
+    Always on top. The five steps with their real state, so "where am I and
+    what is left" is answered without reading anything.
+
+``register``
+    On the findings screen only. One row per question the tool can answer, with
+    its verdict. It is navigation made of content: `core/compare.py` already
+    decides which representations beat length and which do not, and that
+    decision belongs where the reader chooses what to look at.
+
+``canvas``
+    One thing at a time. A step, or a finding in the fixed shape
+    question → answer → evidence → detail → how to read it.
+
+Nothing here knows what a page *means*. The judgement about what to show stays
+in the views; this is only about the form it takes once decided.
 """
 
 from __future__ import annotations
@@ -46,62 +56,97 @@ def attr(value) -> str:
 def hx_vals(**values) -> str:
     """A safe `hx-vals` attribute.
 
-    It used to be built by interpolating HTML-escaped text into hand-written
-    JSON. HTML escaping is not JSON escaping: a filename containing a backslash
-    produced an invalid escape sequence, htmx failed to parse it and dropped the
-    request with nothing shown to anyone. Serialise first, escape second.
+    Serialise first, escape second. HTML escaping is not JSON escaping: a
+    filename containing a backslash produced an invalid escape sequence, htmx
+    failed to parse it, and the request was dropped with nothing shown.
     """
     return f"hx-vals='{attr(json.dumps(values, ensure_ascii=False))}'"
 
 
-# --- navigation ------------------------------------------------------------
+# --- the spine -------------------------------------------------------------
 
-# The destinations inside one experiment, in the order they are useful. The
-# analysis pages sit together because they answer the same kind of question,
-# and because four of the five are unavailable on a fresh install: grouping
-# them is what lets the bar say so once instead of five times.
-OVERVIEW = ('', 'Overview')
-ANALYSIS = (
-    ('participation', 'Participation'),
-    ('words', 'Words'),
-    ('narratives', 'Narratives'),
-    ('emotions', 'Emotions'),
-    ('compare', 'Compare'),
+# The five steps, in the order they happen. The first four are things the user
+# does to the study; the fifth is what the study says back.
+STEPS = (
+    ('data', 'Data', 'the export, and what each file is'),
+    ('columns', 'Columns', 'which column plays which part'),
+    ('outcome', 'Outcome', 'what the analysis should explain'),
+    ('run', 'Run', 'produce the measures'),
+    ('findings', 'Findings', 'what the conversations say'),
 )
-SETTINGS = ('settings', 'Settings')
+
+DONE, CURRENT, TODO, BLOCKED = 'done', 'current', 'todo', 'blocked'
 
 
-def nav(slug: str, current: str = '', unavailable=None) -> str:
-    """The bar that is on every page of an experiment.
+def spine(slug: str, state: dict, current: str = '') -> str:
+    """The five steps, with the state each one is actually in.
 
-    `current` is the action part of the path — '' for the hub, 'words', and so
-    on. `unavailable` maps an action to the reason it cannot be opened; those
-    entries stay visible and become inert, because a destination that vanishes
-    when a dependency is missing teaches the user that the feature does not
-    exist.
+    `state` maps a step key to one of DONE / TODO / BLOCKED, or to a tuple
+    `(BLOCKED, reason)`. A blocked step stays visible and says why: a step that
+    disappears until it is reachable teaches the reader that it does not exist.
     """
-    unavailable = unavailable or {}
+    if not slug:
+        return ''
     base = f'/experiment/{esc(slug)}'
+    items = []
+    for index, (key, label, _hint) in enumerate(STEPS, start=1):
+        raw = state.get(key, TODO)
+        kind, reason = raw if isinstance(raw, tuple) else (raw, '')
+        if key == current:
+            kind = CURRENT
+        classes = f'step {kind}'
+        inner = (f'<span class="stepnum">{index}</span>'
+                 f'<span class="steplabel">{esc(label)}</span>')
+        if kind == BLOCKED:
+            items.append(f'<span class="{classes}" data-tip="{attr(reason)}" '
+                         f'tabindex="0">{inner}</span>')
+        else:
+            aria = ' aria-current="step"' if kind == CURRENT else ''
+            href = base if key == 'findings' else f'{base}/step/{key}'
+            if key == 'findings':
+                href = f'{base}/findings'
+            items.append(f'<a class="{classes}" href="{href}"{aria}>{inner}</a>')
+    return f'<nav class="spine" aria-label="This study">{"".join(items)}</nav>'
 
-    def item(action, label):
-        classes = ['navlink']
-        if action == current:
-            classes.append('on')
-        reason = unavailable.get(action)
-        if reason:
-            return (f'<span class="navlink off" data-tip="{attr(reason)}" '
-                    f'tabindex="0">{esc(label)}</span>')
-        href = f'{base}/{action}' if action else base
-        aria = ' aria-current="page"' if action == current else ''
-        return (f'<a class="{" ".join(classes)}" href="{href}"{aria}>'
-                f'{esc(label)}</a>')
 
-    analysis = ''.join(item(action, label) for action, label in ANALYSIS)
-    return f'''<nav class="nav" aria-label="This experiment">
-  {item(*OVERVIEW)}
-  <span class="navgroup">{analysis}</span>
-  {item(*SETTINGS)}
-</nav>'''
+# --- the register ----------------------------------------------------------
+
+# What a finding's verdict can be. `NO` is deliberately not an error: on a
+# corpus of short messages it is the commonest honest answer, and the tool's
+# own prose says so. Colouring it like a failure teaches the reader that the
+# analysis went wrong when what went wrong is nothing.
+YES, NO, OPEN, UNAVAILABLE = 'yes', 'no', 'open', 'unavailable'
+
+VERDICT_MARK = {
+    YES: '✓',
+    NO: '✗',
+    OPEN: '·',
+    UNAVAILABLE: '—',
+}
+
+
+def register(slug: str, findings, current: str = '') -> str:
+    """One row per question, ordered so that answers come before obstacles."""
+    order = {YES: 0, NO: 1, OPEN: 2, UNAVAILABLE: 3}
+    rows = []
+    for finding in sorted(findings, key=lambda f: (order.get(f['verdict'], 9),
+                                                   f.get('order', 0))):
+        active = ' on' if finding['id'] == current else ''
+        mark = VERDICT_MARK.get(finding['verdict'], '·')
+        # Built before the f-string: an escaped quote cannot live inside one on
+        # the Python this supports.
+        note = finding.get('note') or ''
+        note_html = f'<span class="entrynote">{esc(note)}</span>' if note else ''
+        rows.append(
+            f'<a class="entry {esc(finding["verdict"])}{active}" '
+            f'href="/experiment/{esc(slug)}/findings/{esc(finding["id"])}">'
+            f'<span class="mark" aria-hidden="true">{mark}</span>'
+            f'<span class="entrytext">'
+            f'<span class="entryname">{esc(finding["name"])}</span>'
+            f'{note_html}'
+            f'</span></a>')
+    return (f'<aside class="register" aria-label="What this study can answer">'
+            f'<h2>Findings</h2>{"".join(rows)}</aside>')
 
 
 # --- the shell -------------------------------------------------------------
@@ -113,55 +158,16 @@ THEME_SCRIPT = (
 )
 
 
-def unavailable_reasons() -> dict:
-    """Which analysis pages cannot open, and why, in one line each.
-
-    The bar asks this so that a destination needing a 1.6 GB download says so
-    where the reader is choosing, rather than after they have clicked and are
-    looking at install instructions where they expected results. The page
-    itself still explains it in full — this is the label on the door.
-    """
-    from chatlens.core import nrc, optional
-
-    reasons = {}
-    if not optional.have('sklearn'):
-        needed = 'needs scikit-learn — see the page for the command'
-        reasons['words'] = needed
-        reasons['compare'] = needed
-    if not optional.have('relatio'):
-        reasons['narratives'] = ('needs spaCy and RELATIO — see the page for '
-                                 'the commands')
-    try:
-        if not nrc.lexicon_path().is_file():
-            reasons['emotions'] = ('needs the NRC lexicon — see the page for '
-                                   'where to get it')
-    except Exception:  # noqa: BLE001 - a missing lexicon must not break the bar
-        pass
-    return reasons
-
-
-def shell(title: str, body: str, *, heading: str = '', slug: str = '',
-          experiment_name: str = '', current: str = '', subtitle: str = '',
-          unavailable=None, wide: bool = False, htmx: bool = True) -> str:
+def shell(title: str, canvas: str, *, slug: str = '', study: str = '',
+          steps=None, step: str = '', aside: str = '', htmx: bool = True) -> str:
     """The only page in the project.
 
-    `heading` is what the page is called; `experiment_name` is what it is about.
-    Both are shown, because a page that says only "Words" leaves the reader to
-    remember which experiment they are looking at, and one that says only the
-    experiment's name leaves them to work out which page they are on.
+    `aside` is the register, when there is one. Without it the canvas takes the
+    whole width, which is what a step wants: one form, one decision.
     """
     scripts = '<script src="/static/htmx.min.js"></script>' if htmx else ''
-    # The trail is the ancestors, never the page itself: with the current page
-    # in it too, the library read "chatlens chatlens" and the hub repeated the
-    # experiment's name twice across three centimetres.
-    crumb = ''
-    if slug and current:
-        crumb = (f'<a class="crumb" href="/">chatlens</a>'
-                 f'<span class="crumbsep">/</span>'
-                 f'<a class="crumb" href="/experiment/{esc(slug)}">'
-                 f'{esc(experiment_name or slug)}</a>')
-    elif slug:
-        crumb = '<a class="crumb" href="/">chatlens</a>'
+    bar = spine(slug, steps or {}, step) if slug else ''
+    frame = 'frame with-aside' if aside else 'frame'
 
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -171,32 +177,77 @@ def shell(title: str, body: str, *, heading: str = '', slug: str = '',
 {THEME_SCRIPT}
 {scripts}
 </head><body>
-<header class="topbar">
-  <div class="crumbs">{crumb}</div>
-  <h1>{esc(heading or title)}</h1>
-  {f'<span class="subtitle">{esc(subtitle)}</span>' if subtitle else ''}
+<header class="masthead">
+  <a class="brand" href="/">chatlens</a>
+  {f'<span class="study">{esc(study)}</span>' if study else ''}
   <button type="button" class="themetoggle" id="themetoggle"
           aria-label="Switch between the light and the dark theme"
           title="Light or dark">◐</button>
 </header>
-{nav(slug, current, unavailable if unavailable is not None else unavailable_reasons()) if slug else ''}
-<main class="{'wide' if wide else 'single'}">
-{body}
+{bar}
+<div class="{frame}">
+{aside}
+<main class="canvas">
+{canvas}
 </main>
+</div>
 <script src="/static/app.js"></script>
 </body></html>'''
+
+
+# --- the shape of a finding ------------------------------------------------
+
+
+def finding(question: str, answer: str, *, evidence: str = '',
+            detail: str = '', how_to_read: str = '', controls: str = '',
+            verdict: str = OPEN) -> str:
+    """Question, answer, evidence, detail, how to read it — in that order.
+
+    The order is the argument. Every one of these screens used to open with a
+    paragraph of reasoning, then the controls, then the numbers, and put the
+    answer in a grey sentence halfway down. The answer is the largest text on
+    the screen now, and the reasoning is one click away rather than in front of
+    it.
+    """
+    parts = [
+        f'<div class="finding {esc(verdict)}">',
+        f'<h1 class="question">{esc(question)}</h1>',
+        f'<p class="answer">{answer}</p>',
+    ]
+    if controls:
+        parts.append(f'<div class="controls">{controls}</div>')
+    if evidence:
+        parts.append(f'<section class="evidence">{evidence}</section>')
+    if detail:
+        parts.append(f'<section class="detail">{detail}</section>')
+    if how_to_read:
+        parts.append(disclosure('How to read this', how_to_read))
+    parts.append('</div>')
+    return '\n'.join(parts)
+
+
+def step_page(number: int, title: str, lead: str, body: str,
+              *, next_label: str = '', next_href: str = '') -> str:
+    """One step of the setup: one decision, said plainly, with a way onward."""
+    onward = ''
+    if next_href:
+        onward = (f'<p class="onward"><a class="btn primary" '
+                  f'href="{attr(next_href)}">{esc(next_label or "Continue")}'
+                  f'</a></p>')
+    return f'''<div class="step-page">
+  <p class="eyebrow">Step {number} of {len(STEPS)}</p>
+  <h1 class="question">{esc(title)}</h1>
+  <p class="lead">{lead}</p>
+  {body}
+  {onward}
+</div>'''
 
 
 # --- components ------------------------------------------------------------
 
 
 def stat_tiles(items) -> str:
-    """A row of headline figures: `(value, label)` pairs.
-
-    One implementation, because there were two — `.stats/.stat` in the
-    dashboard and `.cards/.card` in the report — differing in font size, in
-    layout and in nothing that mattered.
-    """
+    """A row of headline figures: `(value, label)` pairs."""
     cells = ''.join(
         f'<div class="stat"><div class="v">{esc(value)}</div>'
         f'<div class="l">{esc(label)}</div></div>'
@@ -205,14 +256,21 @@ def stat_tiles(items) -> str:
     return f'<div class="stats">{cells}</div>'
 
 
-def table(headers, rows, *, numeric=(), empty_message='', caption='') -> str:
-    """A data table, or the reason there is not one.
+def bar_cell(share: float, direction: str = '') -> str:
+    """A magnitude drawn where the number is, not instead of it.
 
-    `headers` are the column titles, `rows` the cells already rendered.
-    `numeric` holds the indices to align right. An empty `rows` renders
-    `empty_message` instead of a header over nothing, which is what every one
-    of these tables used to do.
+    `share` is 0..1 of the widest value in the column. `direction` is 'with' or
+    'against' — this whole tool is directional, and a coefficient table where
+    the sign is a word in another column makes the reader do the joining.
     """
+    width = max(0.0, min(1.0, share)) * 100
+    return (f'<span class="magnitude {esc(direction)}" '
+            f'style="width:{width:.1f}%"></span>')
+
+
+def table(headers, rows, *, numeric=(), empty_message='', caption='',
+          sortable: bool = False) -> str:
+    """A data table, or the reason there is not one."""
     if not rows:
         return empty(empty_message or 'Nothing to show here yet.')
 
@@ -230,20 +288,39 @@ def table(headers, rows, *, numeric=(), empty_message='', caption='') -> str:
         for row in rows
     )
     legend = f'<caption>{esc(caption)}</caption>' if caption else ''
-    return (f'<div class="scroll"><table class="grid">{legend}'
+    classes = 'grid sortable' if sortable else 'grid'
+    return (f'<div class="scroll"><table class="{classes}">{legend}'
             f'<thead><tr>{head}</tr></thead><tbody>{body}</tbody>'
             f'</table></div>')
 
 
 def empty(message: str, *, action: str = '') -> str:
-    """What a page shows when it has nothing to show.
-
-    A designed state rather than a paragraph, because the two are read
-    differently: a paragraph in the flow of the page looks like commentary on
-    results that are further down, and there are none.
-    """
+    """What a screen shows when it has nothing to show."""
     link = f'<p class="emptyaction">{action}</p>' if action else ''
     return f'<div class="empty"><p>{message}</p>{link}</div>'
+
+
+def blocked(what: str, why: str, commands=(), retry: str = '') -> str:
+    """A question that cannot be answered yet, and exactly what unblocks it.
+
+    On a fresh installation this is the state of four screens out of six, so it
+    is the commonest thing the interface shows and it is designed rather than
+    apologised for.
+    """
+    def one(label, command, size):
+        weight = f'<span class="cmdsize">{esc(size)}</span>' if size else ''
+        return (f'<li><span class="cmdwhat">{esc(label)}</span>'
+                f'<pre class="cmd">{esc(command)}</pre>{weight}</li>')
+
+    lines = ''.join(one(*command) for command in commands)
+    again = (f'<p><a class="btn quiet" href="{attr(retry)}">Check again</a></p>'
+             if retry else '')
+    return f'''<div class="blocked">
+  <h2>{esc(what)}</h2>
+  <p>{why}</p>
+  {f'<ul class="commands">{lines}</ul>' if lines else ''}
+  {again}
+</div>'''
 
 
 def notice(text: str, kind: str = 'info') -> str:
@@ -252,23 +329,20 @@ def notice(text: str, kind: str = 'info') -> str:
 
 
 def disclosure(summary: str, body: str, *, open: bool = False) -> str:
-    """The explanation, available but not in the way.
-
-    These pages carry a lot of prose, and it is there for a reason: a number
-    from a penalised regression means something different from a mean, and the
-    difference has to be readable somewhere. But it was above the figures, so
-    the figures started below the fold. This puts the reasoning one click away
-    and the result first.
-    """
+    """The explanation, available but not in the way."""
     return (f'<details class="explain"{" open" if open else ""}>'
             f'<summary>{esc(summary)}</summary>'
             f'<div class="explainbody">{body}</div></details>')
 
 
-def button(label: str, *, kind: str = 'primary', **attrs) -> str:
+def button(label: str, *, kind: str = 'primary', tag: str = 'button',
+           href: str = '', **attrs) -> str:
     """One button, three intentions: primary, quiet, danger."""
     rendered = ' '.join(f'{key.replace("_", "-")}="{attr(value)}"'
                         for key, value in attrs.items())
+    if tag == 'a' or href:
+        return (f'<a class="btn {esc(kind)}" href="{attr(href)}" '
+                f'{rendered}>{esc(label)}</a>')
     return (f'<button type="button" class="btn {esc(kind)}" {rendered}>'
             f'{esc(label)}</button>')
 
@@ -277,3 +351,23 @@ def spinner(label: str = 'Working…') -> str:
     """Shown while something slow is happening, which is often here."""
     return (f'<div class="working"><span class="dot"></span>'
             f'<span>{esc(label)}</span></div>')
+
+
+def unavailable_reasons() -> dict:
+    """Which findings cannot be computed here, and why, in one line each."""
+    from chatlens.core import nrc, optional
+
+    reasons = {}
+    if not optional.have('sklearn'):
+        needed = 'needs scikit-learn'
+        reasons['words'] = needed
+        reasons['lexical'] = needed
+        reasons['volume'] = needed
+    if not optional.have('relatio'):
+        reasons['narratives'] = 'needs spaCy and RELATIO'
+    try:
+        if not nrc.lexicon_path().is_file():
+            reasons['emotions'] = 'needs the NRC lexicon'
+    except Exception:  # noqa: BLE001 - a missing lexicon must not break the bar
+        pass
+    return reasons

@@ -474,8 +474,15 @@ class LibraryRoutingTests(unittest.TestCase):
 
     # --- one experiment ---------------------------------------------------
 
-    def test_an_experiment_opens_on_its_own_page(self):
+    def test_an_experiment_opens_where_the_work_is(self):
+        """A study is a sequence, and its address lands on the unfinished part
+        of it rather than always on the same screen."""
         response, body = self.get('/experiment/first-study')
+        self.assertEqual(response.status, 200)
+        self.assertIn('/experiment/first-study/step/', body)
+
+    def test_an_experiment_opens_on_its_own_page(self):
+        response, body = self.get('/experiment/first-study/step/data')
         self.assertEqual(response.status, 200)
         self.assertIn('First Study', body)
 
@@ -485,13 +492,15 @@ class LibraryRoutingTests(unittest.TestCase):
         A log poll that did not name its experiment would read whichever one
         the server happened to have active when it arrived.
         """
-        _response, body = self.get('/experiment/first-study')
+        # The run form lives on step 4 now, which is where those two
+        # endpoints are addressed from.
+        _response, body = self.get('/experiment/first-study/step/run')
         for endpoint in ('/run', '/estimate'):
             self.assertIn(f'/experiment/first-study{endpoint}', body)
         self.assertNotIn('hx-post="/run"', body)
 
     def test_the_fragments_answer_under_the_experiment(self):
-        for fragment in ('log', 'report', 'settings'):
+        for fragment in ('log', 'report', 'step/outcome'):
             response, _body = self.get(f'/experiment/first-study/{fragment}')
             self.assertEqual(response.status, 200, fragment)
 
@@ -521,7 +530,7 @@ class LibraryRoutingTests(unittest.TestCase):
     def test_an_unknown_words_download_is_a_404_not_a_word_cloud(self):
         """Anything under words/ that was not the CSV used to fall through to
         the image branch and be answered with a figure."""
-        response, _body = self.get('/experiment/first-study/words/anything')
+        response, _body = self.get('/experiment/first-study/findings/words/anything')
         self.assertEqual(response.status, 404)
 
     def test_traversal_in_the_url_is_refused(self):
@@ -671,7 +680,7 @@ class MappingRoutesTests(unittest.TestCase):
     # --- the outcome ------------------------------------------------------
 
     def test_the_settings_page_offers_an_outcome(self):
-        _response, body = self.call('GET', '/experiment/mapped-study/settings')
+        _response, body = self.call('GET', '/experiment/mapped-study/step/outcome')
         self.assertIn('What to explain', body)
         self.assertIn('name="unit"', body)
 
@@ -726,7 +735,7 @@ class MappingRoutesTests(unittest.TestCase):
         self.call('POST', '/experiment/mapped-study/input',
                   'file=chat_log.csv&role=messages')
         _response, body = self.call('GET',
-                                    '/experiment/mapped-study/settings')
+                                    '/experiment/mapped-study/step/columns')
         for column in ('team', 'from_seat', 'to_seat', 'text', 'sent_at',
                        'condition'):
             self.assertIn(f'value="{column}"', body)
@@ -735,7 +744,7 @@ class MappingRoutesTests(unittest.TestCase):
         self.call('POST', '/experiment/mapped-study/input',
                   'file=chat_log.csv&role=messages')
         _response, body = self.call('GET',
-                                    '/experiment/mapped-study/settings')
+                                    '/experiment/mapped-study/step/columns')
         # In the ordinary case the mapping is right and only needs confirming.
         self.assertIn('value="team" selected', body)
         self.assertIn('value="text" selected', body)
@@ -784,7 +793,7 @@ class MappingRoutesTests(unittest.TestCase):
                   'col_group=team&col_sender=from_seat&col_receiver=to_seat'
                   '&col_body=text&col_treatment=condition')
         _response, body = self.call('GET',
-                                    '/experiment/mapped-study/settings')
+                                    '/experiment/mapped-study/step/columns')
         # Read from the column, not typed by anyone.
         self.assertIn('name="tr_ctrl"', body)
         self.assertIn('name="tr_treat"', body)

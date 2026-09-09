@@ -54,7 +54,7 @@ class LibraryPageTests(unittest.TestCase):
     def test_the_settings_page_of_a_bare_experiment_renders(self):
         library.create('Bare study', 'generic_chat')
         with active.experiment('bare-study'):
-            page = views_library.settings_page('bare-study')
+            page = views_library.step_outcome('bare-study')
         self.assertIn('<!doctype html>', page.lower())
 
     def test_the_panels_of_a_bare_experiment_explain_rather_than_raise(self):
@@ -80,15 +80,25 @@ class AnalysisPageTests(unittest.TestCase):
 
     def test_participation_says_what_is_missing(self):
         with active.experiment('bare-study'):
-            page = views_participation.page('bare-study')
-        self.assertIn('<!doctype html>', page.lower())
-        self.assertNotIn('Traceback', page)
+            body = views_participation.body('bare-study')
+        self.assertTrue(body.strip())
+        self.assertNotIn('Traceback', body)
 
     def test_comparison_says_what_is_missing(self):
         with active.experiment('bare-study'):
-            page = views_compare.page('bare-study')
+            body = views_compare.panel('bare-study')
+        self.assertTrue(body.strip())
+        self.assertNotIn('Traceback', body)
+
+    def test_the_findings_area_frames_whatever_was_asked_for(self):
+        """The register is navigation made of content, so it has to be there
+        even when nothing can be computed yet."""
+        from chatlens.web import views_findings
+        with active.experiment('bare-study'):
+            page = views_findings.page('bare-study', 'compare')
         self.assertIn('<!doctype html>', page.lower())
-        self.assertNotIn('Traceback', page)
+        self.assertIn('class="register"', page)
+        self.assertIn('class="spine"', page)
 
     def test_neither_page_leaves_a_table_header_over_nothing(self):
         """An empty table with headings and no rows is not an empty state.
@@ -97,9 +107,9 @@ class AnalysisPageTests(unittest.TestCase):
         without data; it is here so that the rebuilt pages keep that property.
         """
         with active.experiment('bare-study'):
-            for page in (views_participation.page('bare-study'),
-                         views_compare.page('bare-study')):
-                if '<tbody></tbody>' in page.replace('\n', ''):
+            for body in (views_participation.body('bare-study'),
+                         views_compare.panel('bare-study')):
+                if '<tbody></tbody>' in body.replace('\n', ''):
                     self.fail('a table was rendered with no rows in it')
 
 

@@ -154,7 +154,7 @@ def _histogram(pairs, total_label) -> str:
             f'</thead><tbody>{"".join(rows)}</tbody></table>')
 
 
-def page(name: str) -> str:
+def body(name: str, query=None) -> str:
     from chatlens.core import config, participation
 
     experiment = config.EXPERIMENT
@@ -164,7 +164,7 @@ def page(name: str) -> str:
         body = ('<p class="muted">No messages table yet. Run the analysis once '
                 'and this page fills in — it reads what the merge produces, '
                 'and costs nothing.</p>')
-        return _shell(name, experiment, body)
+        return body
 
     messages = _read(messages_path)
     roster = _read(roster_path) if roster_path else None
@@ -206,7 +206,7 @@ def page(name: str) -> str:
         sections = ('<h2>What it means for the outcome</h2>'
                     '<p class="muted">No outcome is declared, so there is '
                     'nothing to compare the grid against. Set one under '
-                    '<a href="/experiment/' + _e(name) + '/settings">'
+                    '<a href="/experiment/' + _e(name) + '/step/outcome">'
                     'Settings</a>.</p>')
     elif note:
         sections = f'<h2>What it means for the outcome</h2><p class="muted">{note}</p>'
@@ -264,30 +264,4 @@ excluded.</p>'''
 {grid_note}
 {_histogram(cover["directions_histogram"], "How many groups used that many")}
 {sections}'''
-    return _shell(name, experiment, body)
-
-
-def _shell(name: str, experiment, body: str) -> str:
-    from chatlens.core import config
-
-    # The reasoning is kept and moved: the grid is the page's whole argument,
-    # and it used to sit under three lines explaining it.
-    why = ui.disclosure(
-        'What this page is for',
-        '''<p>Every other page measures text, so it can only see the pairs
-        that produced some. This one shows the whole grid, including the
-        pairs where nothing was said — which is not missing data when
-        speaking is a choice.</p>''',
-    )
-    where = (f'<h2>Where this experiment lives</h2>'
-             f'<p class="muted path">{ui.esc(config.WORKSPACE)}</p>')
-
-    return ui.shell(
-        f'{experiment.name} — participation',
-        f'{why}\n{body}\n{where}',
-        heading='Participation',
-        slug=name,
-        experiment_name=experiment.name,
-        current='participation',
-        htmx=False,
-    )
+    return body

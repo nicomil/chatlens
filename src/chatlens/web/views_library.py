@@ -176,7 +176,7 @@ def new_form(error: str = '') -> str:
   </label>
   <p class="muted">What shape is your data in?</p>
   {_adapter_choices()}
-  <button type="submit" class="primary">Create</button>
+  <button type="submit" class="btn primary">Create</button>
 </form>'''
 
 
@@ -218,11 +218,15 @@ def library_page() -> str:
         This folder is not somewhere you would come across by accident: if
         these are participant data, make sure your backup covers it.</p>''',
     )
+    # No spine here: choosing which study to open is not a step of a study.
     return ui.shell(
         'chatlens',
-        f'{library_panel()}\n{where}',
-        heading='chatlens',
-        subtitle='text analysis of experiment conversations',
+        f'''<p class="eyebrow">Your studies</p>
+        <h1 class="question">Text analysis of experiment conversations</h1>
+        <p class="lead">Each study is a folder of its own: its export, its
+        settings and its results. Open one to carry on, or make another.</p>
+        {library_panel()}
+        {where}''',
     )
 
 
@@ -301,10 +305,10 @@ def files_panel(name: str, message: str = '', error: str = '',
                 # to remove.
                 action = (
                     f'<span class="confirm">Remove it?'
-                    f'<button class="danger" hx-post="{_base(name)}/files/delete"'
+                    f'<button class="btn danger" hx-post="{_base(name)}/files/delete"'
                     f' {ui.hx_vals(file=path.name)}'
                     f' hx-target="#files" hx-swap="innerHTML">Yes, remove</button>'
-                    f'<button hx-get="{_base(name)}/files"'
+                    f'<button class="btn quiet" hx-get="{_base(name)}/files"'
                     f' hx-target="#files" hx-swap="innerHTML">Keep</button>'
                     f'</span>')
             else:
@@ -326,10 +330,11 @@ def files_panel(name: str, message: str = '', error: str = '',
       hx-target="#files" hx-swap="innerHTML"
       hx-indicator="#uploading">
   <label class="field">
-    <span>Add CSV files &mdash; {wanted}</span>
+    <span>Add CSV files</span>
     <input type="file" name="file" accept=".csv,text/csv" multiple required>
+    <span class="rolehint">This adapter reads {wanted}.</span>
   </label>
-  <button type="submit" class="primary">Upload</button>
+  <button type="submit" class="btn primary">Upload</button>
   <span id="uploading" class="htmx-indicator muted">uploading&hellip;</span>
 </form>
 <p class="muted small">Up to {MAX_UPLOAD // (1024 * 1024)} MB per file. A file
@@ -437,7 +442,7 @@ def columns_panel(name: str, message: str = '', error: str = '') -> str:
 <p class="muted">Read from <b>{_e(path.name)}</b>, {len(columns)} columns.</p>
 <form hx-post="{_base(name)}/columns" hx-target="#columns" hx-swap="innerHTML">
   <div class="mapping">{rows}</div>
-  <button type="submit" class="primary">Save</button>
+  <button type="submit" class="btn primary">Save</button>
 </form>'''
 
 
@@ -481,7 +486,7 @@ what the report will print.</p>
 <form hx-post="{_base(name)}/treatments" hx-target="#treatments"
       hx-swap="innerHTML">
   <div class="mapping">{fields}</div>
-  <button type="submit" class="primary">Save</button>
+  <button type="submit" class="btn primary">Save</button>
 </form>'''
 
 
@@ -602,103 +607,87 @@ read from the dataset built for the unit you choose.</p>
              placeholder="optional, for the report">
       <span class="rolehint">how it should read on a page</span></label>
   </div>
-  <button type="submit" class="primary">Save</button>
+  <button type="submit" class="btn primary">Save</button>
 </form>
 {summary}'''
 
 
-def _step(number: int, title: str, done: bool, body: str,
-          note: str = '') -> str:
-    """One numbered step of the setup, with whether it is finished.
+def _shell(name: str, step: str, title: str, lead: str, body: str,
+           next_step: str = '', next_label: str = '') -> str:
+    """One step of the study, on the spine.
 
-    It was one long scroll of four sections with three differently-worded save
-    buttons and nothing saying which of them still needed attention. Which is
-    the first question anyone has on this page.
+    The four steps used to be four sections of one long page with three
+    differently worded save buttons, and nothing said which of them still
+    needed attention. Now each is a screen with one decision on it, and the
+    spine above says where it sits in the whole.
     """
-    mark = ('<span class="badge ok">done</span>' if done else
-            '<span class="badge warn">to do</span>')
-    hint = f'<p class="muted">{note}</p>' if note else ''
-    return f'''<section class="step{" done" if done else ""}">
-  <h2><span class="stepnum">{number}</span>{ui.esc(title)}{mark}</h2>
-  {hint}
-  {body}
-</section>'''
-
-
-def _steps_done(experiment) -> dict:
-    """Which parts of the setup are settled, from the file itself."""
     from chatlens.core import config
+    from chatlens.web import study as study_state
 
-    declared = experiment.declared
-    ready, _missing = readiness(config.WORKSPACE, experiment.adapter,
-                                declared.get('input'))
-    columns = declared.get('columns') or {}
-    return {
-        'files': ready,
-        'columns': all(columns.get(role) for role in REQUIRED_ROLES),
-        'treatments': bool(declared.get('treatments')),
-        'outcome': bool((declared.get('outcome') or {}).get('column')),
-    }
+    experiment = config.EXPERIMENT
+    numbers = {key: index for index, (key, _l, _h)
+               in enumerate(ui.STEPS, start=1)}
+    onward = f'{_base(name)}/step/{next_step}' if next_step else ''
+
+    return ui.shell(
+        f'{experiment.name} — {title.lower()}',
+        ui.step_page(numbers[step], title, lead, body,
+                     next_label=next_label, next_href=onward),
+        slug=name,
+        study=experiment.name,
+        steps=study_state.step_state(experiment),
+        step=step,
+    )
 
 
-def settings_page(name: str) -> str:
-    """Everything about one experiment that is not running it."""
+def step_data(name: str) -> str:
+    """Step 1: the export, and what each file is."""
     from chatlens.core import config
 
     experiment = config.EXPERIMENT
-    done = _steps_done(experiment)
     ready, missing = readiness(config.WORKSPACE, experiment.adapter,
                                experiment.declared.get('input'))
-
-    if ready and all(done.values()):
-        state = ui.notice('Everything is set. The run is on the '
-                          f'<a href="{_base(name)}">overview</a>.', 'good')
-    elif ready:
-        state = ui.notice(
-            'Ready to run. The steps still marked "to do" are the ones the '
-            'pages that explain an outcome need — the descriptive ones work '
-            'without them.', 'info')
-    else:
-        state = ui.notice(f'Not ready yet: {_e(missing)} still missing.',
-                          'warn')
-
+    lead = ('The CSVs this study is built from. Each one has to be given a '
+            'part to play — which file is the messages, which the '
+            'participants — because the same export can be shaped in more '
+            'than one way.')
+    state = ('' if ready else
+             ui.notice(f'Not ready yet: {_e(missing)} still missing.', 'warn'))
     where = ui.disclosure(
-        'Where this experiment lives',
+        'Where this study lives',
         f'<p class="path">{_e(config.WORKSPACE)}</p>')
-
-    # The route existed and nothing in the interface reached it. Opening the
-    # disclosure is the confirmation step: the button is not somewhere a
-    # mis-aimed click lands.
     remove = ui.disclosure(
-        'Take this experiment out of the list',
+        'Take this study out of the list',
         f'''<p>Nothing is deleted. A marker file hides it from the library and
         the folder stays exactly where it is, with the data and the results in
         it — delete that file to bring it back.</p>
         <p><button class="btn danger" hx-post="{_base(name)}/archive"
            hx-target="body">Take it out of the list</button></p>''')
 
-    body = f'''{state}
-{_step(1, "The files", done["files"],
-       f'<div id="files">{files_panel(name)}</div>',
-       "The export, and what each file is taken for.")}
-{_step(2, "Which column is which", done["columns"],
-       f'<div id="columns">{columns_panel(name)}</div>',
-       "Four of them are needed; the other two are used if they are there.")}
-{_step(3, "Treatments", done["treatments"],
-       f'<div id="treatments">{treatments_panel(name)}</div>',
-       "How each condition should be named in the report.")}
-{_step(4, "What to explain", done["outcome"],
-       f'<div id="outcome">{outcome_panel(name)}</div>',
-       "The column the analysis should predict. Without it the descriptive "
-       "pages still work and the four that explain something do not.")}
-{where}
-{remove}'''
+    body = (f'{state}<div id="files">{files_panel(name)}</div>'
+            f'{where}{remove}')
+    return _shell(name, 'data', 'The data', lead, body,
+                  next_step='columns', next_label='Columns')
 
-    return ui.shell(
-        f'{experiment.name} — settings',
-        body,
-        heading='Settings',
-        slug=name,
-        experiment_name=experiment.name,
-        current='settings',
-    )
+
+def step_columns(name: str) -> str:
+    """Step 2: which column plays which part, and what to call each treatment."""
+    lead = ('Four columns are needed — the group, the sender, the recipient '
+            'and the text. Time and treatment are used if they are there. The '
+            'names are read from the file itself, so nothing has to be typed.')
+    body = (f'<div id="columns">{columns_panel(name)}</div>'
+            f'<h2>Treatments</h2>'
+            f'<div id="treatments">{treatments_panel(name)}</div>')
+    return _shell(name, 'columns', 'Which column is which', lead, body,
+                  next_step='outcome', next_label='Outcome')
+
+
+def step_outcome(name: str) -> str:
+    """Step 3: what the analysis is trying to explain."""
+    lead = ('The column the analysis should explain — whether an offer was '
+            'accepted, how much someone earned, whether a group agreed. '
+            'Everything descriptive works without one; the four findings that '
+            'explain something do not exist without it.')
+    body = f'<div id="outcome">{outcome_panel(name)}</div>'
+    return _shell(name, 'outcome', 'What to explain', lead, body,
+                  next_step='run', next_label='Run it')

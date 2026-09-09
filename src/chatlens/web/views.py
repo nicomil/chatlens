@@ -243,7 +243,7 @@ def form_panel() -> str:
   <fieldset{disabled}>
     {presets_panel()}
     {estimate_panel()}
-    <button type="submit" class="go">{'Running…' if runner.running else 'Start run'}</button>
+    <button type="submit" class="btn primary wide">{'Running…' if runner.running else 'Start run'}</button>
 
     <details class="advanced">
       <summary>Adjust the details</summary>
@@ -679,7 +679,7 @@ def run_detail(name: str) -> str:
         f'<div><b>{_e(_run_time(run.get("timestamp", "")))}</b> '
         f'<span class="muted">{_e(stages)}</span></div>'
         f'{status}'
-        f'<button class="back" hx-get="{active.base()}/report" hx-target="#report" '
+        f'<button class="btn quiet" hx-get="{active.base()}/report" hx-target="#report" '
         f'hx-swap="innerHTML">back to the latest</button></div>'
         f'{_params_table(run)}'
         f'{_run_files(run["path"], name)}'
@@ -733,31 +733,41 @@ def page(experiment_slug: str = '') -> str:
     experiment = getattr(config, 'EXPERIMENT', None)
     named = experiment.name if experiment and experiment.name else ''
 
-    body = f'''<section class="col col-side">
-    <h2>Status</h2>
-    <div id="status">{status_panel()}</div>
-    <h2>Start a run</h2>
-    <div id="formbox">{form_panel()}</div>
-    <h2>Archive</h2>
-    <div id="runs">{runs_panel()}</div>
-  </section>
+    from chatlens.web import study as study_state
 
-  <section class="col col-main">
+    lead = ('Everything the study can say comes out of one pass over the text. '
+            'The free one takes seconds and needs no key; the other two send '
+            'the conversations to a model and cost money, so the number of '
+            'calls is shown before anything is sent.')
+
+    body = f'''<div class="runlayout">
+  <section class="runside">
+    <h2>What is here</h2>
+    <div id="status">{status_panel()}</div>
+    <h2>What to run</h2>
+    <div id="formbox">{form_panel()}</div>
+  </section>
+  <section class="runmain">
     <h2>Execution</h2>
     <div id="logwrap" class="log">{log_panel()}</div>
+    <h2>Earlier runs</h2>
+    <div id="runs">{runs_panel()}</div>
     <h2>Report</h2>
     <div id="report">{report_panel()}</div>
   </section>
-
+</div>
 <div id="after" hidden></div>'''
 
+    numbers = {key: index for index, (key, _l, _h)
+               in enumerate(ui.STEPS, start=1)}
     return ui.shell(
-        named or 'Text analysis',
-        body,
-        heading=named or 'Text analysis',
-        subtitle=dataset,
+        f'{named or "Text analysis"} — run',
+        ui.step_page(numbers['run'], 'Run it', lead, body,
+                     next_label='See the findings',
+                     next_href=f'/experiment/{ui.esc(experiment_slug)}/findings'
+                     if experiment_slug else ''),
         slug=experiment_slug or '',
-        experiment_name=named,
-        current='',
-        wide=True,
+        study=named or dataset,
+        steps=study_state.step_state(experiment) if experiment else {},
+        step='run',
     )

@@ -151,26 +151,3 @@ be divided by the same inflated denominator, and a corpus that cannot be
 measured would look uniformly unemotional.</p>'''
 
 
-def page(name: str, query=None) -> str:
-    from chatlens.core import config
-
-    experiment = config.EXPERIMENT
-    # The reasoning is kept and moved: one click away rather than above the
-    # result, which is what used to push the figures below the fold.
-    why = ui.disclosure(
-        'What this page is for',
-        '''<p>Eight emotions and two sentiments, from a word list. A document
-        containing none of its words scores zero everywhere, which
-        is a correct reading and not a gap — but those rows are
-        overwhelmingly the short ones, so the tables below show how
-        many there are and where they sit.</p>''',
-    )
-    return ui.shell(
-        f'{experiment.name} — emotions',
-        why + '\n' + panel(),
-        heading='Emotions',
-        slug=name,
-        experiment_name=experiment.name,
-        current='emotions',
-        htmx=False,
-    )

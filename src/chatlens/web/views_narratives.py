@@ -93,7 +93,7 @@ def _entities_panel(name: str, experiment) -> str:
            placeholder="i, you, we, and whatever names the participants"
            size="60">
     <span class="rolehint">comma separated</span></label>
-  <button type="submit" class="primary">Save and run</button>
+  <button type="submit" class="btn primary">Save and run</button>
 </form>
 <p class="muted">These are the words that name someone rather than describe
 something. Left to be grouped by similarity, <code>i</code> and
@@ -245,41 +245,3 @@ identity, which this page does not assume every experiment has.</p>'''
     return body
 
 
-def page(name: str, query=None) -> str:
-    from chatlens.core import config
-
-    experiment = config.EXPERIMENT
-    if (query or {}).get('checked'):
-        # "Check again" has to be able to reach a different answer than the
-        # one already cached, or it is a link that reloads the same sentence.
-        narratives.forget_route()
-        _CACHE.clear()
-    needs = _requirements_panel(experiment.narrative_model)
-    # Parsing every message with spaCy takes from seconds to minutes, and the
-    # page used to do it before sending a single byte: a blank window with a
-    # spinning tab, indistinguishable from a hang.
-    body = needs if needs else (
-        f'<div id="narrativepanel"'
-        f' hx-get="/experiment/{_e(name)}/narratives/panel"'
-        f' hx-trigger="load" hx-swap="innerHTML">'
-        f'{ui.spinner("Reading the grammar of every message…")}</div>')
-
-    # The reasoning is kept and moved: one click away rather than above the
-    # result, which is what used to push the figures below the fold.
-    why = ui.disclosure(
-        'What this page is for',
-        '''<p>The text read as relations — who does what to whom — rather than as
-        words. A relation has a direction, which a word count does
-        not: in a study of who supports whom, "I support you" and "I
-        support the other one" are opposite moves made of the same
-        words.</p>''',
-    )
-    return ui.shell(
-        f'{experiment.name} — narratives',
-        why + '\n' + body,
-        heading='Narratives',
-        slug=name,
-        experiment_name=experiment.name,
-        current='narratives',
-        htmx=True,
-    )

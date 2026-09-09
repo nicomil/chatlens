@@ -1,0 +1,125 @@
+"""What state a study is in: which steps are done, which questions can be asked.
+
+The interface used to leave both of these to the reader. Whether the setup was
+finished could only be learnt by scrolling four sections; which of the five
+analysis pages had anything to say could only be learnt by opening all five.
+Both are computable, and this is where they are computed.
+
+Nothing here renders anything. `web/ui.py` draws what this returns.
+"""
+
+from __future__ import annotations
+
+from chatlens.web import ui
+
+
+def _dataset_exists() -> bool:
+    """True once a run has produced something to analyse."""
+    from chatlens.core import config
+
+    try:
+        return any(config.DATASETS_DIR.glob('*_nlp.csv'))
+    except OSError:
+        return False
+
+
+def _merged_exists() -> bool:
+    from chatlens.core import config
+
+    try:
+        return any(config.MERGED_DIR.glob('*_messages_long.csv'))
+    except OSError:
+        return False
+
+
+def step_state(experiment) -> dict:
+    """Each step of the study's life, in the state it is really in.
+
+    A step is `done` when the thing it is for has been decided, not when it has
+    been visited: visiting is not a decision and the reader knows it.
+    """
+    from chatlens.core import config
+    from chatlens.web import views_library
+
+    declared = experiment.declared
+    ready, missing = views_library.readiness(
+        config.WORKSPACE, experiment.adapter, declared.get('input'))
+    columns = declared.get('columns') or {}
+    has_columns = all(columns.get(role)
+                      for role in views_library.REQUIRED_ROLES)
+    # The oTree adapter reads its export directly; there is nothing to map, so
+    # the step is satisfied by the adapter rather than by the user.
+    if experiment.adapter != 'generic_chat':
+        has_columns = ready
+    has_outcome = bool((declared.get('outcome') or {}).get('column'))
+    has_run = _dataset_exists() or _merged_exists()
+
+    state = {
+        'data': ui.DONE if ready else ui.TODO,
+        'columns': ui.DONE if has_columns else ui.TODO,
+        'outcome': ui.DONE if has_outcome else ui.TODO,
+        'run': ui.DONE if has_run else ui.TODO,
+        'findings': ui.DONE if has_run else ui.TODO,
+    }
+    if not ready:
+        because = f'{missing} still missing'
+        state['columns'] = (ui.BLOCKED, 'the files come first')
+        state['run'] = (ui.BLOCKED, because)
+        state['findings'] = (ui.BLOCKED, because)
+    elif not has_run:
+        state['findings'] = (ui.BLOCKED, 'nothing has been run yet')
+    return state
+
+
+# The questions this tool can answer, in the order they make sense: what was
+# said, who said it, then the four ways of turning it into numbers. `order`
+# breaks ties inside a verdict group so the list does not reshuffle itself
+# between runs.
+CATALOGUE = (
+    ('corpus', 'What was said', 0),
+    ('participation', 'Who spoke to whom', 1),
+    ('compare', 'Which representation to trust', 2),
+    ('words', 'The words', 3),
+    ('narratives', 'The relations', 4),
+    ('emotions', 'The emotions', 5),
+)
+
+# Which entries need a declared outcome before they are even a question.
+NEEDS_OUTCOME = {'compare', 'words', 'narratives'}
+
+# Entries answerable from the merge alone, with no analysis run behind them.
+NEEDS_NO_RUN = {'corpus', 'participation'}
+
+
+def findings(experiment, verdicts=None) -> list[dict]:
+    """The register: one entry per question, with the state it is in.
+
+    `verdicts` is what the analysis actually found, when it has been computed —
+    a mapping of entry id to `(verdict, note)`. Without it every answerable
+    entry is `open`, which is what the register shows while the numbers are
+    still being worked out.
+    """
+    verdicts = verdicts or {}
+    blocked = ui.unavailable_reasons()
+    has_outcome = bool((experiment.declared.get('outcome') or {}).get('column'))
+    has_run = _dataset_exists()
+
+    entries = []
+    for key, name, order in CATALOGUE:
+        verdict, note = verdicts.get(key, (ui.OPEN, ''))
+        if key in blocked:
+            verdict, note = ui.UNAVAILABLE, blocked[key]
+        elif key in NEEDS_OUTCOME and not has_outcome:
+            verdict, note = ui.UNAVAILABLE, 'no outcome declared yet'
+        elif key not in NEEDS_NO_RUN and not has_run:
+            verdict, note = ui.UNAVAILABLE, 'needs a run first'
+        entries.append({'id': key, 'name': name, 'order': order,
+                        'verdict': verdict, 'note': note})
+    return entries
+
+
+def entry_name(key: str) -> str:
+    for candidate, name, _order in CATALOGUE:
+        if candidate == key:
+            return name
+    return key
