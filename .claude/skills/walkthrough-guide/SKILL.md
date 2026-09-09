@@ -1,14 +1,21 @@
 ---
 name: walkthrough-guide
-description: "Rebuild the chatlens walk-through guide: run the whole procedure in a real browser on synthetic data, screenshot each step, and regenerate the illustrated section of the README and its PDF. Use when the interface has changed, when a figure is stale, or when asked for a tutorial with screenshots."
+description: "Rebuild GUIDE.md, the illustrated chatlens manual: run the whole procedure in a real browser on synthetic data, screenshot every page, and regenerate the docs page and the PDF. Use when the interface has changed, when a figure is stale, or when asked for a tutorial or manual with screenshots."
 risk: low
 source: local
 ---
 
-# Rebuilding the walk-through
+# Rebuilding the guide
 
-The guide is section 8 of `README.md`, published as a page of the docs site, and
-also as a PDF for sending to somebody. Its figures are screenshots of the tool
+The guide is `GUIDE.md` at the repository root — its own document, not a section
+of the README, because it has its own structure and its own figures and the
+README's numbered-section machinery would cut it into pieces that mean nothing
+apart. `make docs` copies it into `docs/` and puts it in the navigation, and
+`scripts/tutorial/pdf.py` turns it into a PDF for sending to somebody.
+
+It has eight parts, and the order is the point: what the tool is for, what it
+can do, installing it, setting up a study, running it, each page in detail, one
+complete session from empty library to answer, and where the files live. Its figures are screenshots of the tool
 actually running, which is the only kind worth having and the only kind that
 goes stale — a guide with pictures of an interface that has since changed is
 worse than one with none.
@@ -31,6 +38,11 @@ that read as non-binary, a page that assumed the wrong unit.
 **Photograph what is there.** Including the screens that report something
 missing. The emotions page without its lexicon is what a new installation shows,
 and a guide that hides it leaves the reader to meet it alone.
+
+**Say when a figure is not the real thing.** The emotions page needs a lexicon
+that cannot be shipped; the figure uses a stand-in word list so the page has
+something to draw, and the caption says so. A screenshot that quietly shows
+invented numbers is worse than no screenshot.
 
 ## The four steps
 
@@ -66,6 +78,11 @@ same-origin`.
 
 ### 3. Photograph every page
 
+Fifteen figures: the empty library, the experiment made, four bands of the
+settings page, the finished run, the report, and each analysis page — with the
+words page shot three times at three penalties, because the point of that
+control is what changes when it moves.
+
 ```bash
 python scripts/tutorial/shoot.py --token <the key the dashboard printed> \
     --out docs/images
@@ -79,18 +96,26 @@ three pictures of the same thing.
 `--wait` matters: the narratives page parses every message before it draws, and
 a shot taken too early shows an empty frame that reads as a bug.
 
-### 4. Regenerate the text and the PDF
+### 4. Regenerate the page and the PDF
 
-The prose lives in `README.md` under `## 8. A walk through, with pictures`. Edit
-it there, never in `docs/` — that folder is cleared and rebuilt from the README.
-Then:
+Edit `GUIDE.md`, never `docs/guide.md` — that is a copy, and `make docs` clears
+the folder and remakes it. Then:
 
 ```bash
 make docs
-python scripts/tutorial/pdf.py --out chatlens-walkthrough.pdf
+python scripts/tutorial/pdf.py --out chatlens-guide.pdf
 ```
 
 `docs/images/` survives `make docs`; everything else in `docs/` does not.
+
+The PDF is built by a small converter in `pdf.py` rather than a markdown
+library: it handles headings, paragraphs, code, images, tables, lists, links and
+block quotes, which is the whole of what the guide uses. If a construct comes
+out as raw pipes or brackets in the PDF, that is the converter missing a case
+and not something to work around in the prose.
+
+The contents list is dropped on the way to PDF — anchor links do nothing in a
+printed document.
 
 ## When a step fails
 

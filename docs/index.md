@@ -120,6 +120,9 @@ are there.
 
 ## Contents
 
+**[The illustrated guide](GUIDE.md)** — the whole tool,
+step by step, with screenshots. Start there.
+
 1. [What it does, in brief](01-what-it-does-in-brief.md#what-it-does-in-brief)
 2. [Installation](02-installation.md#installation)
 3. [API keys](03-api-keys.md#api-keys)
@@ -127,12 +130,11 @@ are there.
 5. [Your own experiment](05-your-own-experiment.md#your-own-experiment)
 6. [The analysis procedure](06-the-analysis-procedure.md#the-analysis-procedure)
 7. [The pages in the dashboard](07-the-pages-in-the-dashboard.md#the-pages-in-the-dashboard)
-8. [A walk through, with pictures](08-a-walk-through-with-pictures.md#a-walk-through-with-pictures)
-9. [The files produced](09-the-files-produced.md#the-files-produced)
-10. [Before analysing: three filters](10-before-analysing-three-filters.md#before-analysing-three-filters)
-11. [How the measures are built](11-how-the-measures-are-built.md#how-the-measures-are-built)
-12. [TopicGPT](12-topicgpt.md#topicgpt)
-13. [Costs and volumes](13-costs-and-volumes.md#costs-and-volumes)
-14. [If something does not add up](14-if-something-does-not-add-up.md#if-something-does-not-add-up)
-15. [Checking the tools](15-checking-the-tools.md#checking-the-tools)
-16. [Results on the pilot](16-results-on-the-pilot.md#results-on-the-pilot)
+8. [The files produced](08-the-files-produced.md#the-files-produced)
+9. [Before analysing: three filters](09-before-analysing-three-filters.md#before-analysing-three-filters)
+10. [How the measures are built](10-how-the-measures-are-built.md#how-the-measures-are-built)
+11. [TopicGPT](11-topicgpt.md#topicgpt)
+12. [Costs and volumes](12-costs-and-volumes.md#costs-and-volumes)
+13. [If something does not add up](13-if-something-does-not-add-up.md#if-something-does-not-add-up)
+14. [Checking the tools](14-checking-the-tools.md#checking-the-tools)
+15. [Results on the pilot](15-results-on-the-pilot.md#results-on-the-pilot)

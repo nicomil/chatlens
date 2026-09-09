@@ -108,6 +108,14 @@ def build() -> int:
     targets = {s['number']: f"{s['number']:02d}-{slug(s['title'])}.md"
                for s in sections}
 
+    # The guide is written by hand, not split out of the README: it has its own
+    # structure and its own figures, and the numbered-section machinery would
+    # cut it into pieces that mean nothing apart. It is copied in and given a
+    # place in the navigation.
+    guide = ROOT / 'GUIDE.md'
+    if guide.is_file():
+        shutil.copy2(guide, DOCS / 'guide.md')
+
     (DOCS / 'index.md').write_text(
         internal_links(front, targets) + '\n', encoding='utf-8')
 
@@ -119,6 +127,8 @@ def build() -> int:
     # Titles are quoted: "Before analysing: three filters" contains a colon,
     # which YAML would otherwise read as a second mapping key.
     nav = ['nav:', '  - Home: index.md']
+    if (DOCS / 'guide.md').is_file():
+        nav.append('  - "Guide": guide.md')
     nav += [f'  - "{s["title"]}": {targets[s["number"]]}' for s in sections]
 
     config = MKDOCS.read_text(encoding='utf-8')

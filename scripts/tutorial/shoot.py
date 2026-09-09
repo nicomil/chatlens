@@ -21,31 +21,42 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from capture import capture, crop  # noqa: E402
 
-# (file, page, height, wait in ms, caption). A `band` crops the capture, for
-# the pages where one section is the subject and the rest is context.
+# (file, page, height, wait in ms, band, caption). A band crops the capture,
+# for pages where one section is the subject and the rest is context.
 SHOTS = [
-    ('01-library', '', 880, 3000, None,
-     'the library, with the experiment made'),
-    ('05-run', '', 900, 3000, None,
-     'the run finished, with the report beside it'),
-    ('06-participation', '/participation', 860, 5000, None,
-     'who spoke to whom, including the pairs that never did'),
-    ('07-words', '/words', 1280, 15000, None,
-     'the clouds and the coefficient table'),
-    ('08-narratives', '/narratives', 1360, 30000, None,
+    ('02-library-created', '/__library__', 760, 2500, None,
+     'the experiment made, saying what is still missing'),
+    ('11-run-done', '', 1000, 3000, None,
+     'the run finished, archived, with the report beside it'),
+    ('12-report', '/report.html', 1200, 3000, None,
+     'the readable summary the run produces'),
+    ('20-participation', '/participation', 880, 6000, None,
+     'the whole grid, including the pairs that never spoke'),
+    ('30-words', '/words?penalty=0.1&min_df=10&ngrams=both', 1300, 20000, None,
+     'the clouds, with length beside the model'),
+    ('31-words-strict', '/words?penalty=0.02&min_df=10&ngrams=both', 900,
+     20000, None, 'the same page with the penalty tightened'),
+    ('32-words-loose', '/words?penalty=1.0&min_df=10&ngrams=both', 900, 20000,
+     None, 'and loosened'),
+    ('40-narratives', '/narratives', 1400, 40000, None,
      'the relations, and which of them matter'),
-    ('09-emotions', '/emotions', 700, 4000, None,
-     'the lexicon notice, which is what a new install shows'),
-    ('10-compare', '/compare', 940, 20000, None,
+    ('50-emotions', '/emotions', 1150, 5000, None,
+     'the coverage, and what a zero means'),
+    ('60-compare', '/compare', 980, 25000, None,
      'every representation against the same outcome'),
 ]
 
 # Bands of the settings page, cut from one tall capture of it.
+# The empty library cannot be photographed from this instance — by the time the
+# walk is done there is an experiment in it. `capture.py` takes that one against
+# a throwaway library on another port.
 SETTINGS = [
-    ('02-settings-files', 60, 470, 'the uploaded files and their roles'),
-    ('03-settings-columns', 440, 940,
-     'the column mapping, guessed from the file'),
-    ('04-settings-outcome', 1180, 1620,
+    ('03-settings-files', 60, 470, 'the uploaded files and their roles'),
+    ('04-settings-columns', 440, 950,
+     'the column mapping, read from the file header'),
+    ('05-settings-treatments', 930, 1180,
+     'the treatments, named from the values found'),
+    ('06-settings-outcome', 1180, 1620,
      'the outcome: which column, of what kind, at which unit'),
 ]
 
@@ -72,11 +83,14 @@ def main(argv=None) -> int:
     tall.unlink()
 
     for name, page, height, wait, _band, caption in SHOTS:
-        url = (f'{base}/experiment/{args.experiment}{page}?t={args.token}'
-               if page else
-               f'{base}/experiment/{args.experiment}?t={args.token}')
-        if name == '01-library':
+        if page == '/__library__' or page == '/__empty__':
             url = f'{base}/?t={args.token}'
+        elif page:
+            joiner = '&' if '?' in page else '?'
+            url = (f'{base}/experiment/{args.experiment}{page}'
+                   f'{joiner}t={args.token}')
+        else:
+            url = f'{base}/experiment/{args.experiment}?t={args.token}'
         out = args.out / f'{name}.png'
         capture(url, out, args.width, height, wait)
         print(f'  {name:22s} {out.stat().st_size // 1024:4d} KB   {caption}')
