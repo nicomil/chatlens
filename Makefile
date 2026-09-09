@@ -80,6 +80,13 @@ docs-serve: docs ## Build the docs and serve them locally
 	@$(PIP) install --quiet mkdocs-material
 	@$(VENV)/bin/mkdocs serve
 
+walkthrough: $(DEPS) ## Prepare the tutorial library, then walk it in a browser
+	@$(PY) scripts/tutorial/prepare.py --library /tmp/chatlens-tutorial
+	@echo ""
+	@echo "Now:  $(PY) -m chatlens.cli dashboard --library /tmp/chatlens-tutorial"
+	@echo "then: $(PY) scripts/tutorial/shoot.py --token <key> --out docs/images"
+	@echo "then: make docs && $(PY) scripts/tutorial/pdf.py"
+
 demo: $(DEPS) ## Write a synthetic workspace and analyse it
 	@$(PY) -m chatlens.cli demo $(ARGS)
 
