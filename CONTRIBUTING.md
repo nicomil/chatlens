@@ -15,7 +15,7 @@ make test
 On Windows: `py -m venv .venv`, then
 `.venv\Scripts\python -m pip install -e ".[llm,topics]"`.
 
-The three suites need no network, no credentials and no data. If a change needs
+The suites need no network, no credentials and no data. If a change needs
 any of those to be tested, that is usually a sign it belongs behind an
 interface that can be tested without them.
 

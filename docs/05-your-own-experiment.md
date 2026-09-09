@@ -78,10 +78,34 @@ treatment = "condition"
 [treatments]                       # how the report names them, and their order
 anonymous = "Anonymous offers"
 named     = "Named offers"
+
+[outcome]                          # what the analysis should explain
+column = "accepted"                # a column of the dataset built for `unit`
+kind   = "binary"                  # "binary" or "continuous"
+unit   = "sender_group"            # dyad_directed, dyad, sender_group or group
+label  = "Offer accepted"          # how it should read on a page
+
+[narratives]                       # only for the relational analysis
+entities = ["i", "you", "we"]      # the words that name someone rather than
+                                   # describe something
+model    = "en_core_web_md"        # the spaCy model to parse with
 ```
 
 Then the usual `chatlens all`. `chatlens status` shows which adapter is active
 and which files it is looking for.
+
+**`[outcome]` is what the four explanatory pages need.** Words, Narratives,
+Comparison and half of Participation all answer "which of these goes with the
+result", and without a declared result there is nothing for them to answer. The
+descriptive half of the tool — the measures, the report, the coverage figures —
+works without it. `unit` says which of the four datasets the column lives in:
+`sender_group` is one row per person per group, which is where a per-participant
+outcome such as "their offer was accepted" belongs.
+
+A section or a key that is not one of these is refused when the file is read,
+with the name it was probably meant to be. Ignoring it silently, which is what
+happened before, meant a run that proceeded, a setting that did nothing, and no
+symptom but a result that did not match what the file appeared to say.
 
 Group size is whatever your data says: nothing in the core counts the members,
 so three or nine aggregate the same way. The one real assumption is that a

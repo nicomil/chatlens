@@ -1,5 +1,10 @@
 # Plan — bringing the new analysis into chatlens
 
+**Status: phases 0 to 7 have landed.** What follows is the plan as it was
+written, kept because it records why each page exists and what it was supposed
+to prove. The verification note at the bottom is the part still worth reading
+as instructions.
+
 *Internal working note, not part of the published documentation. It lives at the
 repository root rather than in `docs/`, because `make docs` clears that folder
 and regenerates it from README.md — anything hand-written there is deleted on the
@@ -15,8 +20,9 @@ returns so little on a repetitive corpus. This plan brings them across.
 
 - **Heavy dependencies are optional extras**, detected at runtime, with a notice
   on the page rather than a crash. `chatlens[narratives]` is roughly 500 MB for
-  the spaCy route; `chatlens[relatio]` roughly 1.6 GB for the full package. The
-  `llm` extra already works this way.
+  the spaCy route. RELATIO turned out not to be installable as an extra — it is
+  cloned and built by `chatlens install-relatio`, roughly 1.6 GB with torch and
+  transformers. The `llm` extra already works this way.
 - **Every command shown is built from `sys.executable`**, never written by hand.
   chatlens installs as a uv tool, so its environment is not the one a `pip
   install` in the user's shell would reach; a hand-written command sends the
@@ -156,8 +162,8 @@ The pipeline on real data keeps producing files **byte-identical** to the frozen
 reference. This work adds pages; it does not touch the existing analysis, and
 that has to be demonstrated at each step.
 
-The four existing test files stay green, and each phase adds one to the Makefile
-and to CI. The end-to-end proof is done in the browser, because that is where the
+Every test file stays green — there were four when this was written and there
+are eleven now — and each phase adds one to the Makefile and to CI. The end-to-end proof is done in the browser, because that is where the
 feature lives — and repeated on the fake experiment with different column names,
 to check it serves someone who does not have our files.
 

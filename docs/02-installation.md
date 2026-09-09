@@ -88,7 +88,7 @@ py -m venv .venv
 .venv\Scripts\python tests\test_merge.py
 ```
 
-## Optional extras
+### Optional extras
 
 The tool itself is about four megabytes and has one dependency. Everything that
 needs a large library is an extra, absent until asked for, and the page that

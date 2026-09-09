@@ -1,5 +1,10 @@
 # Results on the pilot
 
+These are the pilot's figures and they have been superseded: the collection
+that followed is 507 groups and 8,041 messages. They are kept because what this
+section is for is showing what the output looks like and what to check in it,
+which a small dataset does as well as a large one.
+
 Stage 1 was run on all 311 messages of the pilot of 18 August 2026.
 
 | Level | Units |

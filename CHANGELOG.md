@@ -8,6 +8,72 @@ Notable changes to chatlens. The format follows
 
 ### Added
 
+- **Six pages of analysis.** *Participation* shows the whole sender × receiver
+  grid, including the directions nobody used, which every other page is blind
+  to because it can only measure text that exists. *Words* fits a penalised
+  regression over unigrams and bigrams, with the penalty as a control you move
+  and watch. *Narratives* reads the text as relations — who does what to whom —
+  through the RELATIO package, and tests which of them matter with a
+  Benjamini-Hochberg correction across the whole family. *Emotions* scores the
+  NRC categories and says, beside them, how much of the corpus could be
+  measured at all. *Comparison* puts every representation against the same
+  outcome on the same folds, with length always among them. And second-level
+  subtopics, with the diagnostic that says why "None" came back.
+- **`[outcome]`**: an experiment declares what its analysis is trying to
+  explain — the column, whether it is binary or continuous, and the unit it
+  belongs to. Everything descriptive still runs without one.
+- **`chatlens demo` is reachable from the interface.** The empty library
+  offered a "Try an example" button that did not exist; it does now, and the
+  synthetic study it makes declares an outcome, so it demonstrates the whole
+  tool rather than half of it.
+- A run can be **stopped** from the page it was started on.
+- A **navigation bar**: seven destinations that could not previously reach one
+  another, with the ones needing a dependency that is not installed saying so
+  where the choice is made.
+- **Light and dark themes**, with an explicit toggle over the system setting.
+- `tests/test_golden_merge.py` pins the merge's output against a recorded
+  baseline, which is the automatable half of the rule this project calls the
+  one that matters.
+
+### Fixed
+
+- **The spending guard was not guarding.** `check` decided whether to refuse
+  after it had already returned, so a ceiling below the confirmation threshold
+  never applied: `--max-calls 10` let a run of nine hundred calls through, and
+  `--yes` took the same exit, turning "do not ask me" into "no limit at all".
+- The TopicGPT estimate counted two of the four paid phases, so a run could
+  cost about twice the figure the guard had checked. The rubric asked the guard
+  before consulting its cache, so a re-run costing nothing could be refused.
+- `--llm-batch` neither read nor wrote that cache and polled without a
+  deadline; with several judges it kept the first and dropped the rest.
+- `--llm-replicates 0` produced a row with no errors and cached it as a paid
+  result. A bad key made the OpenAI-compatible path retry every request five
+  times before returning empty scores.
+- The words page emitted its figures whatever happened, so with nothing
+  surviving the penalty the reader got two broken-image icons and no
+  explanation.
+- The whole dashboard froze while any one page computed: requests for the same
+  experiment now share the state they need rather than queue for it.
+- Errors the user can fix — a column mapped to a name the file does not have,
+  above all — stop printing tracebacks. A `[colums]` or a `kinde` is refused
+  with the name it was probably meant to be, instead of being ignored.
+- `report` and `analyze` no longer need `input/` to still be there.
+- The default adapter is `generic_chat`: a workspace with no `experiment.toml`
+  was silently configured for the coalition-formation study this grew out of.
+
+### Changed
+
+- One page shell, one stylesheet and one set of components, where there were
+  seven of each. The report consumes the same stylesheet instead of a second,
+  already drifted, copy of the design.
+- The word clouds are vector text in the page's own colours rather than a
+  matplotlib raster on a white ground.
+- The explanations are kept but moved behind a disclosure on each page, so the
+  result is what arrives first.
+- `core/tables.py` holds the one CSV reader and the one writer, replacing five
+  and three. The generic adapter's merged files now carry a byte-order mark
+  like every other output; their content is unchanged.
+
 - **Experiments are managed from the interface.** `chatlens dashboard` opens a
   library: make an experiment, upload its CSVs, say which file plays which
   role, and map the columns from menus filled with the file's own header and

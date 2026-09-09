@@ -77,7 +77,7 @@ unusual.
 
 ---
 
-## Choosing between the representations
+### Choosing between the representations
 
 Each page turns the conversations into numbers a different way, and each looks
 reasonable on its own. The **Compare** page puts them against the same outcome,

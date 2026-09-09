@@ -7,9 +7,18 @@ make test
 ```
 
 ```powershell
-.venv\Scripts\python tests\test_merge.py      # Windows
+# Windows, where make is absent: one command per file, in tests\
+.venv\Scripts\python tests\test_golden_merge.py
+.venv\Scripts\python tests\test_merge.py
 .venv\Scripts\python tests\test_analysis.py
 .venv\Scripts\python tests\test_dashboard.py
+.venv\Scripts\python tests\test_library.py
+.venv\Scripts\python tests\test_views.py
+.venv\Scripts\python tests\test_participation.py
+.venv\Scripts\python tests\test_words.py
+.venv\Scripts\python tests\test_narratives.py
+.venv\Scripts\python tests\test_emotions.py
+.venv\Scripts\python tests\test_compare.py
 ```
 
 They run with no network and no credentials. If they all end with `OK`, the

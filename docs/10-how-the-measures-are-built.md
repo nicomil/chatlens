@@ -74,7 +74,7 @@ is the intended use — but not with LIWC scores published elsewhere.
 
 ---
 
-## Emotions: zero is a value, and also a confound
+### Emotions: zero is a value, and also a confound
 
 The Emotions page counts words from the NRC Emotion Lexicon: eight emotions and
 two sentiments, about fourteen thousand English words.

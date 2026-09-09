@@ -7,8 +7,9 @@ reason it is a script and not a morning of screenshots.
 
     python scripts/tutorial/shoot.py --token abc123 --out docs/images
 
-The dashboard has to be up, on a library prepared by `prepare.py` and walked
-through by `walk.py`. `--token` is the key printed when it started.
+The dashboard has to be up, on a library prepared by `prepare.py` and then
+taken through the setup in the browser. `--token` is the key printed when it
+started.
 """
 
 from __future__ import annotations

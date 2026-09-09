@@ -17,3 +17,11 @@ treatment = "condition"
 [treatments]
 anonymous = "Anonymous offers"
 named     = "Named offers"
+
+# Without this the descriptive pages work and the four that explain something
+# do not, so the example would show half the tool.
+[outcome]
+column = "accepted"
+kind   = "binary"
+unit   = "sender_group"
+label  = "Offer accepted"

@@ -258,7 +258,7 @@ py -m venv .venv
 .venv\Scripts\python tests\test_merge.py
 ```
 
-## Optional extras
+### Optional extras
 
 The tool itself is about four megabytes and has one dependency. Everything that
 needs a large library is an extra, absent until asked for, and the page that
@@ -534,10 +534,34 @@ treatment = "condition"
 [treatments]                       # how the report names them, and their order
 anonymous = "Anonymous offers"
 named     = "Named offers"
+
+[outcome]                          # what the analysis should explain
+column = "accepted"                # a column of the dataset built for `unit`
+kind   = "binary"                  # "binary" or "continuous"
+unit   = "sender_group"            # dyad_directed, dyad, sender_group or group
+label  = "Offer accepted"          # how it should read on a page
+
+[narratives]                       # only for the relational analysis
+entities = ["i", "you", "we"]      # the words that name someone rather than
+                                   # describe something
+model    = "en_core_web_md"        # the spaCy model to parse with
 ```
 
 Then the usual `chatlens all`. `chatlens status` shows which adapter is active
 and which files it is looking for.
+
+**`[outcome]` is what the four explanatory pages need.** Words, Narratives,
+Comparison and half of Participation all answer "which of these goes with the
+result", and without a declared result there is nothing for them to answer. The
+descriptive half of the tool — the measures, the report, the coverage figures —
+works without it. `unit` says which of the four datasets the column lives in:
+`sender_group` is one row per person per group, which is where a per-participant
+outcome such as "their offer was accepted" belongs.
+
+A section or a key that is not one of these is refused when the file is read,
+with the name it was probably meant to be. Ignoring it silently, which is what
+happened before, meant a run that proceeded, a setting that did nothing, and no
+symptom but a result that did not match what the file appeared to say.
 
 Group size is whatever your data says: nothing in the core counts the members,
 so three or nine aggregate the same way. The one real assumption is that a
@@ -677,7 +701,7 @@ unusual.
 
 ---
 
-## Choosing between the representations
+### Choosing between the representations
 
 Each page turns the conversations into numbers a different way, and each looks
 reasonable on its own. The **Compare** page puts them against the same outcome,
@@ -1066,7 +1090,7 @@ is the intended use — but not with LIWC scores published elsewhere.
 
 ---
 
-## Emotions: zero is a value, and also a confound
+### Emotions: zero is a value, and also a confound
 
 The Emotions page counts words from the NRC Emotion Lexicon: eight emotions and
 two sentiments, about fourteen thousand English words.
@@ -1328,9 +1352,18 @@ make test
 ```
 
 ```powershell
-.venv\Scripts\python tests\test_merge.py      # Windows
+# Windows, where make is absent: one command per file, in tests\
+.venv\Scripts\python tests\test_golden_merge.py
+.venv\Scripts\python tests\test_merge.py
 .venv\Scripts\python tests\test_analysis.py
 .venv\Scripts\python tests\test_dashboard.py
+.venv\Scripts\python tests\test_library.py
+.venv\Scripts\python tests\test_views.py
+.venv\Scripts\python tests\test_participation.py
+.venv\Scripts\python tests\test_words.py
+.venv\Scripts\python tests\test_narratives.py
+.venv\Scripts\python tests\test_emotions.py
+.venv\Scripts\python tests\test_compare.py
 ```
 
 They run with no network and no credentials. If they all end with `OK`, the
@@ -1352,6 +1385,11 @@ language, key loading and provider selection.
 ---
 
 ## 15. Results on the pilot
+
+These are the pilot's figures and they have been superseded: the collection
+that followed is 507 groups and 8,041 messages. They are kept because what this
+section is for is showing what the output looks like and what to check in it,
+which a small dataset does as well as a large one.
 
 Stage 1 was run on all 311 messages of the pilot of 18 August 2026.
 
