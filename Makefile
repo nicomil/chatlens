@@ -15,7 +15,9 @@
 # On Windows, where make is absent, every target below is one command:
 #   py -m venv .venv
 #   .venv\Scripts\python -m pip install -e ".[llm,topics]"
-#   .venv\Scripts\python -m pytest tests   (or: python tests\test_merge.py)
+#   .venv\Scripts\python tests\test_merge.py   (and the other files in tests\)
+#
+# The suites are plain unittest scripts and need no test runner installed.
 
 PYTHON ?= python3
 VENV   := .venv
@@ -57,6 +59,7 @@ setup: $(DEPS) ## Prepare the development environment
 	@echo "  $(VENV)/bin/chatlens --help"
 
 test: $(DEPS) ## Run the tests (no network, no credentials)
+	@$(PY) tests/test_golden_merge.py
 	@$(PY) tests/test_merge.py
 	@$(PY) tests/test_analysis.py
 	@$(PY) tests/test_dashboard.py
@@ -66,6 +69,7 @@ test: $(DEPS) ## Run the tests (no network, no credentials)
 	@$(PY) tests/test_narratives.py
 	@$(PY) tests/test_emotions.py
 	@$(PY) tests/test_compare.py
+	@$(PY) tests/test_views.py
 
 check: test ## Tests plus a look at the installed state
 	@$(PY) -m chatlens.cli status

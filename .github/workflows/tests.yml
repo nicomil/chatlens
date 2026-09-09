@@ -30,24 +30,76 @@ jobs:
 
       # The suites need no network and no credentials, which is what makes them
       # worth running on every push.
-      - name: Tests
-        run: |
-          python tests/test_merge.py
-          python tests/test_analysis.py
-          python tests/test_dashboard.py
-          python tests/test_library.py
-          python tests/test_participation.py
-          python tests/test_words.py
-          python tests/test_narratives.py
-          python tests/test_emotions.py
-          python tests/test_compare.py
+      #
+      # One step per file, deliberately. Grouped in a single `run:` block they
+      # were run by pwsh on Windows, which propagates the exit code of the last
+      # command only: eight of the nine suites could fail there and the job
+      # still came out green.
+      - name: The merge is not allowed to drift
+        run: python tests/test_golden_merge.py
+      - name: Merge
+        run: python tests/test_merge.py
+      - name: Analysis
+        run: python tests/test_analysis.py
+      - name: Dashboard
+        run: python tests/test_dashboard.py
+      - name: Library
+        run: python tests/test_library.py
+      - name: Participation
+        run: python tests/test_participation.py
+      - name: Words
+        run: python tests/test_words.py
+      - name: Narratives
+        run: python tests/test_narratives.py
+      - name: Emotions
+        run: python tests/test_emotions.py
+      - name: Compare
+        run: python tests/test_compare.py
+      - name: Views
+        run: python tests/test_views.py
 
       - name: The console script works
-        run: |
-          chatlens --help
-          chatlens status
+        run: chatlens --help
+      - name: The status command works
+        run: chatlens status
 
       # End to end on synthetic data: no credentials, no network, and it is the
       # first thing a new user runs, so it is the first thing that must work.
       - name: The demo runs end to end
         run: chatlens demo ci-demo
+
+  # The heavy extras are what the words, narratives and comparison pages are
+  # built on, and above they are neither installed nor exercised: those tests
+  # either mock the imports away or skip themselves. One job, one platform,
+  # with the real dependencies present.
+  extras:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install everything
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[all]"
+      - name: Words
+        run: python tests/test_words.py
+      - name: Narratives
+        run: python tests/test_narratives.py
+      - name: Compare
+        run: python tests/test_compare.py
+      - name: Emotions
+        run: python tests/test_emotions.py
+
+  # Reporting only, for now. The point is to see the dead selectors and the
+  # unused imports, not to fail a build over them.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install ruff
+      - name: Ruff
+        run: ruff check . || true

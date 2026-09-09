@@ -1,0 +1,20 @@
+{
+  "messages_long.csv": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "columns": [],
+    "rows": 0
+  },
+  "chat_by_partner.csv": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "columns": [],
+    "rows": 0
+  },
+  "chat_aggregated.csv": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "columns": [],
+    "rows": 0
+  },
+  "summary.json": {
+    "sha256": "501085d172a56283de6948421051714cf10997ea2ca2707d0b2e3e839b69e40f"
+  }
+}

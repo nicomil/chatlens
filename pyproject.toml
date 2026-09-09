@@ -35,6 +35,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# What working on chatlens needs, as opposed to using it. The suites are plain
+# unittest scripts and run without any of this; ruff and the rest are here so
+# that "install the development tools" is one documented command rather than a
+# pip line remembered differently by everyone.
+dev = [
+    "ruff>=0.6",
+    "build>=1.0",
+    "mkdocs-material>=9.5",
+]
 # The validation rubric. The upper bounds are not our choice: TopicGPT declares
 # openai<2 and anthropic<1, and installing it downgrades these libraries
 # whatever we ask for. Declaring them here makes the environment identical
