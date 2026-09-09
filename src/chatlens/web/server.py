@@ -40,7 +40,8 @@ from urllib.parse import parse_qs, urlparse
 
 from chatlens import adapters
 from chatlens.core import config, library, outcome
-from chatlens.web import active, multipart, ui, views, views_findings
+from chatlens.web import active, multipart, ui, views, views_corpus
+from chatlens.web import views_findings
 from chatlens.web import views_library
 from chatlens.web import (views_narratives,
                           views_words)
@@ -305,6 +306,8 @@ class Handler(BaseHTTPRequestHandler):
                 elif action == 'findings':
                     self._html(views_findings.page(name, '', query),
                                cookie=cookie)
+                elif action == 'inspect':
+                    self._html(views_corpus.inspector(name, query))
                 elif action == 'findings/words/panel':
                     self._html(views_words.panel(name, query))
                 elif action.startswith('findings/words/'):

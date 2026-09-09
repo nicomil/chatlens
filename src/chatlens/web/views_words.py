@@ -218,13 +218,28 @@ def panel(name: str, query) -> str:
 
     kept = found['kept']
     shown = kept[:TABLE_ROWS]
-    rows = [
-        (f'<code>{_e(t["term"])}</code>',
-         f'{t["coef"]:+.3f}',
-         'goes with it' if t['coef'] > 0 else 'goes against it',
-         str(t['documents']))
-        for t in shown
-    ]
+    # The magnitude is drawn where the number is, and the sign is the colour
+    # rather than a word in the next column: this whole tool is directional and
+    # the reader should not have to join two cells to see which way a term
+    # points.
+    widest = max((abs(t['coef']) for t in shown), default=1.0) or 1.0
+    rows = []
+    for term in shown:
+        with_it = term['coef'] > 0
+        direction = 'with' if with_it else 'against'
+        # Clicking a term opens the messages it came from. Until now there was
+        # no path at all from a coefficient back to the sentences behind it.
+        look = (f'<button class="termlink" '
+                f'hx-get="/experiment/{_e(name)}/inspect" '
+                f'{ui.hx_vals(term=term["term"], unit=declared["unit"])} '
+                f'hx-target="#inspector" hx-swap="innerHTML">'
+                f'<code>{_e(term["term"])}</code></button>')
+        rows.append((
+            look,
+            f'{term["coef"]:+.3f}',
+            ui.bar_cell(abs(term['coef']) / widest, direction),
+            f'{term["documents"]}',
+        ))
     caption = ''
     if len(kept) > len(shown):
         # It used to cut at forty and say nothing, so a reader had no way of
@@ -232,6 +247,10 @@ def panel(name: str, query) -> str:
         caption = (f'The {len(shown)} largest of {len(kept)} terms. '
                    f'The full list is in the CSV below.')
 
+    # The column says what it counts. "Documents" is the model's word, and the
+    # documents are units of the outcome's level — which is the number most
+    # easily misread as a count of messages.
+    unit_heading = declared['unit'].replace('_', ' ') + ' units'
     clouds = _clouds(found, label, base, query_string)
 
     summary = (f'{found["rows"]} rows across {found["groups"]} groups, '
@@ -244,7 +263,7 @@ def panel(name: str, query) -> str:
 {baseline}
 {clouds}
 <h3>The terms</h3>
-{ui.table(["Term", "Coefficient", "Direction", "Documents"], rows,
+{ui.table(["Term", "Coefficient", "", unit_heading], rows,
           numeric={1, 3}, caption=caption,
           empty_message="No term survived the penalty, so there is nothing to "
                         "list. Raise the penalty to keep more of them.")}'''

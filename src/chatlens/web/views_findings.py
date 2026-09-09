@@ -15,6 +15,7 @@ from chatlens.web import study as study_state
 # Which module draws which entry. `corpus` has no module yet: the reader is
 # told so rather than shown a page that pretends otherwise.
 BODIES = {
+    'corpus': ('views_corpus', 'body'),
     'participation': ('views_participation', 'body'),
     'compare': ('views_compare', 'panel'),
     'words': ('views_words', 'body'),
@@ -27,10 +28,7 @@ def _body(entry: str, name: str, query) -> str:
     import importlib
 
     if entry not in BODIES:
-        return ui.empty(
-            'Reading the conversations themselves is not built yet. Until it '
-            'is, the messages are in the merged table in this study\'s '
-            'output folder.')
+        return ui.empty('There is nothing under that name.')
     module_name, function = BODIES[entry]
     module = importlib.import_module(f'chatlens.web.{module_name}')
     render = getattr(module, function)
@@ -54,7 +52,10 @@ def page(name: str, entry: str = '', query=None) -> str:
     if entry not in known:
         entry = entries[0]['id'] if entries else ''
 
-    canvas = _body(entry, name, query or {})
+    # One place for the inspector on every finding: a term or a relation is
+    # clicked here and the messages behind it arrive without leaving the page.
+    canvas = (_body(entry, name, query or {})
+              + '<div id="inspector" class="inspectorslot"></div>')
     return ui.shell(
         f'{experiment.name} — {study_state.entry_name(entry).lower()}',
         canvas,

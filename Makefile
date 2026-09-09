@@ -70,6 +70,7 @@ test: $(DEPS) ## Run the tests (no network, no credentials)
 	@$(PY) tests/test_emotions.py
 	@$(PY) tests/test_compare.py
 	@$(PY) tests/test_views.py
+	@$(PY) tests/test_corpus.py
 
 check: test ## Tests plus a look at the installed state
 	@$(PY) -m chatlens.cli status

@@ -520,6 +520,23 @@ class LibraryRoutingTests(unittest.TestCase):
         self.assertIn('missing', views.EXIT_MEANING[3])
         self.assertIn('request', views.EXIT_MEANING[-15])
 
+    def test_a_number_leads_back_to_the_messages_behind_it(self):
+        """The path that did not exist: from a term to the sentences it came
+        from, with the two counts kept apart."""
+        response, body = self.get(
+            '/experiment/first-study/inspect?term=hello&unit=group')
+        self.assertEqual(response.status, 200)
+        self.assertTrue(body.strip())
+        self.assertNotIn('Traceback', body)
+
+    def test_the_inspector_says_when_there_is_nothing_merged_to_look_at(self):
+        """This study has never been run, so the honest answer is that there
+        are no messages yet — not an empty box."""
+        _response, body = self.get(
+            '/experiment/first-study/inspect'
+            '?term=zzz-nothing-like-this&unit=group')
+        self.assertIn('not been merged', body)
+
     def test_the_404_does_not_echo_markup_from_the_url(self):
         """The message quotes the path, and the path is written by whoever
         sends the request."""
