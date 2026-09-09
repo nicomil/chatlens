@@ -661,5 +661,62 @@ class OutcomeTests(unittest.TestCase):
         self.assertEqual(found['set'], 0)
 
 
+class ColumnGuessTests(unittest.TestCase):
+    """The guess arrives already selected, so a wrong one gets confirmed.
+
+    That is the whole risk of this feature: a form offering nothing costs the
+    user a minute, and a form offering the message text as the recipient costs
+    them a dataset.
+    """
+
+    def guess(self, columns):
+        from chatlens.core import inspect
+
+        return inspect.guess(columns)
+
+    def test_the_shape_the_demo_writes(self):
+        found = self.guess(['group', 'treatment', 'sender', 'receiver',
+                            'sent_at', 'text'])
+        self.assertEqual(found['group'], 'group')
+        self.assertEqual(found['body'], 'text')
+        self.assertEqual(found['timestamp'], 'sent_at')
+
+    def test_camel_case_is_the_same_words(self):
+        """`sent_at`, `sent-at` and `sentAt` are one convention, not three."""
+        found = self.guess(['teamId', 'fromSeat', 'toSeat', 'sentAt',
+                            'messageBody', 'condition'])
+        self.assertEqual(found['sender'], 'fromSeat')
+        self.assertEqual(found['receiver'], 'toSeat')
+        self.assertEqual(found['body'], 'messageBody')
+
+    def test_a_short_synonym_does_not_match_inside_a_word(self):
+        """The defect this exists for: "to" is a recipient, and also the last
+        two letters of "contenuto" — which scored higher than any real match
+        and put the message text in the recipient field, pre-selected."""
+        found = self.guess(['squadra', 'chi_scrive', 'a_chi', 'contenuto'])
+        self.assertNotEqual(found.get('receiver'), 'contenuto')
+        self.assertNotEqual(found.get('body'), 'contenuto')
+
+    def test_nothing_recognised_guesses_nothing(self):
+        """Better than guessing wrong: the user is choosing either way."""
+        self.assertEqual(self.guess(['alfa', 'beta', 'gamma']), {})
+
+    def test_the_specific_synonym_beats_the_vague_one(self):
+        """All three of these contain "group"."""
+        found = self.guess(['group_uid', 'sender_id_in_group',
+                            'receiver_id_in_group'])
+        self.assertEqual(found['group'], 'group_uid')
+        self.assertEqual(found['receiver'], 'receiver_id_in_group')
+
+    def test_the_head_of_a_compound_is_its_last_word(self):
+        """`msg_body` is a kind of body; `body_length` is a kind of length."""
+        found = self.guess(['msg_body', 'body_length', 'sender', 'group'])
+        self.assertEqual(found['body'], 'msg_body')
+
+    def test_a_column_is_claimed_once(self):
+        found = self.guess(['group', 'sender', 'receiver', 'text'])
+        self.assertEqual(len(set(found.values())), len(found))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

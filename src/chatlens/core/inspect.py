@@ -16,6 +16,7 @@ megabytes and this runs while somebody waits for a page.
 from __future__ import annotations
 
 import csv
+import re
 from pathlib import Path
 
 # How much of a file to look at when collecting a column's distinct values.
@@ -67,21 +68,65 @@ def header_of(path: Path) -> list[str]:
     return names
 
 
+# Below this length a synonym is not allowed to match inside a word. "to" is a
+# receiver, and it is also the last two letters of "contenuto" — which scored
+# higher than any real match and put the message text in the recipient field,
+# already selected, waiting to be confirmed. A wrong guess offered confidently
+# is worse than no guess.
+SHORTEST_LOOSE_MATCH = 4
+
+
+def _tokens(column: str) -> list[str]:
+    """The words in a column name, however it was written.
+
+    `sent_at`, `sent-at`, `sent at` and `sentAt` are the same two words, and a
+    heuristic that only understands one of those spellings will do well on one
+    export and badly on the next.
+    """
+    spaced = re.sub(r'(?<=[a-z0-9])(?=[A-Z])', '_', column.strip())
+    return [t for t in re.split(r'[^a-zA-Z0-9]+', spaced.lower()) if t]
+
+
 def _score(role: str, column: str) -> int:
     """How well a column name fits a role. Higher is better, 0 is no fit."""
     name = column.strip().lower().replace(' ', '_')
+    tokens = _tokens(column)
     synonyms = SYNONYMS.get(role, (role,))
 
     for position, synonym in enumerate(synonyms):
-        if name == synonym:
+        if name == synonym or tokens == _tokens(synonym):
             # An exact match, best for the earliest synonym.
-            return 1000 - position
+            return 10 ** 6 - position
+    best = 0
     for position, synonym in enumerate(synonyms):
-        # A suffix beats a prefix: `msg_body` is a body, `body_length` is not.
-        if name.endswith(synonym):
-            return 500 - position
-        if name.startswith(synonym) or synonym in name:
-            return 200 - position
+        parts = _tokens(synonym)
+        if not parts:
+            continue
+        # The specific synonym wins over the vague one, whatever their
+        # positions: every one of `sender_id_in_group`, `receiver_id_in_group`
+        # and `group_uid` contains "group", and only the length of the match
+        # tells you which column is really the group.
+        #
+        # Position decides between equal matches, and there the head of an
+        # English compound is the last word: `msg_body` is a kind of body,
+        # `body_length` is a kind of length.
+        if tokens[-len(parts):] == parts:
+            where = 600
+        elif tokens[:len(parts)] == parts:
+            where = 500
+        elif any(tokens[i:i + len(parts)] == parts
+                 for i in range(len(tokens) - len(parts) + 1)):
+            where = 400
+        else:
+            continue
+        best = max(best, len(synonym) * 1000 + where - position)
+    if best:
+        return best
+    for position, synonym in enumerate(synonyms):
+        # Inside a word only for synonyms long enough that the coincidence is
+        # unlikely, and scored below every whole-word match.
+        if len(synonym) >= SHORTEST_LOOSE_MATCH and synonym in name:
+            return 150 - position
     return 0
 
 
