@@ -337,6 +337,47 @@ def make_client(provider: str):
 
 # --- Scoring ---------------------------------------------------------------
 
+# Longer than this is not a pause between attempts, it is a hung run.
+MAX_RETRY_SLEEP = 300
+
+
+def _retry_after(exc, default: int = 30) -> float:
+    """How long the server asked us to wait, bounded and tolerant.
+
+    The header is not always an integer — the specification allows an HTTP date
+    — so parsing it strictly turns a rate limit into a crash halfway through a
+    paid run. And the value is not always small, so an unbounded sleep parks the
+    process for hours.
+    """
+    response = getattr(exc, 'response', None)
+    headers = getattr(response, 'headers', None) or {}
+    try:
+        seconds = float(headers.get('retry-after', ''))
+    except (TypeError, ValueError):
+        seconds = float(default)
+    return max(0.0, min(seconds, MAX_RETRY_SLEEP))
+
+
+def _is_terminal(exc) -> bool:
+    """True for an error that another attempt cannot fix.
+
+    A wrong key, a model that does not exist, a malformed request: each fails
+    the same way every time. Retrying them five times with a growing pause turns
+    a mistake that should surface in a second into fifty seconds of silence per
+    unit — fourteen hours over a thousand units, and empty scores at the end.
+    Rate limits are excluded: 429 is the one 4xx that waiting does fix.
+    """
+    status = getattr(exc, 'status_code', None)
+    if status is None:
+        status = getattr(getattr(exc, 'response', None), 'status_code', None)
+    if status is None:
+        return False
+    try:
+        status = int(status)
+    except (TypeError, ValueError):
+        return False
+    return 400 <= status < 500 and status != 429
+
 
 def score_unit(client, unit: RubricUnit, model: str = DEFAULT_MODEL,
                provider: str = 'anthropic') -> dict:
@@ -359,8 +400,7 @@ def _score_anthropic(client, unit: RubricUnit, model: str, attempt: int = 0) -> 
     except anthropic.RateLimitError as exc:
         if attempt >= 4:
             return dict(_empty_scores(), error='rate_limit')
-        retry_after = int(exc.response.headers.get('retry-after', '30'))
-        time.sleep(retry_after)
+        time.sleep(_retry_after(exc))
         return _score_anthropic(client, unit, model, attempt + 1)
     except anthropic.APIStatusError as exc:
         if exc.status_code >= 500 and attempt < 4:
@@ -409,9 +449,9 @@ def _score_openai_compatible(client, unit: RubricUnit, model: str,
             response_format={'type': 'json_object'},
         )
     except Exception as exc:  # noqa: BLE001 - exceptions vary by endpoint
-        if attempt >= 4:
+        if _is_terminal(exc) or attempt >= 4:
             return dict(_empty_scores(), error=f'api_error:{type(exc).__name__}')
-        time.sleep(5 * (attempt + 1))
+        time.sleep(min(5 * (attempt + 1), MAX_RETRY_SLEEP))
         return _score_openai_compatible(client, unit, model, attempt + 1)
 
     text = (response.choices[0].message.content or '').strip()
@@ -476,6 +516,25 @@ def _append_cache(path, signature: str, row: dict) -> None:
                                 ensure_ascii=False) + '\n')
 
 
+def cache_split(units, models, replicates: int, cache_path):
+    """Separate the units already paid for from the ones still to pay.
+
+    Returns `(reused, pending)`: `reused` maps a unit's position to the row
+    read from the cache, `pending` is the list of `(position, unit)` still to be
+    sent. Both paths use it, and so does the spending guard — asking about calls
+    the cache will serve for nothing is how a free re-run gets refused.
+    """
+    cached = load_cache(cache_path)
+    reused, pending = {}, []
+    for index, unit in enumerate(units):
+        row = cached.get(unit_signature(unit, models, replicates))
+        if row is None:
+            pending.append((index, unit))
+        else:
+            reused[index] = row
+    return reused, pending
+
+
 def score_units(units, models=None, replicates=1, progress=None, provider=None,
                 cache_path=None):
     """Score every unit, with replicates and/or several judges.
@@ -488,6 +547,13 @@ def score_units(units, models=None, replicates=1, progress=None, provider=None,
     them again. Failed ratings are not cached, so a transient problem is retried
     instead of being frozen in place.
     """
+    if replicates < 1:
+        raise ValueError(
+            f'replicates must be at least 1, not {replicates}: with none, every '
+            f'unit is rated by nobody and the run reports a success it did not '
+            f'have.'
+        )
+
     provider = resolve_provider(provider)
     models = list(models) if models else [default_model_for(provider)]
     check_models_available(provider, models)
@@ -522,7 +588,7 @@ def score_units(units, models=None, replicates=1, progress=None, provider=None,
 
         row = _summarize(unit, judgements)
         rows.append(row)
-        if not row.get('llm_n_errors'):
+        if judgements and not row.get('llm_n_errors'):
             _append_cache(cache_path, signature, row)
 
     if reused and progress:
@@ -594,15 +660,40 @@ def submit_batch(units, model: str = DEFAULT_MODEL, replicates: int = 1):
     return batch.id
 
 
-def collect_batch(batch_id: str, units, poll_seconds: int = 60, progress=None):
-    """Wait for the batch to end and rebuild the rows in unit order."""
+class BatchNotReady(RuntimeError):
+    """The batch did not end within the time we were prepared to wait."""
+
+
+# The provider undertakes to end a batch within 24 hours. Waiting appreciably
+# longer than that is not patience, it is a process nobody will ever reclaim.
+BATCH_DEADLINE = 26 * 60 * 60
+
+
+def collect_batch(batch_id: str, units, poll_seconds: int = 60, progress=None,
+                  deadline_seconds: float = BATCH_DEADLINE):
+    """Wait for the batch to end and rebuild the rows in unit order.
+
+    Waiting is bounded. A batch that has not ended by the deadline is not lost:
+    it is still on the provider's side under the id in the message, and
+    collecting it later costs nothing more.
+    """
     import anthropic
 
     client = anthropic.Anthropic()
+    started = time.monotonic()
     while True:
         batch = client.messages.batches.retrieve(batch_id)
         if batch.processing_status == 'ended':
             break
+        if time.monotonic() - started > deadline_seconds:
+            raise BatchNotReady(
+                f'batch {batch_id} has not ended after '
+                f'{deadline_seconds / 3600:.0f} hours (status: '
+                f'{batch.processing_status}).\n'
+                f'  Nothing is lost: the results stay on the provider\'s side '
+                f'under that id, and what has already been paid for is paid '
+                f'for. Collect them later with the same id.'
+            )
         if progress:
             progress(batch.request_counts.processing)
         time.sleep(poll_seconds)
@@ -632,6 +723,42 @@ def collect_batch(batch_id: str, units, poll_seconds: int = 60, progress=None):
         by_unit[index].append(row)
 
     return [_summarize(unit, by_unit[i]) for i, unit in enumerate(units)]
+
+
+def score_units_batch(units, model: str = DEFAULT_MODEL, replicates: int = 1,
+                      cache_path=None, on_submit=None, progress=None,
+                      deadline_seconds: float = BATCH_DEADLINE):
+    """The batch path, with the cache the synchronous path already had.
+
+    Returns `(rows, reused)` like `score_units`. Without this, a batch run
+    re-sent and re-paid for every unit it had already rated, and a batch that
+    never ended left nothing at all on disk.
+    """
+    if replicates < 1:
+        raise ValueError(f'replicates must be at least 1, not {replicates}')
+
+    reused, pending = cache_split(units, [model], replicates, cache_path)
+    rows = [None] * len(units)
+    for index, row in reused.items():
+        rows[index] = row
+
+    if pending:
+        pending_units = [unit for _, unit in pending]
+        batch_id = submit_batch(pending_units, model, replicates)
+        if on_submit:
+            on_submit(batch_id)
+        scored = collect_batch(batch_id, pending_units, progress=progress,
+                               deadline_seconds=deadline_seconds)
+        for (index, unit), row in zip(pending, scored):
+            rows[index] = row
+            if not row.get('llm_n_errors'):
+                _append_cache(
+                    cache_path,
+                    unit_signature(unit, [model], replicates),
+                    row,
+                )
+
+    return rows, len(reused)
 
 
 def has_credentials() -> bool:

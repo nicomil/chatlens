@@ -1281,10 +1281,23 @@ class SpendGuardTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             self.spend.check(58000, 'Rubric', refuse_above=100000)
 
-    def test_yes_skips_the_whole_thing(self):
+    def test_yes_answers_the_question_but_does_not_raise_the_ceiling(self):
+        """--yes means "do not ask", not "spend whatever it takes". The runs
+        that need a ceiling are exactly the ones nobody is watching."""
         with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.spend.check(7200, 'Rubric', assume_yes=True)
+        self.assertIn('7 200', out.getvalue())
+        with self.assertRaises(self.spend.SpendRefused):
             self.spend.check(999999, 'Rubric', assume_yes=True)
-        self.assertEqual(out.getvalue(), '')
+
+    def test_a_lowered_ceiling_bites_below_the_confirmation_threshold(self):
+        """--max-calls 100 has to stop 500 calls, even though 500 on its own
+        is a figure that goes through without a question."""
+        with self.assertRaises(self.spend.SpendRefused) as raised:
+            self.spend.check(500, 'Rubric', refuse_above=100)
+        self.assertIn('100', str(raised.exception))
+        with self.assertRaises(self.spend.SpendRefused):
+            self.spend.check(500, 'Rubric', refuse_above=100, assume_yes=True)
 
     def test_the_breakdown_says_where_the_calls_come_from(self):
         with self.assertRaises(self.spend.SpendRefused) as raised:
@@ -1292,6 +1305,106 @@ class SpendGuardTests(unittest.TestCase):
                              breakdown='group 12000 + dyad_directed 46000')
         self.assertIn('dyad_directed 46000', str(raised.exception))
 
+
+
+class RubricCacheTests(unittest.TestCase):
+    """What a run is about to pay for, and what it has already paid for."""
+
+    def setUp(self):
+        from chatlens.core import llm_rubric
+        self.llm = llm_rubric
+
+    def _unit(self, name):
+        return self.llm.RubricUnit(
+            key=(name,), unit='group', transcript=f'transcript of {name}',
+            n_messages=3, treatment='open', target='the group',
+        )
+
+    def test_nothing_cached_means_everything_is_pending(self):
+        units = [self._unit('g1'), self._unit('g2')]
+        reused, pending = self.llm.cache_split(units, ['m'], 1, None)
+        self.assertEqual(reused, {})
+        self.assertEqual([index for index, _ in pending], [0, 1])
+
+    def test_a_cached_rating_is_not_pending_again(self):
+        units = [self._unit('g1'), self._unit('g2')]
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / 'rubrica_group.jsonl'
+            signature = self.llm.unit_signature(units[0], ['m'], 1)
+            self.llm._append_cache(cache, signature, {'group_uid': 'g1'})
+
+            reused, pending = self.llm.cache_split(units, ['m'], 1, cache)
+        self.assertEqual(list(reused), [0])
+        self.assertEqual([index for index, _ in pending], [1])
+
+    def test_changing_the_judges_invalidates_the_cache(self):
+        """A rating by another model is another rating, not a reusable one."""
+        units = [self._unit('g1')]
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / 'rubrica_group.jsonl'
+            self.llm._append_cache(
+                cache, self.llm.unit_signature(units[0], ['m'], 1),
+                {'group_uid': 'g1'})
+
+            reused, pending = self.llm.cache_split(units, ['other'], 1, cache)
+        self.assertEqual(reused, {})
+        self.assertEqual(len(pending), 1)
+
+    def test_no_replicates_is_refused_rather_than_reported_as_success(self):
+        with self.assertRaises(ValueError) as raised:
+            self.llm.score_units([self._unit('g1')], models=['m'], replicates=0)
+        self.assertIn('at least 1', str(raised.exception))
+
+    def test_a_rating_with_no_judgement_behind_it_is_not_cached(self):
+        """The bug this guards: zero replicates summarised to a row with no
+        errors, which was then written to the cache as a paid result."""
+        unit = self._unit('g1')
+        row = self.llm._summarize(unit, [])
+        self.assertEqual(row.get('llm_n_errors'), 0)
+        self.assertFalse(row.get('llm_analytic'))
+
+
+class RetryPolicyTests(unittest.TestCase):
+    """Which failures are worth another attempt, and for how long."""
+
+    def setUp(self):
+        from chatlens.core import llm_rubric
+        self.llm = llm_rubric
+
+    class _Response:
+        def __init__(self, headers=None, status_code=None):
+            self.headers = headers or {}
+            self.status_code = status_code
+
+    class _Error(Exception):
+        def __init__(self, response=None, status_code=None):
+            super().__init__('boom')
+            self.response = response
+            if status_code is not None:
+                self.status_code = status_code
+
+    def test_a_numeric_retry_after_is_honoured(self):
+        exc = self._Error(self._Response({'retry-after': '12'}))
+        self.assertEqual(self.llm._retry_after(exc), 12)
+
+    def test_an_http_date_falls_back_instead_of_crashing(self):
+        """The header may be a date, and a paid run must not die parsing it."""
+        exc = self._Error(self._Response(
+            {'retry-after': 'Wed, 21 Oct 2026 07:28:00 GMT'}))
+        self.assertEqual(self.llm._retry_after(exc, default=30), 30)
+
+    def test_an_enormous_wait_is_capped(self):
+        exc = self._Error(self._Response({'retry-after': '99999'}))
+        self.assertEqual(self.llm._retry_after(exc), self.llm.MAX_RETRY_SLEEP)
+
+    def test_a_bad_key_is_terminal(self):
+        self.assertTrue(self.llm._is_terminal(self._Error(status_code=401)))
+        self.assertTrue(self.llm._is_terminal(self._Error(status_code=404)))
+
+    def test_a_rate_limit_and_a_server_fault_are_not_terminal(self):
+        self.assertFalse(self.llm._is_terminal(self._Error(status_code=429)))
+        self.assertFalse(self.llm._is_terminal(self._Error(status_code=503)))
+        self.assertFalse(self.llm._is_terminal(self._Error()))
 
 
 class SchemaTests(unittest.TestCase):

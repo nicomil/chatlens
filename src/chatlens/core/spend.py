@@ -14,6 +14,12 @@ Two thresholds, because one would be either useless or in the way:
 - above `refuse_above` it stops. Nothing legitimate reaches that figure; what
   reaches it is a typo, and by then the money would already be gone.
 
+The two are independent, and the order matters: the refusal is decided first,
+so that lowering the ceiling with `--max-calls` works at any figure, including
+one below the confirmation threshold. `--yes` answers the question; it does not
+raise the ceiling, because the ceiling exists precisely for the runs nobody is
+watching.
+
 Away from a terminal — the dashboard's subprocess, a CI job, a batch script —
 there is nobody to answer, so a run under the hard limit proceeds with the
 figure printed, and one above it is refused. Refusing something recoverable is
@@ -43,12 +49,10 @@ def check(calls: int, what: str, *, confirm_above=None, refuse_above=None,
     confirm_above = CONFIRM_ABOVE if confirm_above is None else confirm_above
     refuse_above = REFUSE_ABOVE if refuse_above is None else refuse_above
 
-    if calls <= confirm_above or assume_yes:
-        return
-
     detail = f' ({breakdown})' if breakdown else ''
     headline = f'{what}: {_thousands(calls)} paid calls{detail}'
 
+    # First, because it is the limit a run that nobody is watching relies on.
     if calls > refuse_above:
         raise SpendRefused(
             f'\n{headline}\n\n'
@@ -59,8 +63,12 @@ def check(calls: int, what: str, *, confirm_above=None, refuse_above=None,
             f'  If you did mean it:  --max-calls {calls}\n'
         )
 
-    if not sys.stdin.isatty():
-        # Nobody to ask: under the hard limit, say the figure and go on.
+    if calls <= confirm_above:
+        return
+
+    if assume_yes or not sys.stdin.isatty():
+        # The question was answered in advance, or there is nobody to ask.
+        # Either way the figure goes on the record.
         print(f'  {headline} — proceeding', flush=True)
         return
 

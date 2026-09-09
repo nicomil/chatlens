@@ -72,6 +72,15 @@ def _merge_llm(rows, level_rows, level):
                 target[column] = value
 
 
+def cache_path_for(args, level: str) -> Path:
+    """Where the ratings already paid for at this level are kept.
+
+    One place, because the spending guard has to read the same file the scoring
+    will write: a price quoted from one and paid against another is not a price.
+    """
+    return config.cache_dir(args.stem) / f'rubrica_{level}.jsonl'
+
+
 def run_llm_stage(features, transcripts_by_level, args) -> None:
     if args.llm_dry_run:
         provider = args.llm_provider or 'anthropic'
@@ -96,16 +105,45 @@ def run_llm_stage(features, transcripts_by_level, args) -> None:
             continue
         units_by_level[level] = units
 
+    if args.llm_batch and len(models) > 1:
+        raise SystemExit(
+            f'--llm-batch sends one model, and {len(models)} were asked for: '
+            f'{", ".join(models)}.\n'
+            f'  Several judges are how the rubric estimates its own measurement '
+            f'error, so quietly dropping all but the first would report a '
+            f'reliability that was never measured. Either drop --llm-batch, or '
+            f'name a single model.'
+        )
+
+    cache_paths = {level: cache_path_for(args, level) for level in units_by_level}
+
     if not args.llm_dry_run and units_by_level:
         per_unit = len(models) * args.llm_replicates
-        spend.check(
-            sum(len(u) for u in units_by_level.values()) * per_unit,
-            'Validation rubric',
-            refuse_above=getattr(args, 'max_calls', None) or spend.REFUSE_ABOVE,
-            assume_yes=getattr(args, 'yes', False),
-            breakdown=' + '.join(f'{lv} {len(u) * per_unit}'
-                                 for lv, u in units_by_level.items()),
-        )
+        # The cache is consulted before the guard, not after: a re-run that
+        # would cost nothing must not be refused, and the figure shown has to
+        # be the figure that will actually be spent.
+        pending = {}
+        for level, units in units_by_level.items():
+            batch_models = [models[0]] if args.llm_batch else models
+            _, still_to_pay = llm_rubric.cache_split(
+                units, batch_models, args.llm_replicates, cache_paths[level])
+            pending[level] = len(still_to_pay)
+
+        reused_units = sum(len(u) for u in units_by_level.values()) \
+            - sum(pending.values())
+        if reused_units:
+            print(f'  {reused_units} units already rated and cached, '
+                  f'not paid again')
+
+        billable = sum(pending.values()) * per_unit
+        if billable:
+            spend.check(
+                billable, 'Validation rubric',
+                refuse_above=getattr(args, 'max_calls', None) or spend.REFUSE_ABOVE,
+                assume_yes=getattr(args, 'yes', False),
+                breakdown=' + '.join(f'{lv} {n * per_unit}'
+                                     for lv, n in pending.items() if n),
+            )
 
     for level, units in units_by_level.items():
         if args.llm_dry_run:
@@ -123,24 +161,23 @@ def run_llm_stage(features, transcripts_by_level, args) -> None:
             )
 
         if args.llm_batch:
-            batch_id = llm_rubric.submit_batch(
-                units, models[0], args.llm_replicates
+            scored, reused = llm_rubric.score_units_batch(
+                units, models[0], args.llm_replicates,
+                cache_path=cache_paths[level],
+                on_submit=lambda bid: print(f'    batch submitted: {bid}'),
             )
-            print(f'    batch submitted: {batch_id}')
-            scored = llm_rubric.collect_batch(batch_id, units)
         else:
             def progress(done, total, level=level):
                 if done % 25 == 0 or done == total:
                     print(f'    {level}: {done}/{total}', flush=True)
 
-            cache_path = (config.cache_dir(args.stem)
-                          / f'rubrica_{level}.jsonl')
             scored, reused = llm_rubric.score_units(
                 units, models=models, replicates=args.llm_replicates,
-                progress=progress, provider=provider, cache_path=cache_path,
+                progress=progress, provider=provider,
+                cache_path=cache_paths[level],
             )
-            if reused:
-                print(f'    {reused} units reused from cache, not paid again')
+        if reused:
+            print(f'    {reused} units reused from cache, not paid again')
 
         _merge_llm(scored, features[level], level)
         errors = sum(int(r.get('llm_n_errors', 0) or 0) for r in scored)
@@ -166,15 +203,28 @@ def run_topics_stage(messages, args):
               f'{len(assignment_documents)} ({assign_unit})')
 
     if not args.topicgpt_dry_run:
-        # TopicGPT queries once per document, in two phases: induction over the
-        # first set, assignment over the second.
-        planned = len(documents) + len(assignment_documents or documents)
+        # Four phases, and three of them query once per document: generation
+        # over the induction set, assignment over the other one, and correction
+        # again over the documents whose assignment came back invalid — which
+        # in the worst case is all of them. Refinement is not per document (it
+        # works on the induced topic list) and is left out of the figure rather
+        # than guessed at.
+        #
+        # Counting only generation and assignment, as this did, understated a
+        # real run by roughly half.
+        induce_only = getattr(args, 'topicgpt_induce_only', False)
+        n_assigned = len(assignment_documents or documents)
+        parts = [f'generation {len(documents)}']
+        planned = len(documents)
+        if not induce_only:
+            planned += 2 * n_assigned
+            parts.append(f'assignment {n_assigned}')
+            parts.append(f'correction up to {n_assigned}')
         spend.check(
             planned, 'TopicGPT',
             refuse_above=getattr(args, 'max_calls', None) or spend.REFUSE_ABOVE,
             assume_yes=getattr(args, 'yes', False),
-            breakdown=f'induction {len(documents)} + assignment '
-                      f'{len(assignment_documents or documents)}',
+            breakdown=' + '.join(parts),
         )
 
     if args.topicgpt_dry_run:
@@ -339,6 +389,11 @@ def run(args) -> dict:
             topics_directed, topics_sender, topics_group = run_topics_stage(
                 messages, args
             )
+        except spend.SpendRefused:
+            # A refusal is a decision, not a failure. Reporting it as "the
+            # stage did not complete" reads like a crash and hides the figure
+            # that caused it, so it stops the run in its own words.
+            raise
         except (topicgpt.TopicGPTUnavailable, SystemExit, RuntimeError, OSError) as exc:
             # The rubric results have already cost paid calls: write what we
             # have anyway, and report the failure at the end instead of losing

@@ -29,6 +29,28 @@ from pathlib import Path
 
 from chatlens.core import config, experiment, library
 
+def _at_least(minimum: int):
+    """An argparse type for a count that has to be a real count.
+
+    `--llm-replicates 0` used to be accepted and produced a run that rated every
+    unit zero times, reported no errors, and wrote empty columns — a success
+    that never happened. Rejecting it at the command line is where the message
+    is legible.
+    """
+    def parse(value: str) -> int:
+        try:
+            number = int(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f'{value!r} is not a number') from None
+        if number < minimum:
+            raise argparse.ArgumentTypeError(
+                f'must be at least {minimum}, not {number}')
+        return number
+
+    parse.__name__ = f'int >= {minimum}'
+    return parse
+
+
 def spend_defaults():
     """Imported late: the help text needs the figures, nothing else does."""
     from chatlens.core import spend
@@ -95,12 +117,13 @@ def build_parser() -> argparse.ArgumentParser:
         # The paid stages charge per call and the count is a product of four
         # choices, so a typo is expensive in a way the command line does not
         # show. See core/spend.py for where the numbers come from.
-        sp.add_argument('--max-calls', type=int, default=None,
+        sp.add_argument('--max-calls', type=_at_least(1), default=None,
                         metavar='N',
                         help=f'refuse a run needing more than N paid calls '
                              f'(default {spend_defaults()[1]})')
         sp.add_argument('--yes', action='store_true',
-                        help='do not ask for confirmation before paid calls')
+                        help='do not ask for confirmation before paid calls '
+                             '(--max-calls still applies)')
 
         sp.add_argument('--llm', action='store_true',
                         help='run the validation rubric')
@@ -110,7 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
                              'available')
         sp.add_argument('--llm-models', default=None,
                         help='judge models, comma separated')
-        sp.add_argument('--llm-replicates', type=int, default=1,
+        sp.add_argument('--llm-replicates', type=_at_least(1), default=1,
                         help='independent ratings per unit (reliability)')
         sp.add_argument('--llm-levels', nargs='+',
                         default=['dyad_directed', 'group'],
