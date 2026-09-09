@@ -513,7 +513,7 @@ def _outcome_summary(outcome) -> str:
     """What the chosen column holds, so a wrong choice shows up immediately."""
     import csv
 
-    from chatlens.core import config, outcome as outcome_module
+    from chatlens.core import outcome as outcome_module
 
     columns, path = _outcome_columns(outcome['unit'])
     if path is None:

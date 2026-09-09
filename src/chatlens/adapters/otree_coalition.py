@@ -41,13 +41,13 @@ Usage (from the project entry point):
 
 from __future__ import annotations
 
-import argparse
-import csv
 import json
 import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+from chatlens.core import tables
 
 from chatlens.core import privacy
 
@@ -166,14 +166,11 @@ def _word_count(text: str) -> int:
 
 
 def load_wide(path: Path):
-    with path.open(encoding='utf-8-sig', newline='') as handle:
-        reader = csv.DictReader(handle)
-        return reader.fieldnames or [], list(reader)
+    return tables.columns_of(path), tables.read(path)
 
 
 def load_chat(path: Path):
-    with path.open(encoding='utf-8-sig', newline='') as handle:
-        return list(csv.DictReader(handle))
+    return tables.read(path)
 
 
 def is_grouped(row) -> bool:
@@ -883,21 +880,7 @@ def build_aggregated(wide_rows, wide_cols, groups, uid_by_code, messages):
 
 
 def write_csv(path: Path, rows):
-    if not rows:
-        path.write_text('', encoding='utf-8')
-        return
-    fieldnames = []
-    seen = set()
-    for row in rows:
-        for key in row:
-            if key not in seen:
-                seen.add(key)
-                fieldnames.append(key)
-    with path.open('w', encoding='utf-8-sig', newline='') as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction='ignore')
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
+    tables.write(path, rows)
 
 
 def run(wide: Path, chat: Path, outdir: Path, stem: str,

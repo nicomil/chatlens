@@ -90,3 +90,16 @@ packages = ["src/chatlens"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/chatlens", "tests", "examples", "README.md", "LICENSE"]
+
+# Reporting, not a gate. The default rule set flags the deliberate style of
+# this codebase — `dict(...)` over braces, mostly — which would bury the
+# findings that matter. These are the ones that catch something real: dead
+# imports, names that shadow other names, variables assigned and never used.
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["F", "E9", "B", "SIM101", "RUF200"]
+# B007 is the loop variable named for what it is and not used, which
+# reads better than `_`.
+ignore = ["B007", "B008", "B905"]

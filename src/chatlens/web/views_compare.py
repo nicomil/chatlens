@@ -181,9 +181,6 @@ def _how_to_read(name: str) -> str:
 
 def panel(name: str) -> str:
     """The comparison itself."""
-    from chatlens.core import config
-
-    experiment = config.EXPERIMENT
     scored, problem = _scored()
 
     if problem == 'no outcome':

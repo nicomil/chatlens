@@ -24,12 +24,13 @@ three players and wrong for any other number.
 
 from __future__ import annotations
 
-import csv
 import html
 import json
 import statistics
 from datetime import datetime
 from pathlib import Path
+
+from . import tables
 
 def _experiment():
     """The workspace's experiment, or a blank one outside a run."""
@@ -56,10 +57,7 @@ def _noun(plural=False) -> str:
 
 
 def _read(path: Path) -> list[dict]:
-    if not path.is_file():
-        return []
-    with path.open(encoding='utf-8-sig', newline='') as handle:
-        return list(csv.DictReader(handle))
+    return tables.read(path) if path.is_file() else []
 
 
 def _num(value):

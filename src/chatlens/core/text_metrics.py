@@ -56,6 +56,31 @@ TOKEN_RE = re.compile(r"[a-z]+(?:'[a-z]+)*", re.IGNORECASE)
 COUNT_KEYS = sorted(set(CATEGORIES) | {'adverb'})
 
 
+# Keyed on the experiment's overrides, holding the last answer. This is called
+# once per message, and when a workspace replaces a lexicon it rebuilds all
+# nineteen category sets — lower-casing every word in each — every time.
+_ACTIVE = {'key': object(), 'value': None}
+
+
+def _inverted(active: dict) -> dict:
+    """token → the categories it belongs to.
+
+    Nineteen `in` tests per token, repeated for every token of every message,
+    is the same answer arrived at nineteen times. The index is built once per
+    set of lexicons and cached with it.
+    """
+    cached = _ACTIVE.get('index')
+    if cached is not None and _ACTIVE.get('index_for') is active:
+        return cached
+    index = {}
+    for name, vocabulary in active.items():
+        for word in vocabulary:
+            index.setdefault(word, []).append(name)
+    _ACTIVE['index'] = index
+    _ACTIVE['index_for'] = active
+    return index
+
+
 def _active_categories() -> dict:
     """The lexicons in force, including anything the workspace replaced."""
     from . import config
@@ -64,10 +89,18 @@ def _active_categories() -> dict:
     overrides = getattr(experiment, 'lexicons', None) if experiment else None
     if not overrides:
         return CATEGORIES
-    try:
-        return lexicons.categories(overrides)
-    except ValueError as exc:
-        raise SystemExit(f'\nIn experiment.toml, [lexicons]: {exc}\n') from None
+
+    # The overrides are a plain dict from the TOML; its items make a hashable
+    # key without assuming anything about what is in them.
+    key = tuple(sorted((str(k), str(v)) for k, v in overrides.items()))
+    if _ACTIVE['key'] != key:
+        try:
+            _ACTIVE['value'] = lexicons.categories(overrides)
+        except ValueError as exc:
+            raise SystemExit(
+                f'\nIn experiment.toml, [lexicons]: {exc}\n') from None
+        _ACTIVE['key'] = key
+    return _ACTIVE['value']
 
 
 def tokenize(text: str) -> list[str]:
@@ -83,11 +116,11 @@ def count_categories(text: str) -> dict:
     """
     tokens = tokenize(text)
     active = _active_categories()
+    index = _inverted(active)
     counts = {key: 0 for key in COUNT_KEYS}
     for token in tokens:
-        for name, vocabulary in active.items():
-            if token in vocabulary:
-                counts[name] += 1
+        for name in index.get(token, ()):
+            counts[name] += 1
         if is_adverb(token):
             counts['adverb'] += 1
 

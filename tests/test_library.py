@@ -718,5 +718,43 @@ class ColumnGuessTests(unittest.TestCase):
         self.assertEqual(len(set(found.values())), len(found))
 
 
+class ConfigShapeTests(unittest.TestCase):
+    """A setting the tool does not act on is refused, not ignored.
+
+    Silently dropping it is the worst of the three options: the run proceeds,
+    the setting has no effect, and the only symptom is a result that does not
+    match what the file appears to say.
+    """
+
+    def _load(self, body):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            (path / 'experiment.toml').write_text(body, encoding='utf-8')
+            return experiment.load(path)
+
+    def test_a_mistyped_section_is_named_and_corrected(self):
+        with self.assertRaises(experiment.ConfigError) as raised:
+            self._load('[colums]\ngroup = "g"\n')
+        self.assertIn('colums', str(raised.exception))
+        self.assertIn('columns', str(raised.exception))
+
+    def test_a_mistyped_key_is_named_and_corrected(self):
+        with self.assertRaises(experiment.ConfigError) as raised:
+            self._load('[outcome]\ncolumn = "a"\nkinde = "binary"\n')
+        self.assertIn('kinde', str(raised.exception))
+        self.assertIn('kind', str(raised.exception))
+
+    def test_the_tables_whose_keys_are_the_users_own_are_left_alone(self):
+        """Column roles, input roles and treatment values are named by the
+        experiment, not by us: they cannot be checked against a list."""
+        loaded = self._load(
+            '[columns]\nbody = "text"\n[treatments]\nfoo = "Foo"\n')
+        self.assertEqual(loaded.treatments, {'foo': 'Foo'})
+
+    def test_a_file_that_says_nothing_wrong_still_loads(self):
+        loaded = self._load('[experiment]\nname = "Fine"\nadapter = "generic_chat"\n')
+        self.assertEqual(loaded.name, 'Fine')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -1307,8 +1307,8 @@ class SpendGuardTests(unittest.TestCase):
 
 
 
-class RubricCacheTests(unittest.TestCase):
-    """What a run is about to pay for, and what it has already paid for."""
+class SpendAgainstTheCacheTests(unittest.TestCase):
+    """What a run is about to pay for, against what it has already paid for."""
 
     def setUp(self):
         from chatlens.core import llm_rubric
@@ -1495,10 +1495,13 @@ class ExperimentConfigTests(unittest.TestCase):
         from chatlens.core import experiment
         self.experiment = experiment
 
-    def test_no_file_means_the_coalition_defaults(self):
+    def test_no_file_means_the_general_adapter(self):
+        """It used to mean the coalition one, so a new user's first run was
+        configured for somebody else's study and reported a missing file they
+        had never heard of."""
         with tempfile.TemporaryDirectory() as tmpdir:
             exp = self.experiment.load(Path(tmpdir))
-        self.assertEqual(exp.adapter, 'otree_coalition')
+        self.assertEqual(exp.adapter, 'generic_chat')
         self.assertFalse(exp.configured)
 
     def test_a_file_is_read(self):

@@ -19,9 +19,10 @@ the same scale.
 
 from __future__ import annotations
 
-import csv
 from collections import defaultdict
 from pathlib import Path
+
+from . import tables
 
 from . import schema
 from .text_metrics import (
@@ -44,8 +45,7 @@ LEVEL_KEYS = {
 
 
 def read_messages(path: Path) -> list[dict]:
-    with path.open(encoding='utf-8-sig', newline='') as handle:
-        return list(csv.DictReader(handle))
+    return tables.read(path)
 
 
 def analyze_messages(messages: list[dict]) -> list[dict]:
@@ -192,16 +192,4 @@ def merge_into_aggregated(aggregated_rows, features, topics_by_sender=None,
 
 
 def write_csv(path: Path, rows):
-    if not rows:
-        path.write_text('', encoding='utf-8')
-        return
-    fieldnames, seen = [], set()
-    for row in rows:
-        for key in row:
-            if key not in seen:
-                seen.add(key)
-                fieldnames.append(key)
-    with path.open('w', encoding='utf-8-sig', newline='') as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction='ignore')
-        writer.writeheader()
-        writer.writerows(rows)
+    tables.write(path, rows)

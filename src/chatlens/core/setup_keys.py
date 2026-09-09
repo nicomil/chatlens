@@ -211,7 +211,7 @@ def print_status() -> None:
             False: 'NO — needs fixing before any commit',
             None: 'not verifiable',
         }[ignored]
-        print(f'  location  : inside the workspace')
+        print('  location  : inside the workspace')
         print(f'  git ignores it: {ignored_label}')
     print()
     for name, purpose, present in config.key_status():

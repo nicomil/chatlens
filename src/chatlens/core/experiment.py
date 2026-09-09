@@ -39,7 +39,12 @@ from pathlib import Path
 
 FILENAME = 'experiment.toml'
 
-DEFAULT_ADAPTER = 'otree_coalition'
+# A workspace that does not say gets the general adapter, not the one written
+# for the coalition-formation experiment this tool grew out of. It was the
+# other way round, which meant a new user's first run was silently configured
+# for somebody else's study: it looked for oTree's `all_apps_wide*.csv` and
+# reported it missing, naming a file they had never heard of.
+DEFAULT_ADAPTER = 'generic_chat'
 
 # Column names the generic adapter looks for when the file does not say.
 DEFAULT_COLUMNS = {
@@ -61,6 +66,58 @@ class ConfigError(RuntimeError):
 from chatlens.core import outcome as outcome_module
 
 
+# Everything the file may contain. A key not in here was silently dropped: a
+# mistyped `[colums]` or `group_nown` was a no-op with nothing said, and the
+# behaviour that resulted looked like the tool ignoring the configuration.
+KNOWN_TABLES = {
+    'experiment': {'name', 'adapter', 'group_noun', 'group_target'},
+    'input': None,          # the roles are the adapter's, not ours to list
+    'columns': None,        # likewise the column roles
+    'treatments': None,     # the values are the experiment's own
+    'lexicons': None,
+    'rubric': {'context', 'dimensions'},
+    'outcome': {'column', 'kind', 'unit', 'label'},
+    'narratives': {'entities', 'model'},
+}
+
+
+def _did_you_mean(name: str, candidates) -> str:
+    import difflib
+
+    close = difflib.get_close_matches(name, sorted(candidates), n=1, cutoff=0.6)
+    return f' Did you mean "{close[0]}"?' if close else ''
+
+
+def check_shape(data: dict, path: Path) -> None:
+    """Refuse a file whose tables or keys are not ones we act on.
+
+    Silently ignoring them is the worst of the three options: the run proceeds,
+    the setting has no effect, and the only symptom is a result that does not
+    match what the file appears to say.
+    """
+    unknown = [name for name in data if name not in KNOWN_TABLES]
+    if unknown:
+        name = unknown[0]
+        raise ConfigError(
+            f'{path}: there is no [{name}] section.{_did_you_mean(name, KNOWN_TABLES)}\n'
+            f'  The sections that mean something are: '
+            f'{", ".join(sorted(KNOWN_TABLES))}.')
+
+    for table, allowed in KNOWN_TABLES.items():
+        if allowed is None:
+            continue
+        block = data.get(table) or {}
+        if not isinstance(block, dict):
+            continue
+        strays = [key for key in block if key not in allowed]
+        if strays:
+            key = strays[0]
+            raise ConfigError(
+                f'{path}: [{table}] has no "{key}" setting.'
+                f'{_did_you_mean(key, allowed)}\n'
+                f'  It takes: {", ".join(sorted(allowed))}.')
+
+
 class Experiment:
     """The workspace's description of its experiment."""
 
@@ -68,6 +125,8 @@ class Experiment:
         data = data or {}
         self.path = path
         self.raw = data
+        if path is not None:
+            check_shape(data, path)
 
         # What the file actually said, kept apart from what was worked out
         # afterwards. Several attributes below are resolved rather than read —

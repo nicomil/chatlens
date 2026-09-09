@@ -10,6 +10,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+from chatlens.core import tables
+
 from chatlens.web import ui
 
 csv.field_size_limit(10 ** 7)
@@ -19,8 +21,7 @@ _e = ui.esc
 
 
 def _read(path: Path):
-    with path.open(encoding='utf-8-sig', newline='') as handle:
-        return list(csv.DictReader(handle))
+    return tables.read(path)
 
 
 def _latest(directory: Path, suffix: str):

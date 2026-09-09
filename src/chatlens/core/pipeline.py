@@ -25,9 +25,10 @@ Examples (from the project entry point)
 
 from __future__ import annotations
 
-import csv
 import sys
 from pathlib import Path
+
+from . import tables
 
 from . import aggregate as agg  # noqa: E402
 from . import archive, config, llm_rubric, report, schema, spend  # noqa: E402
@@ -35,8 +36,7 @@ from . import topicgpt  # noqa: E402
 
 
 def read_csv(path: Path) -> list[dict]:
-    with path.open(encoding='utf-8-sig', newline='') as handle:
-        return list(csv.DictReader(handle))
+    return tables.read(path)
 
 
 def build_transcripts(messages, level: str) -> dict:
@@ -373,12 +373,15 @@ def run(args) -> dict:
     for level, rows in features.items():
         print(f'  {level}: {len(rows)} units')
 
-    transcripts_by_level = {
-        level: build_transcripts(messages, level) for level in agg.LEVELS
-    }
-
     if args.llm:
         print('Validation rubric...')
+        # Built here rather than above, and only for the levels asked for: the
+        # four levels each hold a full copy of the corpus text, so a run
+        # without the rubric was carrying four corpora in memory for nothing.
+        wanted = [level for level in agg.LEVELS if level in args.llm_levels]
+        transcripts_by_level = {
+            level: build_transcripts(messages, level) for level in wanted
+        }
         run_llm_stage(features, transcripts_by_level, args)
 
     topics_directed = topics_sender = topics_group = None

@@ -31,7 +31,7 @@ written by hand before this existed: our own cached ratings stay valid.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 DEFAULT_CONTEXT = (
     'Three participants play a coalition-formation game and exchange short '

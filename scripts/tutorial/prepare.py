@@ -51,7 +51,7 @@ def main(argv=None) -> int:
     print(f'Study       {made["n_groups"]} groups, {made["n_participants"]} '
           f'participants, {made["n_messages"]} messages — generated from a '
           f'fixed seed, nobody real')
-    print(f'Files to upload:')
+    print('Files to upload:')
     for path in sorted((source / 'input').glob('*.csv')):
         print(f'  {path}')
     print()

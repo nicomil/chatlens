@@ -37,9 +37,10 @@ Two things it does **not** do, because guessing would be worse than saying so:
 
 from __future__ import annotations
 
-import csv
 from collections import defaultdict
 from pathlib import Path
+
+from chatlens.core import tables
 
 from chatlens.core import privacy, schema
 
@@ -56,8 +57,7 @@ class AdapterError(RuntimeError):
 
 
 def _read(path: Path) -> list[dict]:
-    with path.open(encoding='utf-8-sig', newline='') as handle:
-        return list(csv.DictReader(handle))
+    return tables.read(path)
 
 
 def _get(row, columns, key, default=''):
@@ -178,6 +178,14 @@ def build_tables(messages, participants, columns):
         for group, focal, partner in sorted(pairs)
     ]
 
+    # Grouped once rather than rescanned per person: the comprehension this
+    # replaces walked the whole `sent` dict for every (group, person), which is
+    # quadratic in the number of pairs and was the slowest thing in the adapter
+    # on a large export.
+    by_sender = {}
+    for (group, sender, _receiver), group_messages in sent.items():
+        by_sender.setdefault((group, sender), []).extend(group_messages)
+
     aggregated = []
     for group, who in sorted(people):
         row = {
@@ -186,10 +194,7 @@ def build_tables(messages, participants, columns):
             'treatment': treatments.get(group, ''),
             'focal_id_in_group': who,
             # Everything this person wrote in the group, whoever it went to.
-            'sent_transcript_text': transcript(
-                [m for key, group_messages in sent.items()
-                 if key[0] == group and key[1] == who
-                 for m in group_messages]),
+            'sent_transcript_text': transcript(by_sender.get((group, who), [])),
         }
         extra = attributes.get((group, who))
         if extra:
@@ -202,15 +207,11 @@ def build_tables(messages, participants, columns):
 
 
 def write_csv(path: Path, rows) -> None:
-    columns = []
-    for row in rows:
-        for name in row:
-            if name not in columns:
-                columns.append(name)
-    with path.open('w', encoding='utf-8', newline='') as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns, extrasaction='ignore')
-        writer.writeheader()
-        writer.writerows(rows)
+    # Through the shared writer, which means a byte-order mark: this adapter
+    # was the only one writing plain UTF-8, so its merged tables were not the
+    # same kind of file as the other adapter's. Every reader here opens with
+    # `utf-8-sig` and accepts both, which is why nobody had noticed.
+    tables.write(path, rows)
 
 
 def run(messages: Path, participants=None, outdir: Path = None,

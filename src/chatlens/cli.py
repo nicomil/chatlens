@@ -28,6 +28,25 @@ import sys
 from pathlib import Path
 
 from chatlens.core import config, experiment, library
+from chatlens.core import outcome as outcome_module
+from chatlens.core import tomlwrite
+
+
+def _expected_errors():
+    """The failures that are the user's to fix, gathered in one place."""
+    from chatlens.adapters import generic_chat
+
+    return (
+        config.InputError,
+        experiment.ConfigError,
+        library.LibraryError,
+        outcome_module.OutcomeError,
+        tomlwrite.TomlWriteError,
+        # Only `generic_chat` declares one; the oTree adapter raises
+        # `SystemExit` directly, which already carries its own message.
+        generic_chat.AdapterError,
+        FileNotFoundError,
+    )
 
 def _at_least(minimum: int):
     """An argparse type for a count that has to be a real count.
@@ -326,6 +345,30 @@ def resolve_dataset(args) -> tuple[dict, str]:
     return paths, dataset_stem(paths)
 
 
+def stem_from_outputs() -> str | None:
+    """The stem of what has already been produced, read off the merged files.
+
+    `analyze` and `report` needed nothing from `input/` except the name to
+    build their filenames from, and they were getting it by resolving the input
+    files — so regenerating a report from results already on disk failed once
+    the export had been cleaned away, with a message about a missing export
+    that the command did not need.
+    """
+    suffix = '_messages_long.csv'
+    found = sorted(config.MERGED_DIR.glob(f'*{suffix}'))
+    if not found:
+        return None
+    return found[0].name[:-len(suffix)]
+
+
+def resolve_stem(args) -> str:
+    """The stem, from the outputs if they are there and the inputs if not."""
+    from_outputs = stem_from_outputs()
+    if from_outputs:
+        return from_outputs
+    return resolve_dataset(args)[1]
+
+
 def cmd_merge(args) -> int:
     from chatlens import adapters
 
@@ -363,7 +406,7 @@ def cmd_analyze(args) -> int:
     if getattr(args, 'topics', False) and not args.topicgpt_repo:
         args.topicgpt_repo = str(config.topicgpt_repo())
 
-    _paths, stem = resolve_dataset(args)
+    stem = resolve_stem(args)
     args.merged_dir = config.MERGED_DIR
     args.outdir = config.OUTPUT_DIR
     args.stem = stem
@@ -383,7 +426,7 @@ def cmd_all(args) -> int:
 def cmd_report(args) -> int:
     from chatlens.core import report
 
-    _paths, stem = resolve_dataset(args)
+    stem = resolve_stem(args)
     paths = report.write(config.OUTPUT_DIR, stem)
     print('Readable summary:')
     for path in paths:
@@ -740,11 +783,17 @@ def main(argv=None) -> int:
         raise SystemExit(f'\n{exc}\n') from None
     config.ensure_dirs()
     config.load_env()
+    EXPECTED = _expected_errors()
     try:
         return COMMANDS[args.command](args)
-    except config.InputError as exc:
-        # A file is missing or there is more than one: something to fix in
-        # input/, not a program error.
+    except EXPECTED as exc:
+        # Something to fix in the workspace, not a program error. Each of these
+        # classes already carries a message written for the person reading it;
+        # the traceback above it says nothing they can act on.
+        #
+        # AdapterError was missing from this list, which made the single most
+        # likely mistake — a column mapped to a name the file does not have —
+        # the one that printed a stack trace.
         raise SystemExit(f'\n{exc}\n') from None
 
 

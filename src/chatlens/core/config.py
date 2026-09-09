@@ -144,15 +144,22 @@ def use_workspace(root) -> Path:
 
 
 # How the files in input/ are recognised, as role -> filename pattern. Set from
-# the active adapter by use_experiment(); the default is the oTree coalition
-# adapter, which is what a workspace with no experiment.toml gets.
-INPUT_PATTERNS = {
-    'wide': 'all_apps_wide*.csv',
-    'chat': 'ChatMessages*.csv',
-}
+# the active adapter by use_experiment(); until then it is the default
+# adapter's, whatever that is, rather than one adapter's spelled out here.
+INPUT_PATTERNS = {}
 
 # The workspace's experiment.toml, or the defaults. Set by use_experiment().
 EXPERIMENT = None
+
+
+def _default_patterns() -> dict:
+    from chatlens import adapters
+    from chatlens.core import experiment as experiment_module
+
+    return adapters.inputs(experiment_module.DEFAULT_ADAPTER)
+
+
+INPUT_PATTERNS = _default_patterns()
 
 
 def use_experiment(experiment) -> None:
