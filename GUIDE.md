@@ -92,7 +92,8 @@ and RELATIO are separate downloads, and all three are needed. Each screen prints
 the commands in order.
 
 ```bash
-chatlens install-relatio     # clones and installs RELATIO
+chatlens install-model       # the spaCy language model, 33 MB
+chatlens install-relatio     # clones and installs RELATIO, 1.6 GB
 chatlens install-topicgpt    # only for the paid topic stage
 ```
 

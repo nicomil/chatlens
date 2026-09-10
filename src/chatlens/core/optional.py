@@ -111,8 +111,36 @@ def install_command(extra: str, packages) -> str:
     return f'{sys.executable} -m pip install {" ".join(packages)}'
 
 
+def pip_argv(*arguments) -> list[str]:
+    """How to install something into *this* environment, as a command to run.
+
+    Not always `-m pip`. A uv tool environment is a virtual environment like
+    any other, but uv does not put pip in it — `python -m pip install` there
+    answers *No module named pip*, and so does anything that shells out to pip,
+    which is how a spaCy model arrives. uv installs into it perfectly well when
+    told which interpreter to use, so that is the route when uv is what put
+    this environment here.
+    """
+    if _is_uv_tool():
+        tool = shutil.which('uv')
+        if tool:
+            return [tool, 'pip', 'install', '--python', sys.executable,
+                    *arguments]
+    return [sys.executable, '-m', 'pip', 'install', *arguments]
+
+
 def model_command(name: str) -> str:
-    return f'{sys.executable} -m spacy download {name}'
+    """The command that puts a spaCy language model in this environment.
+
+    Ours rather than spaCy's, which is the exception to the rule above. The
+    others are one call to an installer and can be written out in full;
+    `spacy download` reads spaCy's compatibility table to pick the build that
+    matches the spaCy actually installed — worth keeping — but it does the
+    fetching through pip, which a uv tool environment has not got. Getting one
+    in first is a second command, and a second command is a thing to get wrong
+    on a page whose whole purpose is to be copied without thinking.
+    """
+    return f'chatlens install-model {name}'
 
 
 class Requirement:

@@ -108,6 +108,7 @@ chatlens all           # merge + the automatic measures, a few seconds
 | `chatlens runs --prune 2` | keeps the last 2 and deletes the others | — |
 | `chatlens status` | what is in input, in output and among the keys | — |
 | `chatlens demo` | writes a synthetic study and analyses it | — |
+| `chatlens install-model` | downloads the spaCy language model (for the relations) | — |
 | `chatlens install-topicgpt` | installs TopicGPT (only needed for the topics) | — |
 | `chatlens install-relatio` | installs RELATIO (optional, for the narratives) | — |
 
@@ -225,29 +226,52 @@ screen and it will be right.
 | The words, Which representation to trust | scikit-learn, matplotlib, wordcloud | 150 MB |
 | The relations | spaCy + a language model + statsmodels + RELATIO | 1.6 GB |
 | The emotions | the NRC Emotion Lexicon | 4 MB |
-| The rubric and the topics (paid) | the `llm` and `topics` extras | small |
+| The topics (paid) | the `topics` extra + TopicGPT + an OpenAI key | small |
+| The validation rubric (paid) | the `llm` extra + an OpenAI or Anthropic key | small |
 
-For reference, the commands are these. Replace the URL with wherever you
-installed from.
+For reference, here is every one of them written out. Replace the URL with
+wherever you installed from; if you used pip rather than uv, the shape is
+`pip install "chatlens[words]"` and the rest is the same.
 
 ```bash
-# the words and the comparison
+# ── the words, and the comparison between representations ──
 uv tool install --reinstall "chatlens[words] @ git+https://github.com/nicomil/chatlens.git"
 
-# the relations: three steps, and all three are needed
+# ── the relations: three steps, and all three are needed ──
 uv tool install --reinstall "chatlens[narratives] @ git+https://github.com/nicomil/chatlens.git"
-chatlens install-relatio                       # clones and installs RELATIO
-# then the language model, into the same environment — the command is on the screen
+chatlens install-model                 # the spaCy language model, 33 MB
+chatlens install-relatio               # clones and installs RELATIO, 1.6 GB
 
-# everything at once
+# ── the topics: two steps, then a key ──
+uv tool install --reinstall "chatlens[topics] @ git+https://github.com/nicomil/chatlens.git"
+chatlens install-topicgpt              # clones TopicGPT for its prompt files
+chatlens keys                          # OPENAI_API_KEY, guided
+
+# ── the validation rubric: an extra and a key ──
+uv tool install --reinstall "chatlens[llm] @ git+https://github.com/nicomil/chatlens.git"
+chatlens keys                          # OpenAI or Anthropic, either will do
+
+# ── every library at once, if you would rather not choose ──
+# still leaves the three that are not libraries: the model, RELATIO, TopicGPT
 uv tool install --reinstall "chatlens[all] @ git+https://github.com/nicomil/chatlens.git"
 ```
 
-`chatlens install-relatio` and `chatlens install-topicgpt` clone their
-repositories into this machine's application data directory and install them.
-Neither is a dependency, because neither should arrive because somebody opened
-a page: RELATIO brings torch and transformers, and TopicGPT's prompt files are
-part of its method and are not inside its published package.
+**The `chatlens install-…` commands exist because these three are not
+libraries.** `install-model` fetches the spaCy language model, which is a
+package but is published outside PyPI and has to match the spaCy installed
+beside it. `install-relatio` clones RELATIO and installs it from source,
+because its published release cannot build under a modern setuptools, and
+because torch and transformers should not arrive on anyone's laptop for opening
+a page. `install-topicgpt` clones TopicGPT for the prompt files, which are part
+of the method and are not inside its published package. The two clones go to
+this machine's application data directory, and the commands find them there
+without being told.
+
+Each one is safe to run twice: it says what is already present and stops.
+
+The two paid findings also want a key, and only those two. See
+[§3, API keys](#3-api-keys) — `chatlens keys` asks for them, verifies them with
+one real call rather than a listing, and writes them outside any repository.
 
 ### The emotion lexicon
 

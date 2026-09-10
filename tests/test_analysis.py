@@ -1451,6 +1451,46 @@ class InstallCommandTests(unittest.TestCase):
                 self.assertTrue(self.optional._is_uv_tool())
 
 
+class PipRouteTests(unittest.TestCase):
+    """A uv tool environment has no pip in it, and things that install into
+    it have to know that."""
+
+    def setUp(self):
+        from chatlens.core import optional
+        self.optional = optional
+
+    def test_ordinarily_it_is_this_interpreter_and_its_pip(self):
+        argv = self.optional.pip_argv('some-package')
+        self.assertEqual(argv[:4], [sys.executable, '-m', 'pip', 'install'])
+        self.assertEqual(argv[-1], 'some-package')
+
+    def test_in_a_uv_tool_it_installs_through_uv_naming_the_interpreter(self):
+        """`python -m pip install` there answers *No module named pip*."""
+        with unittest.mock.patch.object(self.optional, '_is_uv_tool',
+                                        return_value=True), \
+             unittest.mock.patch.object(self.optional.shutil, 'which',
+                                        return_value='/opt/bin/uv'):
+            argv = self.optional.pip_argv('some-package')
+        self.assertEqual(argv, ['/opt/bin/uv', 'pip', 'install', '--python',
+                                sys.executable, 'some-package'])
+
+    def test_without_uv_on_the_path_it_falls_back_rather_than_inventing_one(self):
+        """Refusing is not an option — the caller is mid-install — and a bare
+        `uv` that is not there fails less legibly than pip that may be."""
+        with unittest.mock.patch.object(self.optional, '_is_uv_tool',
+                                        return_value=True), \
+             unittest.mock.patch.object(self.optional.shutil, 'which',
+                                        return_value=None):
+            argv = self.optional.pip_argv('some-package')
+        self.assertEqual(argv[0], sys.executable)
+
+    def test_the_model_is_fetched_by_our_own_command(self):
+        """Because getting a pip in first is a second step, and the screen it
+        is printed on exists to be copied without thinking."""
+        self.assertEqual(self.optional.model_command('en_core_web_md'),
+                         'chatlens install-model en_core_web_md')
+
+
 class SchemaTests(unittest.TestCase):
     """The contract between an adapter and the core."""
 

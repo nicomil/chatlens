@@ -176,9 +176,9 @@ class RequirementNoticeTests(unittest.TestCase):
 
         commands = [r.command
                     for r in views_narratives.requirements('en_core_web_md')]
-        self.assertTrue(any('spacy download en_core_web_md' in c
+        self.assertTrue(any('install-model en_core_web_md' in c
                             for c in commands))
-        self.assertTrue(any('spacy download' not in c for c in commands))
+        self.assertTrue(any('install-model' not in c for c in commands))
 
     def test_each_command_is_one_the_user_can_run_as_shown(self):
         """Either this interpreter by full path, or a chatlens command."""

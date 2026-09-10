@@ -27,7 +27,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from chatlens.core import config, experiment, library
+from chatlens.core import config, experiment, library, optional
 from chatlens.core import outcome as outcome_module
 from chatlens.core import tomlwrite
 
@@ -280,6 +280,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp_rel.add_argument('--repo', type=Path, default=None,
                         help="where to clone it (default: this machine's "
                              'application data directory)')
+
+    sp_model = sub.add_parser(
+        'install-model', parents=[common],
+        help='download a spaCy language model into this environment')
+    sp_model.add_argument('name', nargs='?', default='en_core_web_md',
+                          help='the model (default: en_core_web_md, ~40 MB)')
 
     sub.add_parser('keys', parents=[common], help='configure the API keys')
     sub.add_parser('status', parents=[common],
@@ -580,9 +586,7 @@ def cmd_install_topicgpt(args) -> int:
     print('Installing it (heavy dependencies, this may take minutes).')
     print('The warning about google-cloud-aiplatform and the "all" extra is '
           'harmless.')
-    installed = subprocess.run(
-        [sys.executable, '-m', 'pip', 'install', str(repo)]
-    )
+    installed = subprocess.run(optional.pip_argv(str(repo)))
     if installed.returncode:
         raise SystemExit('\nInstallation failed: see the messages above.\n')
 
@@ -681,13 +685,56 @@ def cmd_install_relatio(args) -> int:
 
     print('Installing it. This pulls torch and transformers — about 1.6 GB —')
     print('and will take some minutes.')
-    installed = subprocess.run([sys.executable, '-m', 'pip', 'install',
-                                str(repo)])
+    installed = subprocess.run(optional.pip_argv(str(repo)))
     if installed.returncode:
         raise SystemExit('\nInstall failed: the output above says why.\n')
 
     print('\nInstalled. The narratives page will use it from now on, and says')
     print('which route it took.')
+    return 0
+
+
+def cmd_install_model(args) -> int:
+    """Put a spaCy language model in the environment chatlens is installed in.
+
+    A wrapper around `spacy download`, which is worth keeping rather than
+    replacing with a wheel URL: it reads spaCy's compatibility table and picks
+    the build matching the spaCy that is actually here, and a URL written down
+    a year ago does not.
+
+    What it adds is the part that goes wrong. `spacy download` fetches through
+    pip, and chatlens normally lives in a uv tool environment, which has no
+    pip in it — the download stops at *No module named pip*. So pip is put
+    there first if it is missing. Doing that here, once, is better than
+    printing two commands on a page that exists to be copied without thinking.
+    """
+    import subprocess
+
+    from chatlens.core.optional import have, have_spacy_model
+
+    name = args.name
+    if have_spacy_model(name):
+        print(f'Already present: {name}')
+        return 0
+    if not have('spacy'):
+        raise SystemExit(
+            '\nspaCy is not installed, and the model is a package it loads.\n'
+            'The narratives screen prints the command for this environment.\n')
+
+    if not have('pip'):
+        # Flushed: the installer below writes straight to the terminal, and
+        # unflushed prints arrive after it, describing what already happened.
+        print('Giving this environment a pip, which spacy download needs.',
+              flush=True)
+        if subprocess.run(optional.pip_argv('pip')).returncode:
+            raise SystemExit('\nCould not install pip: see above.\n')
+
+    print(f'Downloading {name}.', flush=True)
+    if subprocess.run([sys.executable, '-m', 'spacy', 'download',
+                       name]).returncode:
+        raise SystemExit('\nDownload failed: the output above says why.\n')
+
+    print(f'\n{name} installed. The narratives screen will find it.')
     return 0
 
 
@@ -748,6 +795,7 @@ COMMANDS = {
     'install-topicgpt': cmd_install_topicgpt,
     'subtopics': cmd_subtopics,
     'install-relatio': cmd_install_relatio,
+    'install-model': cmd_install_model,
     'keys': cmd_keys,
     'status': cmd_status,
 }
