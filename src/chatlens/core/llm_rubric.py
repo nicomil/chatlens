@@ -384,7 +384,8 @@ def score_unit(client, unit: RubricUnit, model: str = DEFAULT_MODEL,
     """Score one transcript. Returns the scores or the error encountered."""
     if provider == 'anthropic':
         return _score_anthropic(client, unit, model)
-    return _score_openai_compatible(client, unit, model)
+    return _score_openai_compatible(client, unit, model,
+                                    extra=_extra_params(provider))
 
 
 def _score_anthropic(client, unit: RubricUnit, model: str, attempt: int = 0) -> dict:
@@ -436,9 +437,29 @@ def _json_instruction() -> str:
     )
 
 
+def _extra_params(provider: str) -> dict:
+    """Parameters that only one endpoint understands.
+
+    Local reasoning models spend most of their time on a chain of thought this
+    rubric throws away. `gemma4:e4b` on the study this was written for emitted
+    794 tokens of *Thinking Process* before the 72 tokens of JSON — 92% of the
+    generation, and the difference between 63 seconds a call and 9. Ollama
+    turns it off through `reasoning_effort`, which is the only one of the three
+    ways that reaches it: `think` in the body is dropped by the
+    OpenAI-compatible endpoint, and `PARAMETER think false` in a Modelfile is
+    not a parameter Ollama knows.
+
+    Only for Ollama. On OpenAI the same field is a real one, meaningful to the
+    reasoning models and an error on the rest, so sending it there would break
+    the ordinary case to speed up a local one.
+    """
+    return {'reasoning_effort': 'none'} if provider == 'ollama' else {}
+
+
 def _score_openai_compatible(client, unit: RubricUnit, model: str,
-                             attempt: int = 0) -> dict:
+                             attempt: int = 0, extra=None) -> dict:
     """Path for OpenAI and any compatible endpoint, Ollama included."""
+    extra = extra or {}
     try:
         response = client.chat.completions.create(
             model=model,
@@ -447,12 +468,13 @@ def _score_openai_compatible(client, unit: RubricUnit, model: str,
                 {'role': 'user', 'content': _user_message(unit)},
             ],
             response_format={'type': 'json_object'},
+            **extra,
         )
     except Exception as exc:  # noqa: BLE001 - exceptions vary by endpoint
         if _is_terminal(exc) or attempt >= 4:
             return dict(_empty_scores(), error=f'api_error:{type(exc).__name__}')
         time.sleep(min(5 * (attempt + 1), MAX_RETRY_SLEEP))
-        return _score_openai_compatible(client, unit, model, attempt + 1)
+        return _score_openai_compatible(client, unit, model, attempt + 1, extra)
 
     text = (response.choices[0].message.content or '').strip()
     try:
@@ -461,7 +483,8 @@ def _score_openai_compatible(client, unit: RubricUnit, model: str,
         # A malformed answer is often transient: retry first, and only then
         # record the error, so the missing datum stays traceable.
         if attempt < 2:
-            return _score_openai_compatible(client, unit, model, attempt + 1)
+            return _score_openai_compatible(client, unit, model, attempt + 1,
+                                            extra)
         return dict(_empty_scores(), error='unparseable')
 
     return _scores_from_parsed(parsed, model)
@@ -590,6 +613,12 @@ def score_units(units, models=None, replicates=1, progress=None, provider=None,
         rows.append(row)
         if judgements and not row.get('llm_n_errors'):
             _append_cache(cache_path, signature, row)
+            # And in memory, not only on disk. Two units with the same
+            # transcript have the same signature and the second was being paid
+            # for again, because the dictionary consulted above was loaded once
+            # before the loop and never learned anything the loop produced. On
+            # the study this was written for that is 52 ratings of 2 963.
+            cached[signature] = row
 
     if reused and progress:
         progress(total, total)

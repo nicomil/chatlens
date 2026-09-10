@@ -596,6 +596,35 @@ class RubricCacheTests(unittest.TestCase):
         finally:
             self._teardown()
 
+    def test_the_same_transcript_twice_is_paid_for_once(self):
+        """The cache dedupes across runs; it was not deduping inside one.
+
+        The dictionary it consults was loaded before the loop and never
+        learned what the loop produced, so two units with the same transcript
+        were both sent. On the study this was written for that is 52 ratings
+        of 2 963.
+        """
+        import tempfile
+        from pathlib import Path as P
+
+        self._setup()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cache = P(tmpdir) / 'rubric.jsonl'
+                units = self._units()
+                # Same text, same treatment, same target: the same rating.
+                units[1].transcript = units[0].transcript
+                units[1].treatment = units[0].treatment
+
+                rows, reused = self.llm.score_units(
+                    units, provider='openai', cache_path=cache)
+                self.assertEqual(len(rows), 2)
+                self.assertEqual(len(self.calls), 1,
+                                 'it paid twice for the same transcript')
+                self.assertEqual(reused, 1)
+        finally:
+            self._teardown()
+
     def test_more_replicates_is_a_different_measurement(self):
         import tempfile
         from pathlib import Path as P
@@ -1489,6 +1518,48 @@ class PipRouteTests(unittest.TestCase):
         is printed on exists to be copied without thinking."""
         self.assertEqual(self.optional.model_command('en_core_web_md'),
                          'chatlens install-model en_core_web_md')
+
+
+class LocalReasoningTests(unittest.TestCase):
+    """A local reasoning model spends most of its time on a chain of thought
+    this rubric discards, and only one of the three ways of turning it off
+    actually reaches Ollama."""
+
+    def setUp(self):
+        from chatlens.core import llm_rubric
+        self.llm = llm_rubric
+
+    def test_ollama_is_told_not_to_reason(self):
+        """`gemma4:e4b` emitted 794 tokens of thinking before 72 of JSON:
+        63 seconds a call against 9."""
+        self.assertEqual(self.llm._extra_params('ollama'),
+                         {'reasoning_effort': 'none'})
+
+    def test_openai_is_not(self):
+        """There the field is a real one — meaningful to the reasoning models
+        and an error on the rest — so sending it would break the ordinary
+        case to speed up a local one."""
+        self.assertEqual(self.llm._extra_params('openai'), {})
+        self.assertEqual(self.llm._extra_params('anthropic'), {})
+
+    def test_it_reaches_the_request(self):
+        sent = {}
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                sent.update(kwargs)
+                raise RuntimeError('stop here: the request is what is checked')
+
+        class FakeClient:
+            chat = type('c', (), {'completions': FakeCompletions()})()
+
+        unit = self.llm.RubricUnit(key=('g1',), unit='group', transcript='hi',
+                                   n_messages=1, treatment='private',
+                                   target='all three participants')
+        self.llm._score_openai_compatible(
+            FakeClient(), unit, 'gemma4:e4b', attempt=4,
+            extra=self.llm._extra_params('ollama'))
+        self.assertEqual(sent.get('reasoning_effort'), 'none')
 
 
 class SchemaTests(unittest.TestCase):
