@@ -1407,6 +1407,50 @@ class RetryPolicyTests(unittest.TestCase):
         self.assertFalse(self.llm._is_terminal(self._Error()))
 
 
+class InstallCommandTests(unittest.TestCase):
+    """The command a blocked screen tells you to run has to run."""
+
+    def setUp(self):
+        from chatlens.core import optional
+        self.optional = optional
+
+    def test_outside_a_uv_tool_it_is_pip_and_this_interpreter(self):
+        command = self.optional.install_command('words', ['scikit-learn'])
+        self.assertIn('-m pip install scikit-learn', command)
+        self.assertIn(sys.executable, command)
+
+    def test_inside_a_uv_tool_it_names_where_this_copy_came_from(self):
+        """chatlens is not on PyPI, so `chatlens[words]` alone resolves
+        against an index that has never heard of it."""
+        with unittest.mock.patch.object(self.optional, '_is_uv_tool',
+                                        return_value=True), \
+             unittest.mock.patch.object(self.optional, 'installed_from',
+                                        return_value='git+https://example/x'):
+            command = self.optional.install_command('words', ['scikit-learn'])
+        self.assertIn('tool install --reinstall', command)
+        self.assertIn('chatlens[words] @ git+https://example/x', command)
+
+    def test_with_no_recorded_source_it_falls_back_to_the_name(self):
+        with unittest.mock.patch.object(self.optional, '_is_uv_tool',
+                                        return_value=True), \
+             unittest.mock.patch.object(self.optional, 'installed_from',
+                                        return_value=''):
+            command = self.optional.install_command('words', ['scikit-learn'])
+        self.assertIn('"chatlens[words]"', command)
+
+    def test_the_environment_is_asked_rather_than_the_path_guessed(self):
+        """`UV_TOOL_DIR` moves the environment; matching on the default layout
+        would then tell the reader to run the wrong command."""
+        import tempfile
+        from pathlib import Path as P
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with unittest.mock.patch.object(self.optional.sys, 'prefix', tmp):
+                self.assertFalse(self.optional._is_uv_tool())
+                (P(tmp) / 'uv-receipt.toml').write_text('[tool]\n')
+                self.assertTrue(self.optional._is_uv_tool())
+
+
 class SchemaTests(unittest.TestCase):
     """The contract between an adapter and the core."""
 

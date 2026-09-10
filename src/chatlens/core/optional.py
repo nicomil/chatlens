@@ -30,6 +30,7 @@ from __future__ import annotations
 import importlib.util
 import shutil
 import sys
+from pathlib import Path
 
 
 def have(module: str) -> bool:
@@ -50,6 +51,50 @@ def have_spacy_model(name: str) -> bool:
     return have(name)
 
 
+def _is_uv_tool() -> bool:
+    """True when this copy lives in an environment uv manages as a tool.
+
+    uv writes `uv-receipt.toml` at the root of one, which is a fact about the
+    environment rather than a guess about its path — the path can be moved with
+    `UV_TOOL_DIR`, and on a machine where it has been, matching on the default
+    layout tells the reader to run the wrong command.
+    """
+    # `sys.prefix`, not the executable's folder: the interpreter inside a
+    # uv environment is a symlink to the one uv keeps elsewhere, and
+    # resolving it walks straight out of the environment being asked about.
+    return (Path(sys.prefix) / 'uv-receipt.toml').is_file()
+
+
+def installed_from() -> str:
+    """Where this copy was installed from, as pip and uv record it.
+
+    PEP 610 has the installer write `direct_url.json` beside the metadata when
+    a package came from anywhere but an index. It is the only place that knows,
+    and it has to be asked: chatlens is not on PyPI, so a reinstall command
+    naming the project alone resolves against an index that has never heard of
+    it and fails with "no versions of chatlens".
+    """
+    import json
+    from importlib.metadata import PackageNotFoundError, distribution
+
+    try:
+        raw = distribution('chatlens').read_text('direct_url.json')
+    except (PackageNotFoundError, OSError):
+        return ''
+    try:
+        info = json.loads(raw or '')
+    except ValueError:
+        return ''
+
+    url = info.get('url') or ''
+    vcs_info = info.get('vcs_info') or {}
+    if vcs_info.get('vcs'):
+        source = f'{vcs_info["vcs"]}+{url}'
+        revision = vcs_info.get('requested_revision')
+        return f'{source}@{revision}' if revision else source
+    return url
+
+
 def install_command(extra: str, packages) -> str:
     """The command that installs into *this* interpreter, whatever it is.
 
@@ -58,9 +103,11 @@ def install_command(extra: str, packages) -> str:
     named — and `--force` alone is not enough, since it will not rebuild an
     environment it considers current. Anywhere else, pip and the package names.
     """
-    if 'uv/tools/chatlens' in sys.executable.replace('\\', '/'):
+    if _is_uv_tool():
         tool = shutil.which('uv') or 'uv'
-        return f'{tool} tool install --reinstall "chatlens[{extra}]"'
+        source = installed_from()
+        spec = f'chatlens[{extra}] @ {source}' if source else f'chatlens[{extra}]'
+        return f'{tool} tool install --reinstall "{spec}"'
     return f'{sys.executable} -m pip install {" ".join(packages)}'
 
 

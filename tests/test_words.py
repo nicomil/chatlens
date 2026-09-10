@@ -159,11 +159,17 @@ class OptionalDependencyTests(unittest.TestCase):
         self.assertIn('scikit-learn', command)
 
     def test_a_uv_tool_is_reinstalled_with_the_extra(self):
-        """`--force` alone will not rebuild an environment uv thinks current."""
+        """`--force` alone will not rebuild an environment uv thinks current.
+
+        The environment is asked whether it is a uv tool, rather than its path
+        matched against the default layout — `UV_TOOL_DIR` moves it, and this
+        test used to simulate one by inventing a path, which is exactly the
+        thing that stopped being the question.
+        """
         import unittest.mock
 
-        path = '/home/x/.local/share/uv/tools/chatlens/bin/python'
-        with unittest.mock.patch.object(sys, 'executable', path):
+        with unittest.mock.patch.object(optional, '_is_uv_tool',
+                                        return_value=True):
             command = optional.install_command('words', ['scikit-learn'])
         self.assertIn('--reinstall', command)
         self.assertIn('chatlens[words]', command)

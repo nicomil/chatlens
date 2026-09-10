@@ -81,16 +81,23 @@ need more, and each says so on its own screen with the command to run — built
 from the interpreter chatlens is actually installed in, which is the part people
 get wrong when they type it themselves.
 
-| Finding | What it needs | Size |
+| Finding | What it needs | Roughly |
 |---|---|---|
-| The words, Which representation to trust | scikit-learn, matplotlib, wordcloud | about 150 MB |
-| The relations | spaCy, a language model, statsmodels, RELATIO | about 1.6 GB |
-| The emotions | the NRC Emotion Lexicon, requested from its author | a few MB |
+| The words, Which representation to trust | scikit-learn, matplotlib, wordcloud | 150 MB |
+| The relations | spaCy + a language model + statsmodels + RELATIO | 1.6 GB |
+| The emotions | the NRC Emotion Lexicon | 4 MB |
+
+The relations take three steps rather than one — the extra, the language model
+and RELATIO are separate downloads, and all three are needed. Each screen prints
+the commands in order.
 
 ```bash
 chatlens install-relatio     # clones and installs RELATIO
 chatlens install-topicgpt    # only for the paid topic stage
 ```
+
+The full account, including where everything ends up on each operating system,
+is in the README's [installation section](README.md#2-installation).
 
 ## 4. The five steps
 

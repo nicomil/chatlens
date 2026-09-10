@@ -76,9 +76,24 @@ def internal_links(text: str, targets: dict) -> str:
     text = re.sub(r'§(\d+)', by_number, text)
     for number, path in targets.items():
         text = text.replace(f'](#{number}-', f']({path}#')
-    # On GitHub the guide is `GUIDE.md` beside the README; on the site it is
-    # `guide.md` in the same folder. Left alone, the link points at a file the
-    # site does not have and `mkdocs build --strict` refuses to build.
+    return cross_file_links(text, targets)
+
+
+def cross_file_links(text: str, targets: dict) -> str:
+    """Links between the two documents, which are more files here than there.
+
+    On GitHub the README is one long file and the guide sits beside it. Here
+    the README is sixteen pages and the guide is `guide.md`. A link left as
+    written points at a file the site does not have, and `mkdocs build
+    --strict` — what CI runs — refuses to build.
+
+    Kept apart from the anchor rewriting above because the guide has headings
+    of its own numbered from one: run over it, that rule sends the guide's own
+    table of contents into the README's pages.
+    """
+    for number, path in targets.items():
+        text = text.replace(f'](README.md#{number}-', f']({path}#')
+    text = text.replace('](README.md)', '](index.md)')
     text = text.replace('](GUIDE.md)', '](guide.md)')
     return text
 
@@ -118,7 +133,11 @@ def build() -> int:
     # place in the navigation.
     guide = ROOT / 'GUIDE.md'
     if guide.is_file():
-        shutil.copy2(guide, DOCS / 'guide.md')
+        # Through the rewriter rather than copied: the guide links into the
+        # README, which is one file on GitHub and sixteen pages here.
+        (DOCS / 'guide.md').write_text(
+            cross_file_links(guide.read_text(encoding='utf-8'), targets),
+            encoding='utf-8')
 
     (DOCS / 'index.md').write_text(
         internal_links(front, targets) + '\n', encoding='utf-8')

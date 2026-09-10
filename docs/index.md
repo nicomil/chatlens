@@ -68,9 +68,9 @@ uv tool install git+https://github.com/nicomil/chatlens.git
 chatlens dashboard
 ```
 
-That opens the library in your browser. Create an experiment, drop the CSVs in,
-say which column is which, and press Start run — no editor, no paths, no
-configuration file to write by hand.
+That opens the library in your browser and walks you through five steps —
+the data, the columns, what to explain, the run, and then the findings. No
+editor, no paths, no configuration file to write by hand.
 
 Nothing to analyse yet? Try it on a synthetic study first — nobody's data,
 generated on the spot:
