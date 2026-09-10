@@ -895,15 +895,39 @@ mark {
 }
 
 /* A term in the coefficient table is a way into the messages it came from. */
+/* The whole cell is the target, not the width of the word: "ok" is two
+   characters, and a control two characters wide is one you miss. */
 .termlink {
-  font: inherit; background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; background: none; border: 0; cursor: pointer;
   color: var(--ink); text-align: left;
-  border-bottom: 1px dashed var(--rule-strong);
+  display: block; width: 100%;
+  padding: var(--space-2) 0; margin: calc(var(--space-2) * -1) 0;
 }
-.termlink:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.termlink code { border-bottom: 1px dashed var(--rule-strong); }
+.termlink:hover code { border-bottom-color: var(--accent); }
+.termlink:hover { color: var(--accent); }
 
+/* A drawer at the foot of the window rather than a section at the foot of the
+   page. Clicked from the top of a forty-row table, a panel appended to the
+   document arrives out of sight and reads as a control that does nothing; and
+   the point of an inspector is to compare, which means clicking one term after
+   another without losing your place in the table. */
 .inspectorslot:empty { display: none; }
-.inspectorslot { margin-top: var(--space-6); }
+.inspectorslot {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+  max-height: 45vh; overflow: auto;
+  background: var(--surface);
+  border-top: 1px solid var(--rule-strong);
+  box-shadow: var(--shadow-2);
+}
+.inspectorslot .inspector {
+  border: 0; border-radius: 0; margin: 0; background: none;
+  max-width: 76rem; margin: 0 auto;
+}
+.inspectorslot .inspector > header {
+  position: sticky; top: 0; background: var(--surface); border-bottom: 0;
+}
+@media print { .inspectorslot { display: none; } }
 
 .searchform { display: flex; gap: var(--space-3); align-items: flex-end; }
 .searchform .field { margin-bottom: 0; min-width: 18rem; }

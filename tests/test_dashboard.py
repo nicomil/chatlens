@@ -431,13 +431,14 @@ class LibraryRoutingTests(unittest.TestCase):
         cls.httpd.server_close()
         cls.tmp.cleanup()
 
-    def get(self, path):
+    def get(self, path, extra=None):
         import http.client
 
         conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
-        conn.request('GET', path, headers={
-            'Host': f'127.0.0.1:{self.port}',
-            'Cookie': f'{self.srv.COOKIE_NAME}={self.srv.TOKEN}'})
+        headers = {'Host': f'127.0.0.1:{self.port}',
+                   'Cookie': f'{self.srv.COOKIE_NAME}={self.srv.TOKEN}'}
+        headers.update(extra or {})
+        conn.request('GET', path, headers=headers)
         response = conn.getresponse()
         body = response.read().decode('utf-8', 'replace')
         conn.close()
@@ -476,10 +477,25 @@ class LibraryRoutingTests(unittest.TestCase):
 
     def test_an_experiment_opens_where_the_work_is(self):
         """A study is a sequence, and its address lands on the unfinished part
-        of it rather than always on the same screen."""
-        response, body = self.get('/experiment/first-study')
+        of it rather than always on the same screen.
+
+        A real redirect, not an htmx header: sent only as the header, a person
+        clicking a study in the library landed on the words "Moved to
+        /experiment/…" and a link to click again.
+        """
+        response, _body = self.get('/experiment/first-study')
+        self.assertEqual(response.status, 303)
+        self.assertIn('/experiment/first-study/step/',
+                      response.getheader('Location') or '')
+
+    def test_htmx_is_told_to_move_the_window_instead(self):
+        """It is swapping a fragment into a page that is already open, so a
+        redirect would put the new page inside the old one."""
+        response, _body = self.get('/experiment/first-study',
+                                   {'HX-Request': 'true'})
         self.assertEqual(response.status, 200)
-        self.assertIn('/experiment/first-study/step/', body)
+        self.assertIn('/experiment/first-study/step/',
+                      response.getheader('HX-Redirect') or '')
 
     def test_an_experiment_opens_on_its_own_page(self):
         response, body = self.get('/experiment/first-study/step/data')

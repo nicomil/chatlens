@@ -179,11 +179,30 @@ class Handler(BaseHTTPRequestHandler):
         self._send(markup.encode('utf-8'), status=status, cookie=cookie,
                    extra_headers=extra_headers)
 
-    def _go(self, where: str) -> None:
-        """Send the browser somewhere else after a change that leaves the
-        current page describing something that is no longer there."""
-        self._html(f'<p>Moved to <a href="{ui.esc(where)}">{ui.esc(where)}</a>'
-                   f'.</p>', extra_headers=(('HX-Redirect', where),))
+    def _go(self, where: str, cookie: str = '') -> None:
+        """Send the browser somewhere else.
+
+        Two mechanisms, because there are two kinds of caller. A page the
+        person navigated to needs a real HTTP redirect; htmx, which is
+        swapping a fragment into a page that is already open, needs to be told
+        to move the whole window instead, and follows a 303 by swapping the
+        redirected body into the fragment.
+
+        This used to send only the htmx header, so clicking a study in the
+        library landed on the words "Moved to /experiment/…" and a link.
+        """
+        if self.headers.get('HX-Request'):
+            self._html('', cookie=cookie,
+                       extra_headers=(('HX-Redirect', where),))
+            return
+        # The cookie travels with the redirect. Without it, opening a study's
+        # address directly — with the token in the URL, as the dashboard prints
+        # it — parked the token nowhere and the redirected request arrived
+        # unauthorised.
+        body = (f'<p>Moved to <a href="{ui.esc(where)}">{ui.esc(where)}</a>'
+                f'.</p>').encode('utf-8')
+        self._send(body, status=303, cookie=cookie,
+                   extra_headers=(('Location', where),))
 
     def _error(self, code: int, headline: str, explanation: str = ''):
         """An error page, with whatever it says escaped.
@@ -299,7 +318,7 @@ class Handler(BaseHTTPRequestHandler):
                     # step that is not finished, or the findings once they
                     # exist. It used to open on the run screen whatever state
                     # the study was in.
-                    self._go(_where_to_resume(name))
+                    self._go(_where_to_resume(name), cookie=cookie)
                 elif action.startswith('step/'):
                     self._html(_step_page(name, action.split('/', 1)[1]),
                                cookie=cookie)

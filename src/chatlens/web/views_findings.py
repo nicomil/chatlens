@@ -39,14 +39,20 @@ def _body(entry: str, name: str, query, settled: bool = False) -> str:
         or BODIES[entry]
     module = importlib.import_module(f'chatlens.web.{module_name}')
     render = getattr(module, function)
-    try:
+
+    # These renderers take a name and a query, a name alone, or neither. Asking
+    # the signature is the only honest way to tell: catching `TypeError` around
+    # the call, as this did, cannot distinguish "wrong number of arguments"
+    # from a `TypeError` raised inside the function, and quietly retried with
+    # the query dropped.
+    import inspect
+
+    wanted = len(inspect.signature(render).parameters)
+    if wanted >= 2:
         return render(name, query)
-    except TypeError:
-        # The panels that take no query, and the one that takes only a name.
-        try:
-            return render(name)
-        except TypeError:
-            return render()
+    if wanted == 1:
+        return render(name)
+    return render()
 
 
 def register(name: str, entry: str = '') -> str:
