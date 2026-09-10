@@ -547,8 +547,26 @@ def _outcome_summary(outcome) -> str:
             else '')
     badge = ('<span class="badge ok">usable</span>' if found['usable']
              else '<span class="badge warn">not usable</span>')
+
+    # The distribution, which `describe` has always computed and no screen had
+    # ever shown. Its own docstring says why it matters: a column that turns
+    # out to be a participant code or a timestamp looks obviously wrong the
+    # moment its values are on screen, and looks like nothing at all until
+    # then.
+    seen = found.get('values') or []
+    spread = ''
+    if seen:
+        widest = max(n for _v, n in seen) or 1
+        spread = ui.table(
+            ['Value', '', 'Rows'],
+            [(f'<code>{_e(value)}</code>',
+              ui.bar_cell(count / widest),
+              f'{count}') for value, count in seen],
+            numeric={2},
+            caption=f'The most common values in {path.name}')
+
     return (f'<p class="muted">{badge} {_e(" — ".join(bits))}, '
-            f'in {_e(path.name)}.</p>{note}')
+            f'in {_e(path.name)}.</p>{note}{spread}')
 
 
 def outcome_panel(name: str, message: str = '', error: str = '') -> str:
@@ -587,10 +605,9 @@ def outcome_panel(name: str, message: str = '', error: str = '') -> str:
         '<p class="muted">Nothing is set. Everything descriptive works without '
         'an outcome; the pages that predict one will say it is missing.</p>')
 
+    # The step above says what this is for; saying it twice, in two slightly
+    # different wordings, is how a page stops being read.
     return f'''{notes}
-<p class="muted">The column holding what the analysis should explain — whether a
-proposal was accepted, how much someone earned, whether a group agreed. It is
-read from the dataset built for the unit you choose.</p>
 <form hx-post="{_base(name)}/outcome" hx-target="#outcome" hx-swap="innerHTML">
   <div class="mapping">
     <label class="field maprow"><span class="rolename">Column</span>

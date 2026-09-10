@@ -20,7 +20,19 @@ from chatlens.core import config
 
 # Allowed values. Everything arriving from the browser is checked against these
 # lists: anything absent is ignored, not passed to the command.
+# What each preset means, in the only place the meaning should live. The three
+# cards on the run screen were decoration: `build_command` never read the field
+# they set, and they worked only because a script in the browser copied them
+# onto two checkboxes. With that script blocked, or ahead of it, every preset
+# started the same free run.
+PRESETS = {
+    'base': {'llm': False, 'topics': False},
+    'validation': {'llm': True, 'topics': False},
+    'full': {'llm': True, 'topics': True},
+}
+
 ALLOWED = {
+    'preset': set(PRESETS) | {''},
     'command': {'all', 'merge', 'analyze'},
     'llm_provider': {'', 'openai', 'anthropic', 'ollama'},
     'llm_model': {
@@ -41,6 +53,20 @@ def _pick(form, field, default=''):
     return value if value in ALLOWED[field] else default
 
 
+def stages(form) -> dict:
+    """Which paid stages this run includes.
+
+    The preset decides, and the detail checkboxes are what it sets. Reading the
+    checkboxes first, as this used to, made the preset a label on a state kept
+    somewhere else — two sources of truth for one decision, and the one the
+    reader had clicked was not the one that counted.
+    """
+    chosen = _pick(form, 'preset')
+    if chosen in PRESETS:
+        return dict(PRESETS[chosen])
+    return {'llm': bool(form.get('llm')), 'topics': bool(form.get('topics'))}
+
+
 def build_command(form) -> list[str]:
     """Turn the form into arguments, one by one and only from known values."""
     # `-m chatlens.cli` rather than a script path: once installed there is no
@@ -49,7 +75,8 @@ def build_command(form) -> list[str]:
             _pick(form, 'command', 'all'),
             '--workspace', str(config.WORKSPACE)]
 
-    if form.get('llm'):
+    wanted = stages(form)
+    if wanted['llm']:
         argv.append('--llm')
         provider = _pick(form, 'llm_provider')
         if provider:
@@ -63,7 +90,7 @@ def build_command(form) -> list[str]:
         if levels:
             argv += ['--llm-levels'] + levels
 
-    if form.get('topics'):
+    if wanted['topics']:
         argv += [
             '--topics',
             '--topicgpt-repo', str(config.topicgpt_repo()),

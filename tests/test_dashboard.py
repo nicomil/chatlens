@@ -520,6 +520,31 @@ class LibraryRoutingTests(unittest.TestCase):
         self.assertIn('missing', views.EXIT_MEANING[3])
         self.assertIn('request', views.EXIT_MEANING[-15])
 
+    def test_the_preset_decides_the_run_without_any_javascript(self):
+        """The three cards were decoration: `build_command` never read the
+        field they set, and they worked only because a script in the browser
+        copied them onto two checkboxes."""
+        from chatlens.web.runner import build_command, stages
+
+        self.assertEqual(stages({'preset': ['base']}),
+                         {'llm': False, 'topics': False})
+        self.assertEqual(stages({'preset': ['full']}),
+                         {'llm': True, 'topics': True})
+
+        argv = build_command({'preset': ['full']})
+        self.assertIn('--llm', argv)
+        self.assertIn('--topics', argv)
+        self.assertNotIn('--llm', build_command({'preset': ['base']}))
+
+    def test_an_invented_preset_does_not_start_a_paid_run(self):
+        """It falls back to what the form otherwise says, and an empty form
+        says nothing paid."""
+        from chatlens.web.runner import build_command
+
+        argv = build_command({'preset': ['expensive-please']})
+        self.assertNotIn('--llm', argv)
+        self.assertNotIn('--topics', argv)
+
     def test_a_number_leads_back_to_the_messages_behind_it(self):
         """The path that did not exist: from a term to the sentences it came
         from, with the two counts kept apart."""

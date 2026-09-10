@@ -17,7 +17,7 @@ from pathlib import Path
 from chatlens.web import ui
 from chatlens.core import archive, config
 from chatlens.web import active
-from chatlens.web.runner import runner
+from chatlens.web.runner import runner, stages as runner_stages
 
 MODELS_RUBRIC = ['', 'gpt-4o', 'gpt-4.1', 'gpt-5.6-terra', 'gpt-5.6-luna',
                  'gpt-5.6-sol', 'claude-opus-5', 'llama3']
@@ -135,8 +135,12 @@ def estimate_panel(form=None) -> str:
 
     calls = 0
     parts = []
+    # The same function the runner uses, so the figure shown is the figure that
+    # will be spent. Reading the checkboxes here while the runner read the
+    # preset would be an estimate for a different run.
+    wanted = runner_stages(form)
 
-    if form.get('llm'):
+    if wanted['llm']:
         levels = [v for v in form.get('llm_level', []) if v in counts]
         # The runner validates this field; the estimate did not, and `int()`
         # on a value from the browser raised inside a handler with no try
@@ -151,7 +155,7 @@ def estimate_panel(form=None) -> str:
             calls += n
             parts.append(f'rubric {n}')
 
-    if form.get('topics'):
+    if wanted['topics']:
         unit = (form.get('topicgpt_unit') or ['group'])[0]
         assign = (form.get('topicgpt_assign_unit') or ['dyad_directed'])[0]
         n = counts.get(unit, 0) + counts.get(assign, 0)
@@ -258,12 +262,11 @@ def form_panel() -> str:
       </label>
 
       <div class="block">
-        <label class="inline head">
-          <input type="checkbox" name="llm" value="1"> Validation rubric
-        </label>
+        <p class="inline head">Validation rubric</p>
         <p class="why">Has a model score the conversations, to check that the
           indices computed from the dictionaries really measure what they claim
-          to.</p>
+          to. It runs when the preset above includes it; these are its
+          settings.</p>
         <div class="row">
           <label class="field"><span>Model</span>
             <select name="llm_model">{_options(MODELS_RUBRIC)}</select></label>
@@ -279,12 +282,11 @@ def form_panel() -> str:
       </div>
 
       <div class="block">
-        <label class="inline head">
-          <input type="checkbox" name="topics" value="1"> Conversation themes
-        </label>
+        <p class="inline head">Conversation themes</p>
         <p class="why">TopicGPT first <b>discovers</b> which themes exist by
           reading the longest texts, then <b>attributes</b> them to the finer
-          units.</p>
+          units. It runs when the preset above includes it; these are its
+          settings.</p>
         <div class="row">
           <label class="field"><span>Model</span>
             <select name="topicgpt_model">{_options(MODELS_TOPIC, 'gpt-4o')}</select></label>
