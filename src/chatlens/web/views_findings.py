@@ -24,12 +24,19 @@ BODIES = {
 }
 
 
-def _body(entry: str, name: str, query) -> str:
+# On screen the words finding answers at once and fills in when the model has
+# been fitted. A document cannot wait: printed before the fill-in it would say
+# "Working it out…" where the answer belongs.
+SETTLED = {'words': ('views_words', 'panel')}
+
+
+def _body(entry: str, name: str, query, settled: bool = False) -> str:
     import importlib
 
     if entry not in BODIES:
         return ui.empty('There is nothing under that name.')
-    module_name, function = BODIES[entry]
+    module_name, function = (SETTLED.get(entry) if settled else None) \
+        or BODIES[entry]
     module = importlib.import_module(f'chatlens.web.{module_name}')
     render = getattr(module, function)
     try:
@@ -54,6 +61,65 @@ def register(name: str, entry: str = '') -> str:
     experiment = config.EXPERIMENT
     entries = study_state.findings(experiment, study_state.verdicts())
     return ui.register(name, entries, entry)
+
+
+# The order the findings read in when they are put together as a document:
+# the ground first, then who spoke, then the four ways of turning it into
+# numbers.
+EXPORT_ORDER = ('corpus', 'participation', 'compare', 'words', 'narratives',
+                'emotions')
+
+
+def export(name: str, query=None) -> str:
+    """Every finding that has an answer, in one document.
+
+    The end of the path should be something to send to somebody. This is the
+    register read out in order, with what could not be computed said plainly
+    rather than left out — a summary that quietly omits the four findings that
+    were blocked is a summary that misleads.
+    """
+    from chatlens.core import config
+
+    experiment = config.EXPERIMENT
+    entries = {item['id']: item
+               for item in study_state.findings(experiment,
+                                                study_state.verdicts())}
+
+    parts, missing = [], []
+    for key in EXPORT_ORDER:
+        item = entries.get(key)
+        if item is None:
+            continue
+        if item['verdict'] == ui.UNAVAILABLE:
+            missing.append(item)
+            continue
+        parts.append(f'<section class="exported">'
+                     f'{_body(key, name, query or {}, settled=True)}'
+                     f'</section>')
+
+    if missing:
+        rows = ''.join(
+            f'<li><b>{ui.esc(item["name"])}</b> — {ui.esc(item["note"])}</li>'
+            for item in missing)
+        parts.append(
+            f'<section class="exported"><h2>Not answered here</h2>'
+            f'<p>These questions were not computed on this machine. Left out '
+            f'silently they would make the rest read as the whole of what this '
+            f'study has to say.</p><ul>{rows}</ul></section>')
+
+    return ui.shell(
+        f'{experiment.name} — findings',
+        f'<p class="eyebrow">{ui.esc(experiment.name)}</p>'
+        f'<h1 class="question">What these conversations say</h1>'
+        f'<p class="lead">Every finding this study can answer, in order. '
+        f'Print this page to keep it, or send the link to someone who has the '
+        f'dashboard open.</p>'
+        + '\n'.join(parts),
+        slug=name,
+        study=experiment.name,
+        steps=study_state.step_state(experiment),
+        step='findings',
+    )
 
 
 def page(name: str, entry: str = '', query=None) -> str:

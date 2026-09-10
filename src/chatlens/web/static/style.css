@@ -267,6 +267,28 @@ code { font-family: var(--font-mono); font-size: .88em; }
 .register .entry.open .mark { color: var(--muted); }
 .register .entry.unavailable { opacity: .62; }
 .register .entry.unavailable .mark { color: var(--muted); }
+/* The way out of the register, kept apart from the questions in it. */
+.register .entry.export {
+  margin-top: var(--space-4); padding-top: var(--space-3);
+  border-top: 1px solid var(--rule);
+  border-radius: 0;
+}
+.register .entry.export .mark { color: var(--accent); }
+
+/* Put together as a document: each finding keeps its shape, with a rule
+   between them so the page reads as a sequence rather than as one long
+   screen. */
+.exported + .exported {
+  border-top: 1px solid var(--rule); padding-top: var(--space-7);
+  margin-top: var(--space-7);
+}
+.exported .question { font-size: var(--text-md); }
+.exported .answer { font-size: var(--text-xl); }
+@media print {
+  .masthead, .spine, .register, .controls, .explain { display: none; }
+  .canvas { padding: 0; }
+  .exported { break-inside: avoid; }
+}
 
 /* --- The shape of a finding ---------------------------------------------- */
 

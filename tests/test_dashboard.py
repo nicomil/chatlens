@@ -520,6 +520,14 @@ class LibraryRoutingTests(unittest.TestCase):
         self.assertIn('missing', views.EXIT_MEANING[3])
         self.assertIn('request', views.EXIT_MEANING[-15])
 
+    def test_the_export_says_what_it_could_not_answer(self):
+        """A summary that quietly omits the findings that were blocked is a
+        summary that misleads."""
+        response, body = self.get('/experiment/first-study/findings/export')
+        self.assertEqual(response.status, 200)
+        self.assertIn('Not answered here', body)
+        self.assertNotIn('Working it out', body)
+
     def test_the_preset_decides_the_run_without_any_javascript(self):
         """The three cards were decoration: `build_command` never read the
         field they set, and they worked only because a script in the browser

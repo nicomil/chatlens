@@ -152,9 +152,16 @@ def register(slug: str, findings, current: str = '', refresh: str = '') -> str:
             f'</span></a>')
     arriving = (f' hx-get="{attr(refresh)}" hx-trigger="load"'
                 f' hx-swap="outerHTML"' if refresh else '')
+    # The end of the path: everything that has an answer, in one document.
+    out = (f'<a class="entry export" '
+           f'href="/experiment/{esc(slug)}/findings/export">'
+           f'<span class="mark" aria-hidden="true">⤓</span>'
+           f'<span class="entrytext"><span class="entryname">Put it '
+           f'together</span><span class="entrynote">every finding, in one '
+           f'page</span></span></a>') if slug else ''
     return (f'<aside class="register" aria-label="What this study can answer"'
             f'{arriving}>'
-            f'<h2>Findings</h2>{"".join(rows)}</aside>')
+            f'<h2>Findings</h2>{"".join(rows)}{out}</aside>')
 
 
 # --- the shell -------------------------------------------------------------
