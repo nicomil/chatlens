@@ -108,6 +108,8 @@ chatlens all           # merge + the automatic measures, a few seconds
 | `chatlens runs --prune 2` | keeps the last 2 and deletes the others | — |
 | `chatlens status` | what is in input, in output and among the keys | — |
 | `chatlens demo` | writes a synthetic study and analyses it | — |
+| `chatlens export <name>` | packs a study into one file, results included | — |
+| `chatlens import <file>` | opens one somebody sent | — |
 | `chatlens install-model` | downloads the spaCy language model (for the relations) | — |
 | `chatlens install-topicgpt` | installs TopicGPT (only needed for the topics) | — |
 | `chatlens install-relatio` | installs RELATIO (optional, for the narratives) | — |
@@ -448,7 +450,8 @@ chatlens merge --pseudonymise
 replaces every identifier with a keyed hash. The pseudonyms are stable within a
 workspace, so the same person is the same code across the three tables and
 across a re-run months later; they are not reversible without the key, which
-lives in `output/.pseudonym_key` and must never travel with the data. Delete
+lives in `output/.pseudonym_key` and must never travel with the data —
+`chatlens export` never packs it, for that reason. Delete
 the key and the link is gone for good — which is the point, and also the thing
 to be sure about before you delete it. The flag changes nothing else: every
 number is identical either way.
@@ -1009,6 +1012,57 @@ treatment is assigned but the language is chosen.
 with counts and sentiment) and `..._features_<level>.csv` for the four
 aggregation levels. They serve the checks and analyses at different levels; they
 are not needed for Stata.
+
+### Sending the whole study to somebody
+
+A colleague who wants to *see* the results should not have to reproduce them —
+least of all the two stages that are paid for. So a study travels whole:
+
+```bash
+chatlens export coalition-formation      # writes coalition-formation.chatlens.tar.gz
+```
+
+and at the other end
+
+```bash
+chatlens import coalition-formation.chatlens.tar.gz
+chatlens dashboard
+```
+
+Every finding is there, computed. The rubric cache and TopicGPT's output are
+inside, so nothing is paid for twice. From the dashboard the same thing is a
+button on the findings summary and a fold on the library page — the file is
+the same file either way.
+
+**What does not travel**, whatever the options:
+
+| | |
+|---|---|
+| `output/.pseudonym_key` | it turns the pseudonyms back into Prolific ids. Sending it beside the data it protects would undo the protection, in a file nobody thought about |
+| `.env` | API credentials |
+| `output/runs/` | copies of previous runs — the largest thing in the folder and the least often wanted. `--with-runs` includes them |
+
+**And the identifiers travel unless you say otherwise.** Between co-authors that
+is usually right: the recipient may need to join the conversations back to the
+payoffs. Outside that circle:
+
+```bash
+chatlens export coalition-formation --pseudonymise
+```
+
+rewrites them on the way out, with a key made for that bundle and then thrown
+away — not reversible afterwards by the recipient or by you. The pseudonyms
+stay consistent across every table, so the study still analyses: re-running the
+whole pipeline on a pseudonymised copy of the pilot gives the same 1 593
+participants, 504 valid triads and 8 533 messages as the original. The chat
+texts are untouched either way, and people write their names in them: see
+[§4](#4-participant-data).
+
+Importing never writes over a study already in the library — it stops and says
+so. `--name` puts it in under a different one. And a bundle arrives from
+somebody else, so nothing in it is believed: every path inside is checked
+before anything is written, and an archive that names a path outside its own
+folder is refused whole rather than half-unpacked.
 
 ---
 

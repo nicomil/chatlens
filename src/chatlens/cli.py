@@ -240,6 +240,32 @@ def build_parser() -> argparse.ArgumentParser:
     sp_exp.add_argument('--all', action='store_true',
                         help='include the archived ones')
 
+    sp_export = sub.add_parser(
+        'export', parents=[common],
+        help='pack an experiment into one file, to send to somebody')
+    sp_export.add_argument('name', nargs='?', default=None,
+                           help='which experiment (default: the one -e names, '
+                                'or the current workspace)')
+    sp_export.add_argument('-o', '--output', type=Path, default=None,
+                           help='where to write it (default: here, named '
+                                'after the experiment)')
+    sp_export.add_argument('--with-runs', action='store_true',
+                           help='include the archived previous runs '
+                                '(much larger, rarely wanted)')
+    sp_export.add_argument('--pseudonymise', action='store_true',
+                           help='replace participant identifiers on the way '
+                                'out, irreversibly')
+
+    sp_import = sub.add_parser(
+        'import', parents=[common],
+        help='add an experiment somebody exported')
+    sp_import.add_argument('file', type=Path,
+                           help='the .chatlens.tar.gz to open')
+    sp_import.add_argument('--name', default=None,
+                           help='import it under a different name')
+    sp_import.add_argument('--describe', action='store_true',
+                           help='say what is inside and stop')
+
     sp_demo = sub.add_parser(
         'demo', parents=[common],
         help='write a synthetic workspace and analyse it, to try the tool')
@@ -511,6 +537,91 @@ def cmd_experiments(args) -> int:
             print(f"      PROBLEM: {entry['problem'].splitlines()[0]}")
     print()
     print(f'  chatlens -e "{entries[0]["name"]}" dashboard')
+    return 0
+
+
+def _mb(n) -> str:
+    return f'{n / 1048576:.1f} MB'
+
+
+def cmd_export(args) -> int:
+    """Pack an experiment so that somebody else can open the results.
+
+    Everything the analysis produced travels, the paid stages included, so the
+    person receiving it re-runs nothing. What does not travel is in
+    `core/bundle.py`, which is also where the reasons are.
+    """
+    from chatlens.core import bundle
+
+    if args.name:
+        folder = library.path_for(library.slug(args.name))
+        if not folder.is_dir():
+            raise SystemExit(f'\nNo experiment called "{args.name}" in '
+                             f'{library.ROOT}.\n')
+    else:
+        folder = config.WORKSPACE
+
+    try:
+        manifest = bundle.describe(folder, args.with_runs, args.pseudonymise)
+        if args.pseudonymise:
+            print('Rewriting the identifier columns. The key is made for this '
+                  'bundle and\nthrown away: nobody can undo it afterwards, '
+                  'this machine included.', flush=True)
+        written = bundle.pack(folder, args.output,
+                              with_runs=args.with_runs,
+                              pseudonymise=args.pseudonymise)
+    except bundle.BundleError as exc:
+        raise SystemExit(f'\n{exc}\n') from None
+
+    print(f'\n{manifest["name"]} -> {written}')
+    print(f'  {manifest["n_files"]} files, {_mb(written.stat().st_size)} '
+          f'compressed (from {_mb(manifest["bytes"])})')
+    paid = [label for label, present in (('the rubric', manifest['has_rubric']),
+                                         ('the topics', manifest['has_topics']))
+            if present]
+    print(f'  paid stages inside: {" and ".join(paid) if paid else "none"}')
+    if manifest['pseudonymised']:
+        print('  participant identifiers: replaced')
+    else:
+        print('  participant identifiers: as they are in the export')
+    print()
+    print('They open it with:')
+    print(f'  chatlens import {written.name}')
+    return 0
+
+
+def cmd_import(args) -> int:
+    """Add an experiment somebody exported, without trusting the archive."""
+    from chatlens.core import bundle
+
+    try:
+        manifest = bundle.inspect(args.file)
+    except bundle.BundleError as exc:
+        raise SystemExit(f'\n{exc}\n') from None
+
+    print(f'{manifest["name"]}  ({manifest["slug"]})')
+    print(f'  packed {manifest["packed"]}, adapter {manifest["adapter"]}')
+    print(f'  {manifest["n_files"]} files, {_mb(manifest["bytes"])} unpacked')
+    paid = [label for label, present in (('the rubric', manifest['has_rubric']),
+                                         ('the topics', manifest['has_topics']))
+            if present]
+    print(f'  paid stages inside: {" and ".join(paid) if paid else "none"}')
+    if manifest['pseudonymised']:
+        print('  participant identifiers: replaced before it was sent')
+    if args.describe:
+        return 0
+
+    try:
+        path = bundle.unpack(args.file, library.ROOT, args.name)
+    except bundle.BundleError as exc:
+        raise SystemExit(f'\n{exc}\n') from None
+
+    print(f'\nImported into {path}')
+    print()
+    print('Next:')
+    # The folder, not the name in the manifest: --name may have renamed it,
+    # and the command printed has to be the one that opens what just arrived.
+    print(f'  chatlens -e "{path.name}" dashboard')
     return 0
 
 
@@ -798,6 +909,8 @@ COMMANDS = {
     'install-model': cmd_install_model,
     'keys': cmd_keys,
     'status': cmd_status,
+    'export': cmd_export,
+    'import': cmd_import,
 }
 
 
@@ -829,7 +942,11 @@ def main(argv=None) -> int:
         config.use_experiment(experiment.load(config.WORKSPACE))
     except experiment.ConfigError as exc:
         raise SystemExit(f'\n{exc}\n') from None
-    config.ensure_dirs()
+    # `import` is the one command normally run from wherever the file was
+    # downloaded to, and it writes into the library rather than the workspace.
+    # Making input/ and output/ in somebody's Downloads folder is litter.
+    if args.command != 'import':
+        config.ensure_dirs()
     config.load_env()
     EXPECTED = _expected_errors()
     try:

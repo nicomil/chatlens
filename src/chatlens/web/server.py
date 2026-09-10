@@ -327,6 +327,8 @@ class Handler(BaseHTTPRequestHandler):
                                cookie=cookie)
                 elif action == 'inspect':
                     self._html(views_corpus.inspector(name, query))
+                elif action == 'bundle':
+                    self._bundle(name, query)
                 elif action == 'findings/export':
                     self._html(views_findings.export(name, query),
                                cookie=cookie)
@@ -400,6 +402,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == '/experiments/example':
             self._create_example()
+            return
+
+        if route == '/experiments/import':
+            self._import_experiment()
             return
 
         if route == '/stop':
@@ -496,6 +502,62 @@ class Handler(BaseHTTPRequestHandler):
             self._html(views.log_head())
             return
         self._html(views.log_head())
+
+    def _import_experiment(self) -> None:
+        """Open a bundle somebody sent, from the interface.
+
+        The file arrives from outside this machine, so nothing in it is
+        believed: `bundle.unpack` checks every member before writing any of
+        them, and refuses the archive whole rather than leaving half a study
+        behind. Everything here is the plumbing around that.
+        """
+        import tempfile
+
+        from chatlens.core import bundle
+
+        try:
+            declared = int(self.headers.get('Content-Length') or 0)
+        except (TypeError, ValueError):
+            self._deny('That upload did not say how large it is.')
+            return
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                _fields, files = multipart.parse(
+                    self.rfile,
+                    declared,
+                    self.headers.get('Content-Type', ''),
+                    save_dir=Path(tmp),
+                    max_bytes=views_library.MAX_UPLOAD,
+                    # `.tar.gz` reaches the check as `.gz`, which is what a
+                    # suffix is. What the file actually contains is decided by
+                    # reading it, a few lines below, not by its name.
+                    allowed_suffixes=('.gz', '.tgz'),
+                )
+            except multipart.UploadError as exc:
+                self._html(views_library.library_panel(
+                    import_error=str(exc)))
+                return
+
+            if not files:
+                self._html(views_library.library_panel(
+                    import_error='No file chosen.'))
+                return
+
+            try:
+                manifest = bundle.inspect(files[0]['path'])
+                path = bundle.unpack(files[0]['path'], library.ROOT)
+            except bundle.BundleError as exc:
+                self._html(views_library.library_panel(import_error=str(exc)))
+                return
+
+        paid = [label for label, present in
+                (('the rubric', manifest['has_rubric']),
+                 ('the topics', manifest['has_topics'])) if present]
+        arrived = f' with {" and ".join(paid)} already computed' if paid else ''
+        self._html(views_library.library_panel(
+            message=f'Imported "{manifest["name"]}"{arrived}. '
+                    f'It is in {path.name}.'))
 
     def _create_example(self) -> None:
         """The synthetic study, made from the interface.
@@ -752,6 +814,31 @@ class Handler(BaseHTTPRequestHandler):
             self._download(body, 'image/svg+xml', f'cloud-{stem}.svg')
         else:
             self._send(body, content_type='image/png')
+
+    def _bundle(self, name: str, query) -> None:
+        """The whole study as one file, offered as a download.
+
+        Written to a temporary file and then read, rather than assembled in
+        memory: with the archived runs included this is tens of megabytes, and
+        the compressor works on a file without being asked to hold two copies
+        of the result.
+        """
+        import tempfile
+
+        from chatlens.core import bundle
+
+        wanted = lambda key: (query.get(key) or [''])[0] in ('1', 'yes', 'on')
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                written = bundle.pack(
+                    config.WORKSPACE, Path(tmp) / f'{name}{bundle.SUFFIX}',
+                    with_runs=wanted('runs'),
+                    pseudonymise=wanted('pseudonymise'))
+                body = written.read_bytes()
+        except bundle.BundleError as exc:
+            self._deny(str(exc))
+            return
+        self._download(body, 'application/gzip', f'{name}{bundle.SUFFIX}')
 
     def _download(self, body: bytes, content_type: str, filename: str) -> None:
         """Offered as a file rather than rendered, with a name worth keeping."""

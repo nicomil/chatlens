@@ -180,7 +180,33 @@ def new_form(error: str = '') -> str:
 </form>'''
 
 
-def library_panel(error: str = '', message: str = '') -> str:
+def import_form(error: str = '') -> str:
+    """Opening a bundle a colleague sent.
+
+    A separate fold from "add another experiment" because it is a different
+    act: nothing is configured here, and nothing is run. The file decides what
+    arrives, and the name it carries is used unless it is already taken.
+    """
+    problem = (f'<p class="formerror">{_e(error)}</p>') if error else ''
+    return f'''<form id="importexp" hx-post="/experiments/import"
+      hx-target="#library" hx-swap="innerHTML"
+      hx-encoding="multipart/form-data">
+  {problem}
+  <label class="field"><span>The file they sent you</span>
+    <input type="file" name="bundle" accept=".gz,.tgz,application/gzip"
+           required>
+  </label>
+  <p class="muted small">A <code>.chatlens.tar.gz</code>, written by
+  <code>chatlens export</code> or downloaded from a findings page. Everything
+  already computed comes with it, so nothing has to be run again. An
+  experiment of the same name that is already here is not overwritten: the
+  import stops and says so.</p>
+  <button type="submit" class="btn primary">Import</button>
+</form>'''
+
+
+def library_panel(error: str = '', message: str = '',
+                  import_error: str = '') -> str:
     """The whole middle of the library page, swapped as one piece.
 
     The experiments come first and the form to make another is folded away.
@@ -193,6 +219,7 @@ def library_panel(error: str = '', message: str = '') -> str:
     # Open when there is nothing to choose from instead, or when the last
     # attempt failed and the message is inside it.
     unfolded = ' open' if error or not entries else ''
+    incoming = ' open' if import_error else ''
     # "Another" is wrong when there is not a first one yet.
     summary = 'Add another experiment' if entries else 'New experiment'
 
@@ -203,6 +230,10 @@ def library_panel(error: str = '', message: str = '') -> str:
   <details class="explain newexp"{unfolded}>
     <summary>{summary}</summary>
     <div class="explainbody">{new_form(error)}</div>
+  </details>
+  <details class="explain newexp"{incoming}>
+    <summary>Import one somebody sent</summary>
+    <div class="explainbody">{import_form(import_error)}</div>
   </details>
   {'' if not entries else '<p class="muted">' + EXAMPLE_BUTTON
    + ' &nbsp;a synthetic study, set up and ready to run.</p>'}

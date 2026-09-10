@@ -110,7 +110,8 @@ finished. Opening a study takes you to the first one that is not.
 
 The library is the studies on this machine. Each is a folder of its own — its
 export, its settings, its results — so one can be copied to a colleague or
-included in a backup. **Try an example** makes a synthetic study, set up and
+included in a backup. **Import one somebody sent** opens a study a colleague
+exported, results and all (§5.7). **Try an example** makes a synthetic study, set up and
 ready to run, for anyone who wants to see the procedure before committing their
 own data to it.
 
@@ -289,6 +290,26 @@ already have pointed at by `CHATLENS_NRC_LEXICON`.
 Every finding that has an answer, in one page, in order — and, at the end, the
 ones that could not be computed and why. A summary that quietly dropped those
 would show two answers with no sign that six questions had been asked.
+
+### 5.7 Sending it to somebody
+
+The page above is something to read. Below it are two buttons that send the
+study itself — the configuration, the data and everything already computed, in
+one file. Whoever receives it imports it from their own library page and every
+finding is there, with nothing to run again: the rubric cache and TopicGPT's
+output are inside, so nobody pays twice for the same answers.
+
+The same thing from the terminal:
+
+```bash
+chatlens export coalition-formation      # then send the file
+chatlens import coalition-formation.chatlens.tar.gz
+```
+
+The second button downloads the same study with the participant identifiers
+replaced, using a key made for that file and then thrown away. The chat texts
+travel either way, and people write their names in them. The API keys and the
+pseudonym key never travel at all.
 
 ## 6. Reading the conversations
 

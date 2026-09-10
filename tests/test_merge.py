@@ -831,7 +831,15 @@ class PseudonymisationTests(unittest.TestCase):
                 if self.privacy.is_identifier(column):
                     if before[column]:
                         self.assertNotEqual(before[column], after[column])
-                        self.assertTrue(after[column].startswith('p_'))
+                        # A hexadecimal identifier keeps its shape, because
+                        # something downstream checks it; anything else is
+                        # marked as a pseudonym. See privacy.pseudonym.
+                        if self.privacy.HEX.match(before[column]):
+                            self.assertRegex(after[column], r'^[0-9a-f]+$')
+                            self.assertEqual(len(after[column]),
+                                             len(before[column]))
+                        else:
+                            self.assertTrue(after[column].startswith('p_'))
                 else:
                     self.assertEqual(before[column], after[column], column)
 

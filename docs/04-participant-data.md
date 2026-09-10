@@ -17,7 +17,8 @@ chatlens merge --pseudonymise
 replaces every identifier with a keyed hash. The pseudonyms are stable within a
 workspace, so the same person is the same code across the three tables and
 across a re-run months later; they are not reversible without the key, which
-lives in `output/.pseudonym_key` and must never travel with the data. Delete
+lives in `output/.pseudonym_key` and must never travel with the data —
+`chatlens export` never packs it, for that reason. Delete
 the key and the link is gone for good — which is the point, and also the thing
 to be sure about before you delete it. The flag changes nothing else: every
 number is identical either way.

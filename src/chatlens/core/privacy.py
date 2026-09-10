@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import secrets
 from pathlib import Path
 
@@ -74,12 +75,36 @@ def load_or_create_key(outdir: Path) -> bytes:
     return key
 
 
+# Values whose *shape* is checked somewhere downstream. A Prolific id is
+# twenty-four hex characters and an adapter reads `participant.label` to decide
+# who is a real participant at all; replace it with `p_<digest>` and every row
+# fails that check. The pipeline then runs to completion on nothing — which it
+# did, on a pseudonymised copy of a real study: 8 579 messages in, none out.
+HEX = re.compile(r'^[0-9a-f]+$')
+
+
 def pseudonym(value: str, key: bytes) -> str:
-    """A short, stable, keyed digest. Empty stays empty."""
+    """A stable, keyed digest of the same shape as what it replaces.
+
+    Same shape because a pseudonym has to survive the checks the data is
+    already subject to. Where the original was hexadecimal the pseudonym is
+    hexadecimal of the same length; everything else is marked `p_` so that it
+    is visible as a pseudonym when nothing depends on its form.
+
+    Not reversible without the key either way, which is the property that
+    matters. Empty stays empty: an absent identifier is a fact about the row.
+    """
     if not value:
         return ''
-    digest = hashlib.blake2b(str(value).encode('utf-8'), key=key, digest_size=8)
-    return f'p_{digest.hexdigest()}'
+    text = str(value)
+    digest = hashlib.blake2b(text.encode('utf-8'), key=key, digest_size=32)
+    if HEX.match(text):
+        # Repeated rather than truncated-and-padded: a value longer than the
+        # digest is unusual, and quietly giving two of them the same tail
+        # would collapse two people into one.
+        raw = digest.hexdigest()
+        return (raw * (len(text) // len(raw) + 1))[:len(text)]
+    return f'p_{digest.hexdigest()[:16]}'
 
 
 def pseudonymise_rows(rows, key: bytes) -> list:

@@ -137,12 +137,36 @@ def export(name: str, query=None) -> str:
         f'<p class="lead">Every finding this study can answer, in order. '
         f'Print this page to keep it, or send the link to someone who has the '
         f'dashboard open.</p>'
-        + '\n'.join(parts),
+        + '\n'.join(parts)
+        + _send_to_a_colleague(name),
         slug=name,
         study=experiment.name,
         steps=study_state.step_state(experiment),
         step='findings',
     )
+
+
+def _send_to_a_colleague(name: str) -> str:
+    """The page above is a document. This is the study itself.
+
+    Kept next to it because they answer the same wish and differ in one way
+    that matters: a printed page is read, while this one is opened, and
+    whoever opens it can turn the controls and see the messages behind a
+    number. What it costs is that the participants' words travel with it.
+    """
+    base = f'/experiment/{ui.esc(name)}/bundle'
+    return f'''<section class="exported">
+  <h2>Send the study itself</h2>
+  <p>The page above is something to read. This is something to open: the
+  configuration, the data and everything already computed, in one file. They
+  import it and every finding here is there, with nothing to run again — the
+  paid stages included, so nobody pays twice for the same answers.</p>
+  <p><a class="btn primary" href="{base}">Download the study</a>
+     <a class="btn quiet" href="{base}?pseudonymise=1">Download without the
+     participant identifiers</a></p>
+  <p class="muted small">The chat texts travel either way, and people write
+  their names in them. The API keys and the pseudonym key never travel.</p>
+</section>'''
 
 
 def page(name: str, entry: str = '', query=None) -> str:

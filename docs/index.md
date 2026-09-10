@@ -108,6 +108,8 @@ chatlens all           # merge + the automatic measures, a few seconds
 | `chatlens runs --prune 2` | keeps the last 2 and deletes the others | — |
 | `chatlens status` | what is in input, in output and among the keys | — |
 | `chatlens demo` | writes a synthetic study and analyses it | — |
+| `chatlens export <name>` | packs a study into one file, results included | — |
+| `chatlens import <file>` | opens one somebody sent | — |
 | `chatlens install-model` | downloads the spaCy language model (for the relations) | — |
 | `chatlens install-topicgpt` | installs TopicGPT (only needed for the topics) | — |
 | `chatlens install-relatio` | installs RELATIO (optional, for the narratives) | — |

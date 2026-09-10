@@ -59,6 +59,8 @@ jobs:
         run: python tests/test_views.py
       - name: Corpus
         run: python tests/test_corpus.py
+      - name: Sharing an experiment
+        run: python tests/test_bundle.py
 
       - name: The console script works
         run: chatlens --help
