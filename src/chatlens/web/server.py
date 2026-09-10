@@ -333,8 +333,14 @@ class Handler(BaseHTTPRequestHandler):
                 elif action == 'findings/register':
                     self._html(views_findings.register(
                         name, (query.get('on') or [''])[0]))
-                elif action == 'findings/words/panel':
-                    self._html(views_words.panel(name, query))
+                elif action.endswith('/panel') and action.startswith('findings/'):
+                    # Each finding that fills itself in has a panel of its own.
+                    # Only the words one was routed, so the other two loaded
+                    # the whole findings page into their own container — a page
+                    # inside a page, which reads as the screen having lost its
+                    # mind.
+                    self._html(views_findings.panel(
+                        name, action[len('findings/'):-len('/panel')], query))
                 elif action.startswith('findings/words/'):
                     self._words_file(name, action.split('findings/', 1)[1],
                                      query)
@@ -369,7 +375,7 @@ class Handler(BaseHTTPRequestHandler):
                                config.OUTPUT_DIR / 'runs')
                 else:
                     self._not_found()
-        except active.Unknown as exc:
+        except (active.Unknown, views_findings.Unknown) as exc:
             self._not_found(str(exc))
 
     def do_POST(self):  # noqa: N802
@@ -841,7 +847,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._html(views.estimate_panel(self._form()))
                 else:
                     self._not_found()
-        except (active.Unknown, library.LibraryError) as exc:
+        except (active.Unknown, library.LibraryError,
+                views_findings.Unknown) as exc:
             self._not_found(str(exc))
 
 

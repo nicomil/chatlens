@@ -55,6 +55,21 @@ def _body(entry: str, name: str, query, settled: bool = False) -> str:
     return render()
 
 
+class Unknown(LookupError):
+    """No finding under that name."""
+
+
+def panel(name: str, entry: str, query=None) -> str:
+    """The body of one finding, without the page around it.
+
+    The findings that compute something slow answer at once and fill in; this
+    is what fills them in.
+    """
+    if entry not in BODIES:
+        raise Unknown(f'No finding called "{entry}".')
+    return _body(entry, name, query or {})
+
+
 def register(name: str, entry: str = '') -> str:
     """The register with the verdicts worked out.
 
@@ -135,7 +150,9 @@ def page(name: str, entry: str = '', query=None) -> str:
     experiment = config.EXPERIMENT
     entries = study_state.findings(experiment)
     known = {item['id'] for item in entries}
-    if entry not in known:
+    if entry and entry not in known:
+        raise Unknown(f'No finding called "{entry}".')
+    if not entry:
         entry = entries[0]['id'] if entries else ''
 
     # One place for the inspector on every finding: a term or a relation is
