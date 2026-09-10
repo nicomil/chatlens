@@ -5,46 +5,47 @@ turns a chat log into numbers you can take into Stata or R, and — this is the
 part that makes it more than a measuring tool — it says **which of those numbers
 is worth using**.
 
-Six ways of reading the same conversations, each on its own page:
+```bash
+uv tool install git+https://github.com/nicomil/chatlens.git
+chatlens dashboard
+```
 
-| Page | Question it answers | Needs |
+That opens the library in your browser and walks you through five steps — the
+data, the columns, what to explain, the run, and then the findings. No editor,
+no paths, no configuration file to write by hand. Nothing to analyse yet?
+`chatlens demo` writes a synthetic four-player bargaining study, belonging to
+nobody, and runs the whole procedure over it.
+
+## What it will tell you
+
+Six readings of the same conversations, each answering one question:
+
+| Finding | Question | Needs |
 |---|---|---|
-| **Participation** | who spoke to whom, and who never did | nothing |
-| **Words** | which terms go with the outcome | `words` extra |
-| **Narratives** | who does what to whom, and which of it matters | `narratives` extra |
-| **Emotions** | eight emotion categories, and how much of the corpus they reach | a lexicon |
-| **Topics** | what the conversations were about | an API key |
-| **Compare** | which of the above is worth building on | `words` extra |
+| **Who spoke to whom** | who wrote to whom, and who never wrote at all | nothing |
+| **The words** | which terms go with the outcome | `words` extra |
+| **The relations** | who does what to whom, and which of it matters | `narratives` extra |
+| **The emotions** | eight categories, and how much of the corpus they reach | a lexicon |
+| **The topics** | what the conversations were about | an API key |
+| **Which to trust** | which of the above is worth building on | `words` extra |
 
 Plus the deterministic language measures — volume, emotional tone, sentiment,
 analytical thinking, Clout, Authenticity — computed at pair and group level and
-grafted onto your choice datasets.
+grafted onto your choice datasets. Only the topics and the validation rubric
+cost anything; everything else runs on your machine, on data that never leaves
+it.
 
-**One idea runs through all of it.** Longer messages contain more of everything,
-so a text measure that looks impressive is often measuring how much somebody
-typed. Every page that predicts anything shows length beside it, and says so when
-length wins. On the experiment this was built for, that turned out to be the
-answer twice.
+**One idea runs through all of it.** Longer messages contain more of
+everything, so a text measure that looks impressive is often measuring how much
+somebody typed. Every finding that predicts anything shows length beside it,
+and says so when length wins. On the experiment this was built for, that turned
+out to be the answer twice.
 
-The code is split where the reusable part ends and the experiment-specific part
-begins. An **adapter** turns one experiment's export into the canonical message
-tables; the **core** — measures, rubric, topics, aggregation, report — works from
-those tables alone and never reads a raw export itself.
+## Where things live
 
-Two adapters ship with it. `generic_chat` needs no code at all where the export
-is already one message per row: the column names go in a configuration file.
-`otree_coalition` is the worked example of the other kind, written for a
-three-player coalition game in oTree, where the groups, the channels and the
-choices all have to be reconstructed. See [[§5](05-your-own-experiment.md)](05-your-own-experiment.md#your-own-experiment) for how to
-run your own study.
-
-## The three things to know
-
-**Everything happens in a workspace**: an ordinary folder of yours holding
-`input/` and `output/`. Commands act on the current directory unless
-`--workspace` says otherwise, so the usual way to work is to change into the
-experiment's folder and run the command there. Two experiments are two folders,
-and they never touch each other's results.
+Everything happens in a **workspace**: an ordinary folder of yours holding
+`input/` and `output/`. Two experiments are two folders, and they never touch
+each other's results.
 
 ```
 my_experiment/          <- the workspace
@@ -52,92 +53,80 @@ my_experiment/          <- the workspace
 └── output/             everything that gets produced
 ```
 
-**Input files are not passed on the command line.** You drop them in `input/`
-and they are recognised by name. That is why the procedure comes down to a
-single command, and also why `input/` must hold nothing else.
+Input files are not passed on the command line: you drop them in `input/` and
+they are recognised by name. That is why the procedure comes down to a single
+command, and also why `input/` must hold nothing else. The dashboard keeps its
+studies in the application data directory instead, so neither command above
+cares which folder you run it from — see
+[installation](installation.md).
 
-**Nothing sensitive leaves your machine, and nothing sensitive is kept next to
-the code.** `input/` and `output/` hold participant identifiers and chat texts;
-the API keys live in this machine's configuration directory, outside any
-repository, so they cannot be committed by mistake.
-
-## Quick start
-
-```bash
-uv tool install git+https://github.com/nicomil/chatlens.git
-chatlens dashboard
-```
-
-That opens the library in your browser and walks you through five steps —
-the data, the columns, what to explain, the run, and then the findings. No
-editor, no paths, no configuration file to write by hand.
-
-Nothing to analyse yet? Try it on a synthetic study first — nobody's data,
-generated on the spot:
-
-```bash
-chatlens demo
-```
-
-It writes a small four-player bargaining experiment with two treatments, runs
-the whole pipeline over it and leaves you a report to read. It is the same
-procedure you will run on your own data.
-
-### From the terminal instead
+From a terminal rather than the browser:
 
 ```bash
 cd my_experiment       # the folder holding input/
 chatlens all           # merge + the automatic measures, a few seconds
 ```
 
-`chatlens --help` lists every command. The main ones:
+`all` is both *steps*, not everything: merge plus the automatic measures, no key
+and a few seconds. `--llm` and `--topics` add the paid stages. The full list is
+in [commands](commands.md).
 
-| Command | What it does | API key |
-|---|---|---|
-| `chatlens dashboard` | opens the library of experiments in the browser | — |
-| `chatlens all` | merge + automatic measures, a few seconds | **no** |
-| `chatlens merge` / `chatlens analyze` | the two steps separately | no |
-| `chatlens keys` | configures the API keys, guided | — |
-| `chatlens analyze --llm --llm-replicates 2` | measures + validation rubric | yes |
-| `chatlens analyze --topics` | measures + topics with TopicGPT | yes |
-| `chatlens subtopics` | subdivides the topics a run already found | yes |
-| `chatlens all --llm --topics` | everything: rubric and topics included | yes |
-| `chatlens experiments` | lists the experiments from the terminal | — |
-| `chatlens report` | regenerates the readable summary | — |
-| `chatlens runs` | lists the archived runs | — |
-| `chatlens runs --prune 2` | keeps the last 2 and deletes the others | — |
-| `chatlens status` | what is in input, in output and among the keys | — |
-| `chatlens demo` | writes a synthetic study and analyses it | — |
-| `chatlens export <name>` | packs a study into one file, results included | — |
-| `chatlens import <file>` | opens one somebody sent | — |
-| `chatlens install-model` | downloads the spaCy language model (for the relations) | — |
-| `chatlens install-topicgpt` | installs TopicGPT (only needed for the topics) | — |
-| `chatlens install-relatio` | installs RELATIO (optional, for the narratives) | — |
+## Participant data
 
-**`all` is both *steps*, not everything.** It means merge plus analysis, as
-opposed to `merge` and `analyze` taken singly: it runs only the automatic
-measures, needs no key at all and takes a few seconds. Adding `--llm` and
-`--topics` brings in the validation rubric and the topics, which need a key and
-take far longer. You start from `chatlens all`; you add the rest once the keys
-are there.
+The files this produces are **personal data**. The chat texts are the object of
+the analysis and are never altered; the recruitment platform's participant id
+passes straight through unless you ask for it not to, and `chatlens merge
+--pseudonymise` replaces every identifier with a keyed hash. The paid stages
+send the conversations to a third party, which is a disclosure your ethics
+approval has to cover. The API keys are kept in this machine's configuration
+directory, outside any repository, so they cannot be committed by mistake.
 
-## Contents
+That paragraph is a summary and not the whole of it:
+[participant data](participant-data.md) is the page to read before
+running this on a real study.
 
-**[The illustrated guide](guide.md)** — the whole tool,
-step by step, with screenshots. Start there.
+## The rest of the documentation
 
-1. [What it does, in brief](01-what-it-does-in-brief.md#what-it-does-in-brief)
-2. [Installation](02-installation.md#installation)
-3. [API keys](03-api-keys.md#api-keys)
-4. [Participant data](04-participant-data.md#participant-data)
-5. [Your own experiment](05-your-own-experiment.md#your-own-experiment)
-6. [The analysis procedure](06-the-analysis-procedure.md#the-analysis-procedure)
-7. [The pages in the dashboard](07-the-pages-in-the-dashboard.md#the-pages-in-the-dashboard)
-8. [The files produced](08-the-files-produced.md#the-files-produced)
-9. [Before analysing: three filters](09-before-analysing-three-filters.md#before-analysing-three-filters)
-10. [How the measures are built](10-how-the-measures-are-built.md#how-the-measures-are-built)
-11. [TopicGPT](11-topicgpt.md#topicgpt)
-12. [Costs and volumes](12-costs-and-volumes.md#costs-and-volumes)
-13. [If something does not add up](13-if-something-does-not-add-up.md#if-something-does-not-add-up)
-14. [Checking the tools](14-checking-the-tools.md#checking-the-tools)
-15. [Results on the pilot](15-results-on-the-pilot.md#results-on-the-pilot)
+**[The illustrated guide](guide.md)** is the place to start: the whole tool,
+step by step, with screenshots of every screen.
+
+| | |
+|---|---|
+| [Installation](installation.md) | the two commands, the three add-ons, the emotion lexicon, where files end up on each operating system |
+| [Commands](commands.md) | everything the terminal can be asked to do |
+| [Your own experiment](your-experiment.md) | the configuration file, the two adapters, and how to write one for an export nothing else understands |
+| [The analysis procedure](procedure.md) | what each stage does, in the order it happens, and the three filters applied before anything is measured |
+| [The pages in the dashboard](dashboard.md) | what each finding shows and how to read it |
+| [The files produced](files.md) | every output column, and how to send a whole study to a colleague |
+| [How the measures are built](measures.md) | the formulas, the dictionaries and the choices behind them |
+| [API keys, and what they cost](keys-and-costs.md) | which key each stage wants, and the price of a run |
+| [TopicGPT](topics.md) | the method, its backends, and what it does badly on short messages |
+| [Participant data](participant-data.md) | identifiers, pseudonymisation, and what leaves the machine |
+| [When something does not add up](troubleshooting.md) | the errors worth recognising, and how to check the tools are doing what they claim |
+| [Results on the pilot](pilot.md) | a worked output, to see what the numbers look like |
+
+## Design
+
+An **adapter** turns one experiment's export into the canonical message tables;
+the **core** — measures, rubric, topics, aggregation, report — works from those
+tables alone and never reads a raw export itself. That line is where the
+reusable part ends and the experiment-specific part begins.
+
+Two adapters ship with it. `generic_chat` needs no code at all where the export
+is already one message per row: the column names go in a configuration file.
+`otree_coalition` is the worked example of the other kind, written for a
+three-player coalition game in oTree, where the groups, the channels and the
+choices all have to be reconstructed.
+
+The code is in `src/chatlens/`: `core/` for the analysis steps, `adapters/` for
+the experiment-specific part, `web/` for the dashboard. The development setup is
+in [CONTRIBUTING.md](https://github.com/nicomil/chatlens/blob/main/CONTRIBUTING.md).
+
+## Citing it
+
+The methods are other people's and are cited where they are used: RELATIO (Ash,
+Gauthier and Widmer 2024), the NRC Emotion Lexicon (Mohammad and Turney 2013),
+TopicGPT (Pham et al. 2024), VADER (Hutto and Gilbert 2014). `CITATION.cff` has
+the full list and the entry for this tool.
+
+MIT licensed. See [LICENSE](https://github.com/nicomil/chatlens/blob/main/LICENSE).

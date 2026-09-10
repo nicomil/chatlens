@@ -1,4 +1,4 @@
-# API keys
+# API keys, and what they cost
 
 | Key | What it is for | Required? |
 |---|---|---|
@@ -85,3 +85,54 @@ Then add `--topicgpt-api ollama --topicgpt-model llama3` or
 labels the model produces, and the paper uses GPT-4. With a small local model
 the pipeline still runs, but the topics come out poorer. It is the right road
 for a trial run, not for publishable results.
+
+## Which stages cost anything
+
+Three independent stages, each switchable on its own.
+
+| Stage | Where | Does it need a credential? |
+|---|---|---|
+| Deterministic text measures | always on | **no** |
+| Participation — who spoke to whom | a page | **no** |
+| Words, and the comparison | a page, `words` extra | **no** |
+| Narratives | a page, `narratives` extra | **no** |
+| Emotions | a page, plus a lexicon you request | **no** |
+| Validation rubric | `--llm` | one of OpenAI, Anthropic or a local model |
+| TopicGPT | `--topics` | depends on the backend |
+
+Only the last two cost anything. Everything else runs on your machine, on data
+that never leaves it.
+
+The first stage runs on Python's standard library alone: it can be executed
+straight away, with nothing to obtain first. The other two serve, respectively,
+to validate the measures and to extract the topics.
+
+**One key covers everything.** The validation rubric is not tied to a specific
+provider: if OpenAI is already in use for TopicGPT, the same key covers that
+stage too.
+
+## What a run costs
+
+On the final dataset (~1,557 participants, ~519 triads) the directed pairs will
+be about 3,100 and the groups 519.
+
+**TopicGPT** queries the model once per document, in two phases: in the order of
+6,500 calls on short texts.
+
+**The rubric** with two replicates comes to about 7,200 calls. Two devices keep
+the count down: the system prompt, identical on every call, is marked for the
+cache, and `--llm-batch` uses the Batches API at half price (asynchronous
+outcome, batch id to be kept; available only with the Anthropic provider).
+
+These are modest but not negligible figures: it is worth setting a spending cap
+on the provider's dashboard before launching.
+
+The tool has a cap of its own, because the call count is the product of four
+choices — levels, replicates, models, units — and none of them looks expensive
+on its own. Above a thousand calls a run says what it is about to do and, at a
+terminal, waits for a yes; above twenty thousand it stops, since nothing
+legitimate reaches that figure and what does is a typo. `--max-calls N` raises
+the limit when you mean it, `--yes` skips the question. Away from a terminal —
+the dashboard's subprocess, a scheduled job — there is nobody to answer, so a
+run under the limit proceeds with the figure printed and one above it is
+refused.

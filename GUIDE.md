@@ -98,7 +98,7 @@ chatlens install-topicgpt    # only for the paid topic stage
 ```
 
 The full account, including where everything ends up on each operating system,
-is in the README's [installation section](README.md#2-installation).
+is in [installation](handbook/installation.md).
 
 ## 4. The five steps
 
@@ -106,7 +106,7 @@ A study has a life, and the bar across the top of every screen is that life:
 **Data, Columns, Outcome, Run, Findings.** Each step says whether it is
 finished. Opening a study takes you to the first one that is not.
 
-![The library](images/01-library.png)
+![The library](docs/images/01-library.png)
 
 The library is the studies on this machine. Each is a folder of its own — its
 export, its settings, its results — so one can be copied to a colleague or
@@ -117,7 +117,7 @@ own data to it.
 
 ### 4.1 Data
 
-![Step 1](images/02-step-data.png)
+![Step 1](docs/images/02-step-data.png)
 
 The CSVs the study is built from, and what part each plays. The same export can
 be shaped more than one way, so the roles are chosen rather than guessed: which
@@ -129,7 +129,7 @@ the channels and the choices.
 
 ### 4.2 Columns
 
-![Step 2](images/03-step-columns.png)
+![Step 2](docs/images/03-step-columns.png)
 
 Four columns are needed: the group, the sender, the recipient, the text. Time
 and treatment are used if they are there. The names are read from the file's own
@@ -141,7 +141,7 @@ the name the report should print.
 
 ### 4.3 Outcome
 
-![Step 3](images/04-step-outcome.png)
+![Step 3](docs/images/04-step-outcome.png)
 
 The column the analysis should explain — whether an offer was accepted, how much
 someone earned, whether a group agreed. Everything descriptive works without
@@ -157,7 +157,7 @@ values are on screen, and looks like nothing at all until then.
 
 ### 4.4 Run
 
-![Step 4](images/05-step-run.png)
+![Step 4](docs/images/05-step-run.png)
 
 Three presets. **Measures only** is free, needs no key and takes seconds:
 volume, sentiment and the language indices. The other two send the conversations
@@ -170,7 +170,7 @@ with the files it produced.
 
 ## 5. The findings
 
-![The findings](images/10-findings.png)
+![The findings](docs/images/10-findings.png)
 
 The register on the left is the six questions, each with what was found:
 
@@ -203,7 +203,7 @@ effect and still predict poorly, because it appears in a fraction of the rows.
 
 ### 5.2 Who spoke to whom
 
-![Participation](images/12-participation.png)
+![Participation](docs/images/12-participation.png)
 
 Every other finding measures text, so it can only see the pairs that produced
 some. This one shows the whole grid, including the pairs where nothing was said
@@ -220,7 +220,7 @@ one of whom did not — **the choice went to the one who wrote 357 times against
 
 ### 5.3 The words
 
-![The words](images/13-words.png)
+![The words](docs/images/13-words.png)
 
 A penalised regression picks the terms, so a term being here says it carries
 signal and its size says how much the penalty let it keep. None of it is an
@@ -232,7 +232,7 @@ control: click one and the messages it came from open below.
 **The penalty is the knob worth moving.** Watching terms appear and disappear as
 it changes says how fragile the selection is, which a single table hides.
 
-![A tighter penalty](images/14-words-strict.png)
+![A tighter penalty](docs/images/14-words-strict.png)
 
 The two clouds are the same information as the table, sized by coefficient and
 split by direction — one image cannot show both directions without the reader
@@ -240,7 +240,7 @@ having to guess which large word means which.
 
 ### 5.4 The relations
 
-![The relations](images/15-narratives.png)
+![The relations](docs/images/15-narratives.png)
 
 The text read as relations — who does what to whom — rather than as words. A
 relation has a direction, which a word count does not: in a study of who
@@ -261,7 +261,7 @@ than reporting the one that came out significant.
 
 ### 5.5 The emotions
 
-![The emotions](images/16-emotions.png)
+![The emotions](docs/images/16-emotions.png)
 
 Ten categories from the NRC Emotion Lexicon — eight emotions, two sentiments —
 counted over the same documents as everything else.
@@ -285,7 +285,7 @@ already have pointed at by `CHATLENS_NRC_LEXICON`.
 
 ### 5.6 Put it together
 
-![The export](images/17-export.png)
+![The export](docs/images/17-export.png)
 
 Every finding that has an answer, in one page, in order — and, at the end, the
 ones that could not be computed and why. A summary that quietly dropped those
@@ -313,7 +313,7 @@ pseudonym key never travel at all.
 
 ## 6. Reading the conversations
 
-![The conversations](images/11-corpus.png)
+![The conversations](docs/images/11-corpus.png)
 
 Every other screen measures the text. This one shows it: the conversations
 grouped as they happened and in the order they happened, with the shape of each

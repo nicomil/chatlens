@@ -79,7 +79,7 @@ check: test ## Tests plus a look at the installed state
 dashboard: $(DEPS) ## Open the dashboard on the current folder
 	@$(PY) -m chatlens.cli dashboard $(ARGS)
 
-docs: $(DEPS) ## Regenerate docs/ and mkdocs.yml from README.md (clears docs/)
+docs: $(DEPS) ## Regenerate docs/ and mkdocs.yml from the sources (clears docs/)
 	@$(PY) scripts/build_docs.py
 
 docs-serve: docs ## Build the docs and serve them locally

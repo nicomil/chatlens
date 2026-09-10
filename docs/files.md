@@ -205,7 +205,7 @@ stay consistent across every table, so the study still analyses: re-running the
 whole pipeline on a pseudonymised copy of the pilot gives the same 1 593
 participants, 504 valid triads and 8 533 messages as the original. The chat
 texts are untouched either way, and people write their names in them: see
-[[§4](04-participant-data.md)](04-participant-data.md#participant-data).
+[[participant data](participant-data.md)](participant-data.md).
 
 Importing never writes over a study already in the library — it stops and says
 so. `--name` puts it in under a different one. And a bundle arrives from

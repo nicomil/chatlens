@@ -98,7 +98,7 @@ chatlens install-topicgpt    # only for the paid topic stage
 ```
 
 The full account, including where everything ends up on each operating system,
-is in the README's [installation section](02-installation.md#installation).
+is in [installation](installation.md).
 
 ## 4. The five steps
 

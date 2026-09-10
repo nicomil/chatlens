@@ -48,7 +48,7 @@ shrink every standard error.
 
 **The main sample is a flag, not a deletion.** `in_sample` is 1 when the triad
 is valid, the text is language and the sender wrote something — the three
-filters of README §6. The rows that fail it stay in the datasets, so a
+filters of [the analysis procedure](../../../handbook/procedure.md). The rows that fail it stay in the datasets, so a
 robustness check on the full sample is one `keep if` away.
 
 **Baseline (private) is the reference category** in every regression, and the

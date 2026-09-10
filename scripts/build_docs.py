@@ -1,14 +1,22 @@
-"""Generate the documentation site from README.md.
-
-The README is the single source. Keeping a second copy of the same prose under
-`docs/` would mean keeping two copies in step, and the one nobody edits is the
-one people read.
+"""Assemble the documentation site from the files people actually edit.
 
     python scripts/build_docs.py
 
-It splits the README on its numbered headings, writes one page per section
-under `docs/`, and regenerates the navigation in `mkdocs.yml`. Everything it
-writes is derived: edit the README, run this, commit both.
+The sources are the README, the illustrated guide, and the pages in
+`handbook/`. Each becomes one page of the site; `docs/` holds nothing that was
+written by hand and is regenerated whole. Edit a source, run this, commit both.
+
+It used to be one source. The README carried every section and this script cut
+it into sixteen pages on its numbered headings — which worked, and produced a
+README of fifteen hundred lines that nobody could land on and read. The
+sections are now files of their own, and splitting them is somebody's editorial
+decision rather than a regular expression's.
+
+What is left to do here is the links. On GitHub `handbook/installation.md` sits
+in a folder beside the README; on the site every page is a sibling and the
+folder is gone. A link left as written points at a file the site does not have,
+and `mkdocs build --strict` — what CI runs — refuses to build rather than
+serving it broken.
 """
 
 from __future__ import annotations
@@ -19,103 +27,83 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-README = ROOT / 'README.md'
 DOCS = ROOT / 'docs'
 MKDOCS = ROOT / 'mkdocs.yml'
+HANDBOOK = ROOT / 'handbook'
 
-SECTION_RE = re.compile(r'^## (\d+)\. (.+)$')
+# Where a link that is not a documentation page points instead.
+REPO = 'https://github.com/nicomil/chatlens'
 
-
-def slug(text: str) -> str:
-    text = text.lower()
-    text = re.sub(r'[^a-z0-9\s-]', '', text)
-    return re.sub(r'[\s-]+', '-', text).strip('-')
-
-
-def split(markdown: str):
-    """The front matter, then one (number, title, body) per section."""
-    lines = markdown.splitlines()
-
-    # Everything before the first numbered section is the landing page, minus
-    # the table of contents, which the site's navigation replaces.
-    first = next(i for i, line in enumerate(lines) if SECTION_RE.match(line))
-    front = lines[:first]
-    try:
-        start = front.index('## Contents')
-        end = next(i for i in range(start + 1, len(front))
-                   if front[i].startswith('---'))
-        front = front[:start] + front[end + 1:]
-    except (ValueError, StopIteration):
-        pass
-
-    sections, current = [], None
-    for line in lines[first:]:
-        match = SECTION_RE.match(line)
-        if match:
-            current = dict(number=int(match.group(1)),
-                           title=match.group(2).strip(), body=[])
-            sections.append(current)
-        elif current is not None:
-            current['body'].append(line)
-
-    for section in sections:
-        # The horizontal rule that separated sections in one long document is
-        # noise once each is a page of its own.
-        while section['body'] and section['body'][-1].strip() in ('', '---'):
-            section['body'].pop()
-
-    return '\n'.join(front).strip(), sections
+# The order of the navigation, which is not alphabetical and not a directory
+# listing: it is the order somebody meets these things. Installation before
+# the analysis, the analysis before the files it writes, the troubleshooting
+# last because it is looked up rather than read.
+PAGES = [
+    ('installation', 'Installation'),
+    ('commands', 'Commands'),
+    ('your-experiment', 'Your own experiment'),
+    ('procedure', 'The analysis procedure'),
+    ('dashboard', 'The pages in the dashboard'),
+    ('files', 'The files produced'),
+    ('measures', 'How the measures are built'),
+    ('keys-and-costs', 'API keys, and what they cost'),
+    ('topics', 'TopicGPT'),
+    ('participant-data', 'Participant data'),
+    ('troubleshooting', 'When something does not add up'),
+    ('pilot', 'Results on the pilot'),
+]
 
 
-def internal_links(text: str, targets: dict) -> str:
-    """Rewrite `see §3` and `#3-api-keys` to point at the right page."""
-    def by_number(match):
-        number = int(match.group(1))
-        return f'[§{number}]({targets[number]})' if number in targets else match.group(0)
-
-    text = re.sub(r'§(\d+)', by_number, text)
-    for number, path in targets.items():
-        text = text.replace(f'](#{number}-', f']({path}#')
-    return cross_file_links(text, targets)
-
-
-def cross_file_links(text: str, targets: dict) -> str:
-    """Links between the two documents, which are more files here than there.
-
-    On GitHub the README is one long file and the guide sits beside it. Here
-    the README is sixteen pages and the guide is `guide.md`. A link left as
-    written points at a file the site does not have, and `mkdocs build
-    --strict` — what CI runs — refuses to build.
-
-    Kept apart from the anchor rewriting above because the guide has headings
-    of its own numbered from one: run over it, that rule sends the guide's own
-    table of contents into the README's pages.
-    """
-    for number, path in targets.items():
-        text = text.replace(f'](README.md#{number}-', f']({path}#')
+def flatten_links(text: str) -> str:
+    """Point every cross-reference at the flat layout the site has."""
+    # handbook/installation.md -> installation.md, anchors and all.
+    text = re.sub(r'\]\(handbook/([a-z0-9-]+\.md)', r'](\1', text)
     text = text.replace('](README.md)', '](index.md)')
+    text = re.sub(r'\]\(README\.md#', '](index.md#', text)
     text = text.replace('](GUIDE.md)', '](guide.md)')
+    # A handbook page linking to a sibling already writes the flat form, so
+    # nothing to do for those. Links out of the handbook to the root files:
+    text = text.replace('](../GUIDE.md)', '](guide.md)')
+    text = text.replace('](../README.md)', '](index.md)')
+    # The guide writes `docs/images/...`, which is where the screenshots
+    # actually are and so what GitHub needs; on the site the page is already
+    # inside `docs/` and the same path would look for `docs/docs/images`.
+    text = text.replace('](docs/images/', '](images/')
+    # Files that belong to the repository and not to the site. They have to
+    # stay relative on GitHub, where the README is read as often as here, so
+    # they are sent to GitHub rather than dropped or copied in.
+    for name in ('CONTRIBUTING.md', 'LICENSE'):
+        text = text.replace(f']({name})', f']({REPO}/blob/main/{name})')
     return text
 
 
+def title_of(text: str, fallback: str) -> str:
+    for line in text.splitlines():
+        if line.startswith('# '):
+            return line[2:].strip()
+    return fallback
+
+
 def build() -> int:
-    if not README.is_file():
-        print(f'{README} not found', file=sys.stderr)
+    readme = ROOT / 'README.md'
+    if not readme.is_file():
+        print(f'{readme} not found', file=sys.stderr)
         return 1
 
-    front, sections = split(README.read_text(encoding='utf-8'))
-    if not sections:
-        print('No numbered section found in the README.', file=sys.stderr)
+    missing = [name for name, _t in PAGES
+               if not (HANDBOOK / f'{name}.md').is_file()]
+    if missing:
+        print(f'Missing in {HANDBOOK}: {", ".join(missing)}', file=sys.stderr)
         return 1
 
-    # Everything here is generated from the README, so the folder is cleared
-    # rather than merged — a page whose section was renamed would otherwise
-    # survive under its old name and be served forever.
+    # Everything here is generated, so the folder is cleared rather than
+    # merged — a page whose source was renamed would otherwise survive under
+    # its old name and be served forever.
     #
-    # Except the assets. Screenshots are not derived from the README and cannot
-    # be regenerated by this script, so a folder of them has to outlive the
-    # rebuild. It has cost this project three deletions to learn that; keep the
-    # exception rather than the tidiness.
+    # Except the assets. Screenshots are not derived from any of the sources
+    # and cannot be regenerated by this script, so a folder of them has to
+    # outlive the rebuild. It has cost this project three deletions to learn
+    # that; keep the exception rather than the tidiness.
     keep = {'images'}
     if DOCS.exists():
         for entry in DOCS.iterdir():
@@ -124,42 +112,33 @@ def build() -> int:
             shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
     DOCS.mkdir(parents=True, exist_ok=True)
 
-    targets = {s['number']: f"{s['number']:02d}-{slug(s['title'])}.md"
-               for s in sections}
-
-    # The guide is written by hand, not split out of the README: it has its own
-    # structure and its own figures, and the numbered-section machinery would
-    # cut it into pieces that mean nothing apart. It is copied in and given a
-    # place in the navigation.
-    guide = ROOT / 'GUIDE.md'
-    if guide.is_file():
-        # Through the rewriter rather than copied: the guide links into the
-        # README, which is one file on GitHub and sixteen pages here.
-        (DOCS / 'guide.md').write_text(
-            cross_file_links(guide.read_text(encoding='utf-8'), targets),
-            encoding='utf-8')
+    written = []
 
     (DOCS / 'index.md').write_text(
-        internal_links(front, targets) + '\n', encoding='utf-8')
+        flatten_links(readme.read_text(encoding='utf-8')), encoding='utf-8')
+    written.append(('Home', 'index.md'))
 
-    for section in sections:
-        body = '\n'.join(section['body']).strip()
-        page = f"# {section['title']}\n\n{internal_links(body, targets)}\n"
-        (DOCS / targets[section['number']]).write_text(page, encoding='utf-8')
+    guide = ROOT / 'GUIDE.md'
+    if guide.is_file():
+        (DOCS / 'guide.md').write_text(
+            flatten_links(guide.read_text(encoding='utf-8')), encoding='utf-8')
+        written.append(('Guide', 'guide.md'))
 
-    # Titles are quoted: "Before analysing: three filters" contains a colon,
-    # which YAML would otherwise read as a second mapping key.
-    nav = ['nav:', '  - Home: index.md']
-    if (DOCS / 'guide.md').is_file():
-        nav.append('  - "Guide": guide.md')
-    nav += [f'  - "{s["title"]}": {targets[s["number"]]}' for s in sections]
+    for name, fallback in PAGES:
+        source = (HANDBOOK / f'{name}.md').read_text(encoding='utf-8')
+        (DOCS / f'{name}.md').write_text(flatten_links(source),
+                                         encoding='utf-8')
+        written.append((title_of(source, fallback), f'{name}.md'))
 
+    # Titles are quoted: "API keys, and what they cost" contains a comma, and
+    # others contain colons, which YAML would read as structure.
+    nav = ['nav:'] + [f'  - "{title}": {path}' for title, path in written]
     config = MKDOCS.read_text(encoding='utf-8')
     config = re.sub(r'\nnav:\n(?:  - .*\n)*', '\n' + '\n'.join(nav) + '\n',
                     config)
     MKDOCS.write_text(config, encoding='utf-8')
 
-    print(f'{len(sections) + 1} pages in {DOCS}')
+    print(f'{len(written)} pages in {DOCS}')
     return 0
 
 

@@ -99,7 +99,7 @@ without being told.
 Each one is safe to run twice: it says what is already present and stops.
 
 The two paid findings also want a key, and only those two. See
-[[§3](03-api-keys.md), API keys](03-api-keys.md#api-keys) — `chatlens keys` asks for them, verifies them with
+[[api keys, and what they cost](keys-and-costs.md), API keys](keys-and-costs.md) — `chatlens keys` asks for them, verifies them with
 one real call rather than a listing, and writes them outside any repository.
 
 ### The emotion lexicon

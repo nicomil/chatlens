@@ -1,6 +1,6 @@
 # How the measures are built
 
-This section is for whoever writes the paper: it says what is an exact
+This page is for whoever writes the paper: it says what is an exact
 replication and what is an approximation.
 
 ### The LIWC measures without LIWC

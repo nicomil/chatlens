@@ -44,7 +44,7 @@ Baseline is the reference category in every regression.
 
 ## 2. The sample
 
-Three filters, applied together as the `in_sample` flag (README §6):
+Three filters, applied together as the `in_sample` flag ([the analysis procedure](../../../handbook/procedure.md)):
 
 | Filter | Why |
 |---|---|
@@ -199,7 +199,7 @@ months later.
 
 ⬜ **To approve:** the topic ontology itself. On the pilot the three seed topics
 were reused and no new one emerged; the seed's content is a research choice and
-should be approved before the topics enter any analysis (README §8).
+should be approved before the topics enter any analysis ([the files produced](../../../handbook/files.md)).
 
 ---
 
