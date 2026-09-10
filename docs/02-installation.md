@@ -95,6 +95,20 @@ get it and where to put it; there are three ways in, and any of them works:
 The distributed form, the wide form with a column per category, and a
 `tidytext` export are all read without conversion.
 
+### It does not matter where you run it from
+
+Neither command cares about the folder you are standing in. `uv tool install`
+puts chatlens in an environment of its own and on your PATH, and `chatlens
+dashboard` opens the library of studies, which lives in the application data
+directory below — not in the current directory. Run both from wherever your
+terminal happens to open.
+
+The current directory matters only for the command-line pipeline —
+`chatlens all` and its siblings — which treats it as the workspace and expects
+an `input/` folder in it. The dashboard does not use it: a study created there
+gets its own folder in the library, and `--workspace <path>` points the command
+line at one of those, or at any folder of your own.
+
 ### Where things end up
 
 Nothing is written beside the package. The studies, the lexicon and the cloned
