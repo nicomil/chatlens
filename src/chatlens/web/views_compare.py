@@ -99,11 +99,14 @@ def _scored():
         messages_path = views_participation._latest(config.MERGED_DIR,
                                                     '_messages_long.csv')
         if messages_path is not None:
-            message_key, key_of = narratives.keys_for(declared['unit'])
+            _message_key, key_of = narratives.keys_for(declared['unit'])
             try:
-                per_unit = narratives.extract_with_relatio(
+                # The same extraction the relations page makes, and the same
+                # call, so whichever page is opened first pays for both.
+                per_unit = narratives.extracted(
                     views_participation._read(messages_path),
-                    experiment.narrative_entities, unit_key=message_key)
+                    experiment.narrative_entities, declared['unit'],
+                    model=experiment.narrative_model)
             except ValueError:
                 # The comparison still stands without that row, and the
                 # narratives page explains why it is absent.

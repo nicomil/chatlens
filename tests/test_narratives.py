@@ -9,12 +9,14 @@ spoken to become one entity and the question disappears.
 """
 
 import sys
+import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
-from chatlens.core import narratives  # noqa: E402
+from chatlens.core import config, narratives  # noqa: E402
 
 class FrequencyTests(unittest.TestCase):
     def test_a_relation_used_twice_in_one_unit_counts_once(self):
@@ -206,6 +208,118 @@ class CheckAgainTests(unittest.TestCase):
         narratives._ROUTE['relatio'] = 'a stale failure'
         narratives.forget_route()
         self.assertEqual(narratives._ROUTE, {})
+
+
+class RememberedExtractionTests(unittest.TestCase):
+    """The extraction costs a hundred and thirteen seconds on the study this
+    was written for, and was being paid twice a visit and again after every
+    restart."""
+
+    MESSAGES = [
+        {'group_uid': 'g1', 'sender_id_in_group': '1',
+         'receiver_id_in_group': '2', 'body': 'i support you'},
+        {'group_uid': 'g1', 'sender_id_in_group': '2',
+         'receiver_id_in_group': '1', 'body': 'you support me'},
+    ]
+    ENTITIES = ['i', 'you']
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.previous = config.WORKSPACE
+        config.use_workspace(self.tmp.name)
+        narratives.forget()
+        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(narratives.forget)
+        self.addCleanup(lambda: config.use_workspace(self.previous))
+
+    def extract(self, messages=None, **kwargs):
+        """Count how often the expensive call is actually made."""
+        answer = {('g1', '1', '2'): {('i', 'support', 'you')}}
+        with unittest.mock.patch.object(
+                narratives, 'extract_with_relatio',
+                return_value=answer) as expensive:
+            got = narratives.extracted(messages or self.MESSAGES,
+                                       self.ENTITIES, 'dyad_directed',
+                                       **kwargs)
+        return got, expensive.call_count
+
+    def test_the_second_call_in_this_process_does_not_extract_again(self):
+        first, calls = self.extract()
+        self.assertEqual(calls, 1)
+        second, calls = self.extract()
+        self.assertEqual(calls, 0)
+        self.assertEqual(first, second)
+
+    def test_it_survives_a_restart(self):
+        """The point of writing it down: a dashboard restarted an hour later
+        used to pay the whole cost again."""
+        wanted, _calls = self.extract()
+        narratives.forget()                  # as if the process had ended
+        after, calls = self.extract()
+        self.assertEqual(calls, 0)
+        self.assertEqual(after, wanted)
+
+    def test_what_comes_back_from_disk_is_the_same_shape(self):
+        """Sets of tuples, not lists of lists: `frequencies` counts them and
+        `which_matter` looks them up."""
+        self.extract()
+        narratives.forget()
+        after, _calls = self.extract()
+        key, triples = next(iter(after.items()))
+        self.assertIsInstance(key, tuple)
+        self.assertIsInstance(triples, set)
+        self.assertIsInstance(next(iter(triples)), tuple)
+
+    def test_changing_the_corpus_extracts_again(self):
+        self.extract()
+        narratives.forget()
+        changed = [dict(self.MESSAGES[0], body='i oppose you')]
+        _got, calls = self.extract(messages=changed)
+        self.assertEqual(calls, 1)
+
+    def test_changing_the_language_model_extracts_again(self):
+        """It is the model's parse, so a different model is a different
+        answer — and the page tells you which one to install."""
+        self.extract(model='en_core_web_md')
+        narratives.forget()
+        _got, calls = self.extract(model='en_core_web_sm')
+        self.assertEqual(calls, 1)
+
+    def test_changing_the_entities_extracts_again(self):
+        self.extract()
+        narratives.forget()
+        with unittest.mock.patch.object(narratives, 'extract_with_relatio',
+                                        return_value={}) as expensive:
+            narratives.extracted(self.MESSAGES, ['i', 'you', 'we'],
+                                 'dyad_directed')
+        self.assertEqual(expensive.call_count, 1)
+
+    def test_changing_the_unit_extracts_again(self):
+        """Relations keyed by directed pair cannot be joined to rows that are
+        one per person."""
+        self.extract()
+        narratives.forget()
+        with unittest.mock.patch.object(narratives, 'extract_with_relatio',
+                                        return_value={}) as expensive:
+            narratives.extracted(self.MESSAGES, self.ENTITIES, 'sender_group')
+        self.assertEqual(expensive.call_count, 1)
+
+    def test_a_workspace_that_cannot_be_written_to_still_answers(self):
+        """A cache that cannot be written is slow, not broken."""
+        with unittest.mock.patch.object(
+                narratives.Path, 'mkdir', side_effect=OSError('read-only')):
+            got, calls = self.extract()
+        self.assertEqual(calls, 1)
+        self.assertTrue(got)
+        self.assertFalse(list(narratives.cache_dir().glob('*.json')))
+
+    def test_a_damaged_file_is_recomputed_rather_than_raised_over(self):
+        self.extract()
+        stored = next(narratives.cache_dir().glob('*.json'))
+        stored.write_text('{ not json', encoding='utf-8')
+        narratives.forget()
+        _got, calls = self.extract()
+        self.assertEqual(calls, 1)
 
 
 if __name__ == '__main__':

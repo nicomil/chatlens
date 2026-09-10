@@ -62,6 +62,16 @@ somebody else's published pipeline is not that pipeline. A result from one could
 not honestly be attributed to the paper, so the page waits for the package
 instead of substituting anything of ours.
 
+**It is slow the first time and only the first time.** Parsing eight thousand
+messages took a hundred and thirteen seconds on the study this was built for,
+and the comparison page needed the same extraction again. The result is now
+written to `output/cache/narratives/`, keyed by the corpus, the entities, the
+unit and the language model — so the second page costs nothing, a dashboard
+restarted tomorrow costs ten seconds rather than two minutes, and an exported
+study carries it, which means the colleague who opens it does not pay either.
+Change any of those four things and it is extracted again, because the answer
+would be a different answer.
+
 ### Emotions — eight categories from a word list
 
 Counts from the NRC Emotion Lexicon, which is free for research and distributed

@@ -551,10 +551,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._html(views_library.library_panel(import_error=str(exc)))
                 return
 
-        paid = [label for label, present in
-                (('the rubric', manifest['has_rubric']),
-                 ('the topics', manifest['has_topics'])) if present]
-        arrived = f' with {" and ".join(paid)} already computed' if paid else ''
+        inside = [label for label, key in (('the rubric', 'has_rubric'),
+                                           ('the topics', 'has_topics'),
+                                           ('the relations', 'has_relations'))
+                  if manifest.get(key)]
+        arrived = f' with {" and ".join(inside)} already computed' if inside else ''
         self._html(views_library.library_panel(
             message=f'Imported "{manifest["name"]}"{arrived}. '
                     f'It is in {path.name}.'))

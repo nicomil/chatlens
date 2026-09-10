@@ -109,9 +109,9 @@ def members_of(folder: Path, with_runs: bool = False) -> list[Path]:
     return found
 
 
-def _has(folder: Path, relative: str) -> bool:
+def _has(folder: Path, relative: str, pattern: str = '*') -> bool:
     path = folder / relative
-    return path.is_dir() and any(path.iterdir())
+    return path.is_dir() and any(path.rglob(pattern))
 
 
 def describe(folder: Path, with_runs: bool = False,
@@ -135,10 +135,15 @@ def describe(folder: Path, with_runs: bool = False,
         adapter=adapter,
         n_files=len(files),
         bytes=sum(f.stat().st_size for f in files),
-        # The two that cost money, named rather than implied: whoever opens
-        # this wants to know before deciding whether to re-run anything.
-        has_rubric=_has(folder, 'output/cache'),
+        # What is inside that would otherwise have to be produced again,
+        # named rather than implied: whoever opens this wants to know before
+        # deciding whether to re-run anything. The rubric by its own files
+        # rather than by the cache folder, which the relations also live in —
+        # saying "the rubric is inside" because something else is there would
+        # be worse than saying nothing.
+        has_rubric=_has(folder, 'output/cache', 'rubrica_*.jsonl'),
         has_topics=_has(folder, 'output/topicgpt'),
+        has_relations=_has(folder, 'output/cache/narratives', '*.json'),
         has_runs=_has(folder, HISTORY),
         pseudonymised=bool(pseudonymised),
     )

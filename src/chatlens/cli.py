@@ -544,6 +544,20 @@ def _mb(n) -> str:
     return f'{n / 1048576:.1f} MB'
 
 
+def _computed(manifest: dict) -> str:
+    """What the recipient will not have to produce again.
+
+    The two paid stages, and the relations — which cost no money but a hundred
+    seconds, and are the slowest thing the dashboard does.
+    """
+    inside = [label for label, key in (('the rubric', 'has_rubric'),
+                                       ('the topics', 'has_topics'),
+                                       ('the relations', 'has_relations'))
+              if manifest.get(key)]
+    return ', '.join(inside) if inside else 'the measures only'
+
+
+
 def cmd_export(args) -> int:
     """Pack an experiment so that somebody else can open the results.
 
@@ -576,10 +590,7 @@ def cmd_export(args) -> int:
     print(f'\n{manifest["name"]} -> {written}')
     print(f'  {manifest["n_files"]} files, {_mb(written.stat().st_size)} '
           f'compressed (from {_mb(manifest["bytes"])})')
-    paid = [label for label, present in (('the rubric', manifest['has_rubric']),
-                                         ('the topics', manifest['has_topics']))
-            if present]
-    print(f'  paid stages inside: {" and ".join(paid) if paid else "none"}')
+    print(f'  already computed inside: {_computed(manifest)}')
     if manifest['pseudonymised']:
         print('  participant identifiers: replaced')
     else:
@@ -602,10 +613,7 @@ def cmd_import(args) -> int:
     print(f'{manifest["name"]}  ({manifest["slug"]})')
     print(f'  packed {manifest["packed"]}, adapter {manifest["adapter"]}')
     print(f'  {manifest["n_files"]} files, {_mb(manifest["bytes"])} unpacked')
-    paid = [label for label, present in (('the rubric', manifest['has_rubric']),
-                                         ('the topics', manifest['has_topics']))
-            if present]
-    print(f'  paid stages inside: {" and ".join(paid) if paid else "none"}')
+    print(f'  already computed inside: {_computed(manifest)}')
     if manifest['pseudonymised']:
         print('  participant identifiers: replaced before it was sent')
     if args.describe:

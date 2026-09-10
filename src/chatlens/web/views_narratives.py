@@ -130,10 +130,11 @@ def _result(experiment):
     # The unit comes from the outcome when there is one: relations extracted per
     # directed pair cannot be joined to rows that are one per person.
     unit = (declared or {}).get('unit', 'dyad_directed')
-    message_key, row_key = narratives.keys_for(unit)
+    _message_key, row_key = narratives.keys_for(unit)
     try:
-        per_unit = narratives.extract_with_relatio(
-            messages, experiment.narrative_entities, unit_key=message_key)
+        per_unit = narratives.extracted(
+            messages, experiment.narrative_entities, unit,
+            model=experiment.narrative_model)
     except ValueError as exc:
         return None, str(exc)
     value = {'per_unit': per_unit, 'unit': unit,

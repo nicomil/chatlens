@@ -50,6 +50,9 @@ def make_experiment(root: Path, slug: str = 'a-study') -> Path:
         '{}', encoding='utf-8')
     (folder / 'output' / 'cache' / 'stem' / 'rubrica_group.jsonl').write_text(
         '{"paid": true}\n', encoding='utf-8')
+    (folder / 'output' / 'cache' / 'narratives').mkdir()
+    (folder / 'output' / 'cache' / 'narratives' / 'abc.json').write_text(
+        '{"format": 1, "per_unit": []}', encoding='utf-8')
     (folder / 'output' / 'topicgpt' / 'assignment.jsonl').write_text(
         '{"topic": "Cooperation"}\n', encoding='utf-8')
     (folder / 'output' / '.pseudonym_key').write_bytes(b'secret-key-material')
@@ -83,6 +86,20 @@ class WhatTravelsTests(unittest.TestCase):
         self.assertIn('a-study/output/cache/stem/rubrica_group.jsonl', names)
         self.assertIn('a-study/output/topicgpt/assignment.jsonl', names)
 
+    def test_the_extracted_relations_travel_too(self):
+        """They cost no money but a hundred and thirteen seconds, which is
+        the slowest thing the dashboard does."""
+        self.assertIn('a-study/output/cache/narratives/abc.json', self.names())
+
+    def test_the_relations_alone_are_not_reported_as_the_rubric(self):
+        """Both live under output/cache/, and saying "the rubric is inside"
+        because the relations are would be worse than saying nothing."""
+        (self.folder / 'output' / 'cache' / 'stem'
+         / 'rubrica_group.jsonl').unlink()
+        manifest = bundle.describe(self.folder)
+        self.assertFalse(manifest['has_rubric'])
+        self.assertTrue(manifest['has_relations'])
+
     def test_the_history_travels_but_its_copied_tables_do_not(self):
         """What was run and with which options is a few kilobytes and worth
         having. The copied datasets were 77 MB of the 79 on the real study,
@@ -111,6 +128,7 @@ class WhatTravelsTests(unittest.TestCase):
         self.assertEqual(manifest['slug'], 'a-study')
         self.assertTrue(manifest['has_rubric'])
         self.assertTrue(manifest['has_topics'])
+        self.assertTrue(manifest['has_relations'])
         self.assertFalse(manifest['pseudonymised'])
 
     def test_a_folder_without_a_configuration_is_not_an_experiment(self):

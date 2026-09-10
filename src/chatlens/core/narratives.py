@@ -45,7 +45,11 @@ to something of ours.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import threading
 from collections import Counter, defaultdict
+from pathlib import Path
 
 # A narrative has to appear this often before it is worth testing. Below it the
 # estimate is driven by a handful of rows and the multiple-testing correction
@@ -132,9 +136,16 @@ def forget_route() -> None:
     _ROUTE.clear()
 
 
-def extract_with_relatio(messages, entities, model='en_core_web_sm',
+def extract_with_relatio(messages, entities, model='en_core_web_md',
                          clusters=None, unit_key=None):
     """The published package, on its dependency-parsing path.
+
+    The default is the model the experiment declares and the page tells you to
+    install. It used to be `en_core_web_sm`, which nothing asked for and
+    nothing checked was present: the screen verified `en_core_web_md` was
+    there, put it in its cache key, and then parsed with the other one. The two
+    do not agree — on the study this was written for they share 507 relations
+    and find 319 and 277 of their own.
 
     Its semantic-role path needs AllenNLP, which caps Python at 3.10; this one
     needs none of it. The entities are passed as ``known_entities`` and matched
@@ -205,6 +216,116 @@ def extract_with_relatio(messages, entities, model='en_core_web_sm',
         message = messages[doc_ids[position]]
         per_unit[unit_key(message)].add((agent, verb, patient))
     return dict(per_unit)
+
+
+# --- remembering an extraction -------------------------------------------
+
+# Bumped when a change here would make an old file wrong. It is part of the
+# key, so a stale file is not read: it is simply never looked for again.
+CACHE_FORMAT = 1
+
+_MEMO: dict = {}
+_MEMO_LOCK = threading.Lock()
+
+
+def cache_dir():
+    from . import config
+
+    return config.OUTPUT_DIR / 'cache' / 'narratives'
+
+
+def fingerprint(messages, entities, unit: str, model: str) -> str:
+    """What the extraction depends on, in sixteen bytes.
+
+    The messages themselves rather than the file they came from: a re-run
+    writes a new file with the same name and, more to the point, the same
+    contents, and paying a hundred seconds again for a file whose bytes did not
+    change is the thing being avoided. Only the fields the extraction reads —
+    the text, and the three that decide which unit a message belongs to.
+    """
+    digest = hashlib.blake2b(digest_size=16)
+    header = f'{CACHE_FORMAT}|{unit}|{model}|{",".join(entities or ())}'
+    digest.update(header.encode('utf-8'))
+    for message in messages:
+        for field in ('group_uid', 'sender_id_in_group',
+                      'receiver_id_in_group', 'body'):
+            digest.update(str(message.get(field) or '').encode('utf-8'))
+            digest.update(b'\x1f')
+        digest.update(b'\x1e')
+    return digest.hexdigest()
+
+
+def _load(path: Path):
+    """The stored extraction, or None if there is not a usable one."""
+    try:
+        stored = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        # Absent, half-written, or from a version that wrote something else.
+        # All three mean the same thing here: compute it again.
+        return None
+    try:
+        return {tuple(key): {tuple(triple) for triple in triples}
+                for key, triples in stored['per_unit']}
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _store(path: Path, per_unit) -> None:
+    """Write it, or carry on without. A cache that cannot be written is slow,
+    not broken, and a read-only workspace is somebody's deliberate choice."""
+    payload = {'format': CACHE_FORMAT,
+               'per_unit': [[list(key), sorted(triples)]
+                            for key, triples in sorted(per_unit.items())]}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Through a neighbour and then renamed: two dashboard requests can ask
+        # for this at once, and half a file read back as none at all would be
+        # a hundred seconds paid twice.
+        temporary = path.with_suffix('.part')
+        temporary.write_text(json.dumps(payload), encoding='utf-8')
+        temporary.replace(path)
+    except OSError:
+        pass
+
+
+def extracted(messages, entities, unit: str = 'dyad_directed',
+              model: str = 'en_core_web_md'):
+    """`extract_with_relatio`, remembered.
+
+    The extraction is the expensive thing in this tool that is not paid for in
+    money: a hundred and thirteen seconds on eight thousand messages. It was
+    being run twice per visit — the relations and the comparison each did their
+    own — and again after every restart of the dashboard, because the only
+    memory of it was a dictionary in the process that died with it.
+
+    So it is remembered twice over: in this process, and in the workspace under
+    `output/cache/`. The second is what survives a restart, and what travels
+    when a study is exported, so whoever opens it does not pay the hundred
+    seconds either.
+    """
+    key = fingerprint(messages, entities, unit, model)
+    with _MEMO_LOCK:
+        if key in _MEMO:
+            return _MEMO[key]
+
+    path = cache_dir() / f'{key}.json'
+    per_unit = _load(path)
+    if per_unit is None:
+        message_key, _row_key = keys_for(unit)
+        per_unit = extract_with_relatio(messages, entities, model=model,
+                                        unit_key=message_key)
+        _store(path, per_unit)
+
+    with _MEMO_LOCK:
+        _MEMO[key] = per_unit
+    return per_unit
+
+
+def forget() -> None:
+    """Drop what this process remembers. For tests, which change the corpus
+    under it far faster than any user does."""
+    with _MEMO_LOCK:
+        _MEMO.clear()
 
 
 def frequencies(per_unit) -> Counter:
