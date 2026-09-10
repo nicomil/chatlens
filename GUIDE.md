@@ -252,19 +252,27 @@ than reporting the one that came out significant.
 
 ### 5.5 The emotions
 
-![A finding that cannot be computed](images/16-emotions.png)
+![The emotions](images/16-emotions.png)
 
-This is what a finding looks like when the machine cannot answer it. The NRC
-Emotion Lexicon is free for research and distributed through a request form, so
-it cannot be shipped: the screen says where to get it, what to call it, where to
-put it, and offers to check again.
+Ten categories from the NRC Emotion Lexicon — eight emotions, two sentiments —
+counted over the same documents as everything else.
 
-When it is there, the finding leads with the figure that matters most — not the
-categories, but **how much of the corpus a word list can say anything about at
-all.** A document containing none of its words scores zero everywhere, which is
-a correct reading and not a gap; but those documents are overwhelmingly the
-short ones, so the columns carry a signal about length as well as one about
-emotion.
+The finding leads with the figure that matters most, and it is not one of the
+categories. **On this corpus 65% of the documents could be measured at all**;
+the other 35% contain no word from the list. A document with no fear word has a
+fear rating of zero and that is correct — nothing frightening was said — but a
+document with *no listed word at all* scores zero on every category at once, and
+those documents are not distributed at random. They are the short ones.
+
+So these columns carry a signal about how much was written mixed into the one
+about emotion, and the length quartiles under the headline say how much of that
+there is. The fix is the same as everywhere else in this tool: keep the zeros
+and put length in the model.
+
+Until the lexicon is on the machine this finding shows what a blocked one looks
+like — the question, a plain statement that it cannot be answered yet, and the
+three ways to get the file: the request form, an export from R, or a copy you
+already have pointed at by `CHATLENS_NRC_LEXICON`.
 
 ### 5.6 Put it together
 

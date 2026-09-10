@@ -11,25 +11,39 @@ _e = ui.esc
 
 
 def _missing_panel() -> str:
-    """The lexicon is free, and still cannot be shipped."""
+    """The lexicon is free, and still cannot be shipped.
+
+    Three ways in, because the file reaches people three ways and the loader
+    already reads all three shapes — the screen used to name only the first,
+    which left the reader waiting on a form when they had a route open.
+    """
     path = nrc.lexicon_path()
-    return f'''<div class="panel">
-  <h3>The lexicon is not here</h3>
-  <p>The NRC Emotion Lexicon is free for research and distributed through a
-  request form, so it cannot be included. Getting it is two steps and then this
-  page works.</p>
-  <ol>
-    <li>Request it at <a href="{nrc.FORM_URL}" rel="noreferrer">
-      saifmohammad.com</a> — the word-level file, currently
-      <code>{_e(nrc.FILENAME)}</code>.</li>
-    <li>Put it here, with that name:
-      <pre class="cmd">{_e(path)}</pre></li>
-  </ol>
-  <p class="muted">Either the one-row-per-word-and-category form or the wide
-  one will do; both are read. If you keep it somewhere else, point
-  <code>CHATLENS_NRC_LEXICON</code> at it.</p>
-  <p><a href="?checked=1">Check again</a></p>
-</div>'''
+    return ui.blocked(
+        'This finding needs the NRC Emotion Lexicon',
+        f'''<p>About fourteen thousand English words marked for eight emotions
+        and two sentiments (Mohammad and Turney). It is free for research and
+        distributed through a request form, so it cannot be shipped with a
+        tool. Any one of these gets it here.</p>
+        <p><b>Ask for it.</b> The form is at
+        <a href="{nrc.FORM_URL}" rel="noreferrer">saifmohammad.com</a> — the
+        word-level file, currently <code>{_e(nrc.FILENAME)}</code>. Put it at
+        the path below, with that name.</p>
+        <p><b>Or export it from R</b>, if you have it: <code>textdata</code>
+        downloads the same lexicon and asks you to accept the same licence,
+        and the two-column CSV it writes is read as it is.</p>
+        <p><b>Or point at a copy you already have.</b> Set
+        <code>CHATLENS_NRC_LEXICON</code> to it. The distributed
+        one-row-per-word-and-category form, the wide form with a column per
+        category, and a <code>tidytext</code> export are all read without
+        conversion.</p>
+        <pre class="cmd">{_e(path)}</pre>''',
+        commands=[(
+            'From R',
+            'install.packages("textdata")\n'
+            'write.csv(tidytext::get_sentiments("nrc"),\n'
+            f'          "{path}", row.names = FALSE)',
+            'about 4 MB')],
+        retry='?checked=1')
 
 
 def _texts_and_source():

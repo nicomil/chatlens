@@ -49,3 +49,34 @@ references:
         given-names: Eric
     year: 2014
     notes: "The sentiment backend, used through the vaderSentiment package."
+  - type: article
+    title: "Crowdsourcing a Word-Emotion Association Lexicon"
+    authors:
+      - family-names: Mohammad
+        given-names: Saif M.
+      - family-names: Turney
+        given-names: Peter D.
+    journal: "Computational Intelligence"
+    year: 2013
+    notes: >-
+      The NRC Emotion Lexicon, behind the emotions finding. It is free for
+      research and distributed through a request form, so chatlens does not
+      ship it; anyone using that finding has obtained it under its own terms
+      and should cite this.
+  - type: article
+    title: >-
+      Relatio: Text Semantics Capture Political and Economic Narratives
+    authors:
+      - family-names: Ash
+        given-names: Elliott
+      - family-names: Gauthier
+        given-names: Germain
+      - family-names: Widmer
+        given-names: Philine
+    journal: "Political Analysis"
+    year: 2024
+    notes: >-
+      The relational analysis is their method and their package. chatlens
+      prepares the input and reads the output; it does not reimplement the
+      extraction, because an approximation of a published pipeline is not that
+      pipeline.

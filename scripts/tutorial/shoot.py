@@ -50,8 +50,8 @@ SHOTS = [
      700, 40000, 'the same page with the penalty tightened'),
     ('15-narratives', '/findings/narratives', 1100, 180000,
      'the relations, and which of them survive the correction'),
-    ('16-emotions', '/findings/emotions', 700, 5000,
-     'a finding that cannot be computed here, and what unblocks it'),
+    ('16-emotions', '/findings/emotions', 760, 6000,
+     'the categories, and how much of the corpus could be measured at all'),
     ('17-export', '/findings/export', 1000, 60000,
      'every finding, put together as one page'),
 ]
