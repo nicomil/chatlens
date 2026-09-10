@@ -61,6 +61,8 @@ jobs:
         run: python tests/test_corpus.py
       - name: Sharing an experiment
         run: python tests/test_bundle.py
+      - name: The documentation links
+        run: python tests/test_docs.py
 
       - name: The console script works
         run: chatlens --help
