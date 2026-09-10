@@ -8,6 +8,7 @@ which has to make progress bars legible.
 """
 
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -112,31 +113,82 @@ class CommandBuildingTests(unittest.TestCase):
 
 
 class ArchiveViewTests(unittest.TestCase):
-    """The archive is an index: from one row you reach all of that run."""
+    """The archive is an index: from one row you reach all of that run.
+
+    These used to read whichever workspace the process happened to have active
+    and skip when it held no run — so in CI they never ran at all, and on a
+    developer's machine they read that developer's own results. They build two
+    runs of their own now.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+
+        from chatlens.core import config
+
+        cls.tmp = tempfile.TemporaryDirectory()
+        workspace = Path(cls.tmp.name)
+        (workspace / 'output' / 'datasets').mkdir(parents=True)
+        # Put back on the way out: `config` is process-global, and a workspace
+        # left pointing at a deleted directory breaks every test that runs
+        # afterwards.
+        cls.previous = config.WORKSPACE
+        config.use_workspace(workspace)
+
+        # Two runs, a second apart in name, each with a dataset and a report,
+        # so that "every row opens its own run" is a claim about two things.
+        for index, stamp in enumerate(('2026-01-01_120024', '2026-01-01_120029')):
+            run = workspace / 'output' / 'runs' / stamp / 'datasets'
+            run.mkdir(parents=True)
+            (run / 'demo_chat_aggregated_nlp.csv').write_text(
+                'group_uid\ng1\n', encoding='utf-8')
+            (run.parent / 'report.html').write_text('<p>ok</p>', encoding='utf-8')
+            (run.parent / 'run.json').write_text(json.dumps({
+                'timestamp': f'2026-01-01T12:00:{24 + index * 5}',
+                'stem': 'demo', 'stages': ['measures'],
+                'n_messages': 100 + index,
+                'levels': {'group': 4}, 'failed_stage': None,
+            }), encoding='utf-8')
+
+        # And one that did not finish, so that "a failure is stated in words"
+        # is a claim about something rather than a skip.
+        broken = workspace / 'output' / 'runs' / '2026-01-01_130000'
+        broken.mkdir(parents=True)
+        (broken / 'run.json').write_text(json.dumps({
+            'timestamp': '2026-01-01T13:00:00', 'stem': 'demo',
+            'stages': ['measures', 'topics'], 'n_messages': 100,
+            'levels': {'group': 4}, 'failed_stage': 'TopicGPT',
+        }), encoding='utf-8')
+
+    @classmethod
+    def tearDownClass(cls):
+        from chatlens.core import config
+
+        config.use_workspace(cls.previous)
+        cls.tmp.cleanup()
 
     def _a_run(self):
         from chatlens.core import archive, config
 
         runs = archive.list_runs(config.OUTPUT_DIR)
-        if not runs:
-            self.skipTest('no archived run in this environment')
+        self.assertTrue(runs, 'the fixture wrote no runs')
         return runs[0]
 
     def test_every_row_opens_its_own_run(self):
         import re
 
-        from chatlens.core import archive, config
-
         panel = views.runs_panel()
-        if not archive.list_runs(config.OUTPUT_DIR):
-            self.skipTest('no archived run in this environment')
-        targets = re.findall(r'hx-get="/run/([^"]+)"', panel)
-        self.assertTrue(targets)
+        targets = re.findall(r'hx-get="[^"]*/run/([^"]+)"', panel)
+        self.assertEqual(len(targets), 3)
         # Every row leads to its own run, not all to the same one.
         self.assertEqual(len(targets), len(set(targets)))
 
     def test_detail_shows_parameters_and_files(self):
-        run = self._a_run()
+        from chatlens.core import archive, config
+
+        run = next(r for r in archive.list_runs(config.OUTPUT_DIR)
+                   if not r.get('failed_stage'))
         detail = views.run_detail(run['path'].name)
         self.assertIn('Messages analysed', detail)
         # The files produced are reachable from there.
@@ -160,8 +212,7 @@ class ArchiveViewTests(unittest.TestCase):
 
         failed = [r for r in archive.list_runs(config.OUTPUT_DIR)
                   if r.get('failed_stage')]
-        if not failed:
-            self.skipTest('no incomplete run in this environment')
+        self.assertTrue(failed, 'the fixture wrote no incomplete run')
         detail = views.run_detail(failed[0]['path'].name)
         self.assertIn('not completed', detail)
 
