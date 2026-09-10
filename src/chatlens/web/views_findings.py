@@ -60,14 +60,16 @@ class Unknown(LookupError):
 
 
 def panel(name: str, entry: str, query=None) -> str:
-    """The body of one finding, without the page around it.
+    """The computed body of one finding, without the page around it.
 
-    The findings that compute something slow answer at once and fill in; this
-    is what fills them in.
+    A panel request is the fill-in: it asks for the thing that was being worked
+    out, so it takes the settled renderer. Answering it with the same
+    placeholder the page already showed leaves the screen saying "Working it
+    out…" for ever, which is what it did.
     """
     if entry not in BODIES:
         raise Unknown(f'No finding called "{entry}".')
-    return _body(entry, name, query or {})
+    return _body(entry, name, query or {}, settled=True)
 
 
 def register(name: str, entry: str = '') -> str:

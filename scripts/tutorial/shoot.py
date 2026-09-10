@@ -16,49 +16,44 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from capture import capture, crop  # noqa: E402
+from capture import capture  # noqa: E402
 
-# (file, page, height, wait in ms, band, caption). A band crops the capture,
-# for pages where one section is the subject and the rest is context.
+# (file, path, height, wait in ms, caption). The paths are the interface's
+# own: five steps and a findings area, not the flat pages this list used to
+# name.
 SHOTS = [
-    ('02-library-created', '/__library__', 760, 2500, None,
-     'the experiment made, saying what is still missing'),
-    ('11-run-done', '', 1000, 3000, None,
-     'the run finished, archived, with the report beside it'),
-    ('12-report', '/report.html', 1200, 3000, None,
-     'the readable summary the run produces'),
-    ('20-participation', '/participation', 880, 6000, None,
-     'the whole grid, including the pairs that never spoke'),
-    ('30-words', '/words?penalty=0.1&min_df=10&ngrams=both', 1300, 20000, None,
-     'the clouds, with length beside the model'),
-    ('31-words-strict', '/words?penalty=0.02&min_df=10&ngrams=both', 900,
-     20000, None, 'the same page with the penalty tightened'),
-    ('32-words-loose', '/words?penalty=1.0&min_df=10&ngrams=both', 900, 20000,
-     None, 'and loosened'),
-    ('40-narratives', '/narratives', 1400, 40000, None,
-     'the relations, and which of them matter'),
-    ('50-emotions', '/emotions', 1150, 5000, None,
-     'the coverage, and what a zero means'),
-    ('60-compare', '/compare', 980, 25000, None,
-     'every representation against the same outcome'),
-]
-
-# Bands of the settings page, cut from one tall capture of it.
-# The empty library cannot be photographed from this instance — by the time the
-# walk is done there is an experiment in it. `capture.py` takes that one against
-# a throwaway library on another port.
-SETTINGS = [
-    ('03-settings-files', 60, 470, 'the uploaded files and their roles'),
-    ('04-settings-columns', 440, 950,
-     'the column mapping, read from the file header'),
-    ('05-settings-treatments', 930, 1180,
-     'the treatments, named from the values found'),
-    ('06-settings-outcome', 1180, 1620,
-     'the outcome: which column, of what kind, at which unit'),
+    ('01-library', '/__library__', 620, 2500,
+     'the studies on this machine'),
+    ('02-step-data', '/step/data', 780, 2500,
+     'step 1 — the export, and what each file is'),
+    ('03-step-columns', '/step/columns', 900, 2500,
+     'step 2 — which column plays which part'),
+    ('04-step-outcome', '/step/outcome', 900, 3000,
+     'step 3 — what to explain, and what that column holds'),
+    ('05-step-run', '/step/run', 1000, 3000,
+     'step 4 — what to run, and what the last run produced'),
+    ('10-findings', '/findings/compare', 800, 30000,
+     'the register, and which representation is worth using'),
+    ('11-corpus', '/findings/corpus', 900, 8000,
+     'the conversations themselves'),
+    ('12-participation', '/findings/participation', 900, 10000,
+     'who wrote to whom, including the directions nobody used'),
+    ('13-words', '/findings/words?penalty=1.0&min_df=10&ngrams=both', 1100,
+     40000, 'the terms, with the penalty as a control'),
+    ('14-words-strict', '/findings/words?penalty=0.1&min_df=10&ngrams=both',
+     700, 40000, 'the same page with the penalty tightened'),
+    ('15-narratives', '/findings/narratives', 1100, 180000,
+     'the relations, and which of them survive the correction'),
+    ('16-emotions', '/findings/emotions', 700, 5000,
+     'a finding that cannot be computed here, and what unblocks it'),
+    ('17-export', '/findings/export', 1000, 60000,
+     'every finding, put together as one page'),
 ]
 
 
@@ -67,31 +62,42 @@ def main(argv=None) -> int:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--token', required=True)
-    parser.add_argument('--experiment', default='ultimatum-with-pre-play-chat')
+    parser.add_argument('--experiment', default='coalition-formation')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--out', type=Path, default=Path('docs/images'))
     parser.add_argument('--width', type=int, default=1400)
     args = parser.parse_args(argv)
 
     base = f'http://127.0.0.1:{args.port}'
-    settings_url = (f'{base}/experiment/{args.experiment}/settings'
-                    f'?t={args.token}')
-    tall = capture(settings_url, args.out / '_settings-full.png',
-                   args.width, 1700, 4000)
-    for name, top, bottom, caption in SETTINGS:
-        out = crop(tall, args.out / f'{name}.png', top, bottom)
-        print(f'  {name:22s} {out.stat().st_size // 1024:4d} KB   {caption}')
-    tall.unlink()
 
-    for name, page, height, wait, _band, caption in SHOTS:
-        if page == '/__library__' or page == '/__empty__':
+    # Ask for the slow panels once before photographing anything. Each of them
+    # answers at once and fills in, and each caches its result — so a shot
+    # taken while the first one is still computing photographs a spinner, which
+    # in a guide reads as the tool being broken. On the real corpus the
+    # relations take about a minute and a half.
+    warm = ['/findings/compare/panel', '/findings/narratives/panel',
+            '/findings/words/panel?penalty=1.0&min_df=10&ngrams=both',
+            '/findings/words/panel?penalty=0.1&min_df=10&ngrams=both']
+    print('Warming the slow findings, so that nothing is photographed mid-thought.')
+    for path_part in warm:
+        joiner = '&' if '?' in path_part else '?'
+        url = (f'{base}/experiment/{args.experiment}{path_part}'
+               f'{joiner}t={args.token}')
+        started = time.monotonic()
+        with urllib.request.urlopen(url, timeout=1800) as answer:
+            answer.read()
+        print(f'  {path_part.split("?")[0]:38s} '
+              f'{time.monotonic() - started:5.1f} s')
+
+    # The settings page used to be one tall capture cut into four bands. It is
+    # four screens now, so each is photographed as itself.
+    for name, page, height, wait, caption in SHOTS:
+        if page == '/__library__':
             url = f'{base}/?t={args.token}'
-        elif page:
+        else:
             joiner = '&' if '?' in page else '?'
             url = (f'{base}/experiment/{args.experiment}{page}'
                    f'{joiner}t={args.token}')
-        else:
-            url = f'{base}/experiment/{args.experiment}?t={args.token}'
         out = args.out / f'{name}.png'
         capture(url, out, args.width, height, wait)
         print(f'  {name:22s} {out.stat().st_size // 1024:4d} KB   {caption}')

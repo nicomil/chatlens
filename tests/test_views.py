@@ -216,6 +216,31 @@ class FindingShapeTests(unittest.TestCase):
                     self.assertIn('class="question"', body, entry)
                     self.assertIn('class="answer"', body, entry)
 
+    def test_a_panel_is_the_computed_thing_not_the_placeholder(self):
+        """A panel request is the fill-in. Answering it with the same
+        placeholder the page already showed leaves the screen saying "Working
+        it out…" for ever — which is what a generic panel route did, and what a
+        screenshot caught."""
+        from chatlens.web import views_findings
+
+        with active.experiment('bare-study'):
+            for entry in ('words', 'compare', 'narratives'):
+                with self.subTest(finding=entry):
+                    panel = views_findings.panel('bare-study', entry)
+                    self.assertNotIn('Working it out', panel)
+                    self.assertNotIn('hx-trigger="load"', panel)
+
+    def test_a_name_that_is_not_a_finding_is_refused(self):
+        """It used to become the first entry, which is how a routing mistake
+        comes to look like a working screen."""
+        from chatlens.web import views_findings
+
+        with active.experiment('bare-study'):
+            with self.assertRaises(views_findings.Unknown):
+                views_findings.panel('bare-study', 'nonsense')
+            with self.assertRaises(views_findings.Unknown):
+                views_findings.page('bare-study', 'nonsense')
+
     def test_a_negative_answer_is_not_marked_as_an_error(self):
         """`no` is the commonest honest result on a corpus of short messages;
         the register must not colour it like a failure."""

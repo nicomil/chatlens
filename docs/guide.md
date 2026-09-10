@@ -3,18 +3,25 @@
 Text analysis of the conversations held during a behavioural experiment: what
 was said, by whom, to whom, and which of it is worth building a result on.
 
-Every figure here is a screenshot of the tool running on a synthetic study that
-`chatlens demo` generates from a fixed seed — forty-eight groups of four, two
-treatments, nobody real. You can reproduce every step.
+Every figure here is a screenshot of the tool running on the coalition-formation
+study it was built for — 509 groups, 8,077 messages, three treatments. They show
+real numbers rather than a demonstration, which is the only way to see whether a
+finding is worth having.
+
+> **On the data in these figures.** The screens that show the conversations
+> themselves carry what participants actually wrote to one another. If this
+> guide is going to be forwarded or published, regenerate its figures on the
+> synthetic study instead — `chatlens demo` writes one from a fixed seed that
+> belongs to nobody, and every step below works the same on it.
 
 ## Contents
 
 1. [What this is for](#1-what-this-is-for)
 2. [What it can do](#2-what-it-can-do)
 3. [Installing it](#3-installing-it)
-4. [Setting up a study](#4-setting-up-a-study)
-5. [Running the analysis](#5-running-the-analysis)
-6. [The pages, one at a time](#6-the-pages-one-at-a-time)
+4. [The five steps](#4-the-five-steps)
+5. [The findings](#5-the-findings)
+6. [Reading the conversations](#6-reading-the-conversations)
 7. [A complete session](#7-a-complete-session)
 8. [Where things live](#8-where-things-live)
 
@@ -27,415 +34,299 @@ what, who accepted — are already numbers. The conversations are not, and turni
 them into numbers is where the difficulty is, because there are many ways to do
 it and they do not agree.
 
-chatlens does that turning, six different ways, and then does something less
+chatlens does that turning, several different ways, and then does something less
 usual: it puts them side by side against the same outcome and tells you which
 one is actually carrying anything.
 
 **One idea runs through the whole tool.** Longer messages contain more of
 everything — more positive words, more relations, more of any term you care to
 count. So a text measure that looks impressive is often measuring how much
-somebody typed. Every page that predicts anything shows message length beside
+somebody typed. Every finding that predicts anything shows message length beside
 the model, and says plainly when length wins.
 
-On the experiment this tool was built for, that turned out to be the answer
-twice, and the strongest result in the dataset was not in the text at all: it
-was in who never wrote to whom.
+On the study shown here it does not win — the words reach 0.691 against 0.595
+for length alone — but on a corpus of shorter messages it usually does, and this
+tool is built to tell you so rather than to flatter the result.
 
 ## 2. What it can do
 
-| Page | The question it answers | What it needs |
-|---|---|---|
-| **Participation** | who spoke to whom, and who never did | nothing |
-| **Words** | which terms go with the outcome | `words` extra |
-| **Narratives** | who does what to whom, and which of it matters | `narratives` extra |
-| **Emotions** | eight emotion categories, and how much of the corpus they reach | a lexicon you request |
-| **Topics** | what the conversations were about | an API key — the only paid part |
-| **Compare** | which of the above is worth building on | `words` extra |
+**It answers six questions,** and says which of them it could answer.
 
-Underneath all of them, always on and needing nothing: the deterministic
-measures — how much was written, sentiment, and LIWC-style indices for
-analytical thinking, Clout and Authenticity — computed at pair and group level
-and grafted onto your choice data, ready for Stata or R.
+| Question | What it comes from |
+|---|---|
+| What was said | the conversations themselves, read and searchable |
+| Who spoke to whom | every ordered pair, including the ones that stayed silent |
+| Which representation to trust | every method scored against the same outcome, on the same folds |
+| The words | a penalised regression over unigrams and bigrams |
+| The relations | who does what to whom, through the RELATIO package |
+| The emotions | ten categories from the NRC word list |
 
-**Two units of work, four units of analysis.** Every measure can be computed per
-directed pair (what i wrote to j), per pair, per person, or per group. Which one
-is right is a question about your design, and the tool makes you answer it
-rather than choosing for you.
+**Nothing is a black box.** Every number leads back to the sentences behind it:
+click a term and the messages that contain it open under the table.
 
-**Nothing is our own invention where somebody has published the method.** Topics
-are TopicGPT's, called through the authors' own functions. Relations are
-RELATIO's. Sentiment is VADER. The lexical indices are ours and are labelled
-LIWC-*style*, because LIWC itself is proprietary and we do not have it.
+**It says when it cannot answer.** Two of the six need packages that are not
+installed by default, and one needs a lexicon that is free but distributed
+through a request form. Those findings stay in the list and say what would
+unblock them, rather than disappearing.
 
 ## 3. Installing it
 
 ```bash
 uv tool install git+https://github.com/nicomil/chatlens.git
-```
-
-[uv](https://docs.astral.sh/uv/) is a single binary and installs Python itself
-if the machine has none. `pipx` and a plain `pip install` into a virtual
-environment work the same way with the same URL.
-
-That gives you about four megabytes and one dependency: the deterministic
-measures, the dashboard, Participation. Everything heavier is an extra, so that
-nothing large arrives because you opened a page.
-
-| Extra | Adds | Roughly |
-|---|---|---|
-| `words` | word clouds, coefficient tables, the comparison page | 150 MB |
-| `narratives` | the relational analysis | 500 MB with the language model |
-| `llm` | the validation rubric | small |
-| `topics` | TopicGPT | small |
-
-```bash
-uv tool install --reinstall "git+https://github.com/nicomil/chatlens.git#egg=chatlens[all]"
-python -m spacy download en_core_web_md    # for the narratives
-chatlens install-relatio                   # for the narratives
-chatlens install-topicgpt                  # for the topics
-```
-
-**`--reinstall`, not `--force`.** Adding an extra to an existing installation
-needs the environment rebuilt, and `--force` alone will not rebuild one that uv
-considers current.
-
-Every page that needs something missing says so, with the command already
-written out for the interpreter chatlens is running under. That last detail
-matters more than it sounds: chatlens lives in an environment of its own, so a
-`pip install` typed into a shell installs somewhere else and the page goes on
-reporting the same thing missing.
-
-## 4. Setting up a study
-
-```bash
 chatlens dashboard
 ```
 
-![The library, empty](images/01-library-empty.png)
+That is the whole of it for the descriptive half. The findings that fit models
+need more, and each says so on its own screen with the command to run — built
+from the interpreter chatlens is actually installed in, which is the part people
+get wrong when they type it themselves.
 
-The library is empty on a first run. Everything happens here — there is no
-configuration file to write by hand, and no paths to type.
+| Finding | What it needs | Size |
+|---|---|---|
+| The words, Which representation to trust | scikit-learn, matplotlib, wordcloud | about 150 MB |
+| The relations | spaCy, a language model, statsmodels, RELATIO | about 1.6 GB |
+| The emotions | the NRC Emotion Lexicon, requested from its author | a few MB |
 
-### 4.1 Make an experiment
+```bash
+chatlens install-relatio     # clones and installs RELATIO
+chatlens install-topicgpt    # only for the paid topic stage
+```
 
-Give the study a name and say what shape the data is in.
+## 4. The five steps
 
-**One message per row** is the general case: your export already has a row per
-message with a group, a sender, a recipient and the text. You point at the
-columns; no code is involved.
+A study has a life, and the bar across the top of every screen is that life:
+**Data, Columns, Outcome, Run, Findings.** Each step says whether it is
+finished. Opening a study takes you to the first one that is not.
 
-**oTree coalition game** is a worked example of the other kind, where the
-groups, the chat channels and the choices all have to be reconstructed from a
-raw oTree export. It is specific to a three-player coalition game and is there
-as a model for writing an adapter of your own.
+![The library](images/01-library.png)
 
-![The experiment created](images/02-library-created.png)
+The library is the studies on this machine. Each is a folder of its own — its
+export, its settings, its results — so one can be copied to a colleague or
+included in a backup. **Try an example** makes a synthetic study, set up and
+ready to run, for anyone who wants to see the procedure before committing their
+own data to it.
 
-The card says what is still missing — here, the files. That badge is the tool's
-running answer to "can this be analysed yet", and it stays wrong-looking until
-it can.
+### 4.1 Data
 
-### 4.2 Upload the files
+![Step 1](images/02-step-data.png)
 
-![Files and their roles](images/03-settings-files.png)
+The CSVs the study is built from, and what part each plays. The same export can
+be shaped more than one way, so the roles are chosen rather than guessed: which
+file is the messages, which the participants.
 
-Under **Settings**, drop the CSVs in. Up to 500 MB each; a file with the same
-name replaces the one that is there.
+For an oTree coalition export there is nothing to choose — the adapter reads
+`all_apps_wide.csv` and `ChatMessages.csv` directly and reconstructs the groups,
+the channels and the choices.
 
-Each file gets a **role** from the dropdown beside it — which is the messages,
-which is the roster of participants. This is what lets the tool work with an
-export whose filename is not one it expected: you say what a file *is* rather
-than renaming it to suit.
+### 4.2 Columns
 
-The roster is optional and worth having. It is the only source that can see a
-participant who never wrote and was never written to — someone invisible in a
-chat log by construction, and precisely the kind of person the Participation
-page is about.
+![Step 2](images/03-step-columns.png)
 
-### 4.3 Say which column is which
+Four columns are needed: the group, the sender, the recipient, the text. Time
+and treatment are used if they are there. The names are read from the file's own
+header and pre-selected by a guess, so in the ordinary case this step is a
+confirmation rather than a form.
 
-![The column mapping](images/04-settings-columns.png)
+Below it, the treatments: their values are read from the column, and each gets
+the name the report should print.
 
-The dropdowns are built from the header of the file you just uploaded, so you
-are choosing among your own column names rather than typing them.
+### 4.3 Outcome
 
-They arrive **already guessed**. `group`, `sender`, `receiver`, `text`,
-`sent_at` are recognised, and so are `teamId`, `fromSeat`, `sentAt` — the
-matching understands snake_case, kebab-case and camelCase as one convention. In
-the ordinary case the whole step is confirming what is already selected.
+![Step 3](images/04-step-outcome.png)
 
-Where nothing is recognised, nothing is selected. That is deliberate: a blank
-field costs you a minute, and a wrong guess sitting there waiting to be
-confirmed costs you a dataset.
+The column the analysis should explain — whether an offer was accepted, how much
+someone earned, whether a group agreed. Everything descriptive works without
+one; the findings that explain something do not exist without it.
 
-Four columns are required — group, sender, receiver, text — and the rest change
-what can be computed rather than whether anything can:
+**Two things on this screen deserve the attention.** The first is the *unit*:
+one row can be a directed pair, a pair, a person, or a whole group, and a model
+fitted at the wrong one silently repeats each group's value across its members
+and reports a precision it has not got. The second is the distribution
+underneath — the actual values of the column you chose. A column that turns out
+to be a participant code or a timestamp looks obviously wrong the moment its
+values are on screen, and looks like nothing at all until then.
 
-| Column | Without it |
-|---|---|
-| `timestamp` | no durations, no ordering by time |
-| `treatment` | the report does not break down by condition |
-| colours or role names | transcripts do not read as the participants saw them |
+### 4.4 Run
 
-One thing to get right: **the group identifier must be unique across the whole
-dataset**, not just within a session. If two sessions both have a "group 1",
-distinguish them (`sess3-g1`), or two different conversations will be merged.
+![Step 4](images/05-step-run.png)
 
-### 4.4 Name the treatments
+Three presets. **Measures only** is free, needs no key and takes seconds:
+volume, sentiment and the language indices. The other two send the conversations
+to a model and cost money, so the number of paid calls is shown before anything
+is sent, and a figure that looks like a typo is refused outright.
 
-![The treatments](images/05-settings-treatments.png)
+The log is the run as it happens, with the progress bars collapsed to one line
+each. A run can be stopped from its header. Earlier runs are kept below, each
+with the files it produced.
 
-The values the treatment column actually takes are read from the file and listed
-for naming. `restricted` becomes *Restricted chat*, and that is what the report
-prints — you are not editing a lookup table somewhere, you are labelling what is
-in your data.
+## 5. The findings
 
-### 4.5 Say what the analysis should explain
+![The findings](images/10-findings.png)
 
-![The outcome](images/06-settings-outcome.png)
+The register on the left is the six questions, each with what was found:
 
-This is the setting the rest of the tool depends on. Without it chatlens
-describes text; with it, the same pages answer questions about it.
+- **✓** the representation beats length;
+- **✗** it does not. This is not an error and is not drawn as one — on a corpus
+  of short messages it is the commonest honest answer;
+- **—** it could not be computed here, with the reason.
 
-Three things to set:
+Every finding has the same shape: the question, the answer in the largest type
+on the screen, then the evidence, then the detail, then the reasoning behind a
+panel you can open if you want it.
 
-**The column.** What the analysis should explain — whether an offer was
-accepted, how much someone earned, whether a group reached agreement. Read from
-the dataset the pipeline builds, so it appears after the first run.
+### 5.1 Which representation to trust
 
-**The kind.** Binary or continuous. Binary reads `1`, `yes`, `true`, `y`, `t`
-and their opposites, so a column exported from a spreadsheet works as it is.
+The table that decides what to build on. Every representation is fitted on the
+same training rows and scored on the same test rows, whole groups held out — a
+feature set scored on a different split is not being compared to anything.
 
-**The unit.** Which of the four an outcome row belongs to. This is not a
-formality: fit a model at the wrong unit and each group's value is silently
-repeated across its members, and the result reports a precision it has not got.
+| Representation | Variables | Separates |
+|---|---|---|
+| How much was written | 1 | 0.595 |
+| Lexical indices | 5 | 0.612 |
+| Narrative relations | 19 | 0.615 |
+| Words | 1,144 | **0.691** |
 
-Underneath, the page reads the column and says what it found — *191 of 191 rows
-have a value, 133 of them are 1 (70%)*. A column that turns out to be a
-participant code looks obviously wrong the moment its distribution is shown, and
-looks like nothing at all until then.
+On this corpus the words win. It is worth seeing why that is not obvious: they
+bring 1,144 variables where the relations bring 19, and predicting well and
+mattering are different questions. A relation can carry a large and reliable
+effect and still predict poorly, because it appears in a fraction of the rows.
 
-## 5. Running the analysis
+### 5.2 Who spoke to whom
 
-![The run](images/11-run-done.png)
+![Participation](images/12-participation.png)
 
-Three presets, and the page says which costs money before you press anything.
+Every other finding measures text, so it can only see the pairs that produced
+some. This one shows the whole grid, including the pairs where nothing was said
+— which is not missing data when speaking is a choice.
 
-| Preset | What it adds | Key | Time |
-|---|---|---|---|
-| **Measures only** | volume, sentiment, the language indices | no | seconds |
-| **Measures + validation** | a model scores the same texts, to check the indices | yes | minutes |
-| **Full analysis** | also the topics, with TopicGPT | yes | longer, and the expensive one |
+**719 of 3,054 possible directions carried nothing at all.** The matrix is who
+wrote to whom, by seat, as a share of the groups that had both seats; a zero is
+a direction nobody used.
 
-Start with the first. It needs nothing, it is free, and it produces the datasets
-every page here reads.
+And under it, the result that is not in the text at all. Holding the receiver
+fixed — a person facing exactly two candidates, one of whom wrote to them and
+one of whom did not — **the choice went to the one who wrote 357 times against
+35.** No word count is needed to see that.
 
-Every run is **archived**, so running again does not erase the last one, and the
-log stays on screen while it works rather than leaving you watching a spinner.
+### 5.3 The words
 
-![The report](images/12-report.png)
+![The words](images/13-words.png)
 
-The run writes a readable summary as well as the datasets: how many groups and
-messages survived the filters, the measures broken down by treatment, and a
-section of things worth knowing about the data that the tool noticed on the way
-past.
+A penalised regression picks the terms, so a term being here says it carries
+signal and its size says how much the penalty let it keep. None of it is an
+estimate of an effect.
 
-## 6. The pages, one at a time
+Each term is drawn with its magnitude and coloured by direction, and each is a
+control: click one and the messages it came from open below.
 
-### 6.1 Participation — who spoke to whom
+**The penalty is the knob worth moving.** Watching terms appear and disappear as
+it changes says how fragile the selection is, which a single table hides.
 
-![Participation](images/20-participation.png)
+![A tighter penalty](images/14-words-strict.png)
 
-Start here. It needs no extra, no key and no waiting, and on the study this tool
-was built for it held the strongest result in the dataset.
+The two clouds are the same information as the table, sized by coefficient and
+split by direction — one image cannot show both directions without the reader
+having to guess which large word means which.
 
-Every other page measures text, so it can only see the pairs that produced some.
-This one shows the **whole grid**: for every group, every ordered pair of its
-members, whether or not anything passed between them. Here that is 48 groups,
-570 possible directed pairs, and **257 that stayed empty**.
+### 5.4 The relations
 
-Those are not missing data. Somebody chose not to write, and in a design where
-speaking is a choice that is a finding rather than a gap. It also means every
-other page in this tool is computed on a sample **conditional on having
-spoken** — a selection that is easy to forget precisely because it never appears
-anywhere.
+![The relations](images/15-narratives.png)
 
-The bars show how many of the possible directions each group actually used. The
-shape of that is usually more interesting than its average.
+The text read as relations — who does what to whom — rather than as words. A
+relation has a direction, which a word count does not: in a study of who
+supports whom, "I support you" and "I support the other one" are opposite moves
+made of the same words.
 
-With a binary outcome per directed pair, the page adds two comparisons. The raw
-one — the outcome where somebody wrote against where they did not — comes with a
-warning that it cannot be read as it stands, because a receiver who can choose
-only one partner bounds the rate mechanically and people who write a lot may
-simply be different people. The second holds the **receiver fixed**: among
-receivers where exactly one of the possible senders wrote to them, the two
-candidates face the same person, in the same group, under the same treatment,
-and differ in whether they spoke.
+The extraction is the RELATIO package's (Ash, Gauthier and Widmer, *Political
+Analysis* 2024). It needs to be told which words name a participant rather than
+describe something — here `i, you, we` and the three seat colours. Left to be
+grouped by similarity, "i" and "you" fall together and the speaker stops being
+distinguishable from the person spoken to.
 
-Where the design cannot support that comparison, the page says so instead of
-producing a number.
+On this corpus, 1,521 units carry at least one relation and 767 distinct
+relations were found, `i support you` most often. Of the 19 that appear in
+enough units to be worth testing, **7 survive a Benjamini–Hochberg correction
+across the whole family** — which is the point of testing them together rather
+than reporting the one that came out significant.
 
-### 6.2 Words — the look before the statistics
+### 5.5 The emotions
 
-![Words](images/30-words.png)
+![A finding that cannot be computed](images/16-emotions.png)
 
-A penalised regression over unigrams and bigrams against the outcome, drawn as
-two clouds — the terms that go with it, and the terms that go against — and
-listed underneath with their coefficients. Downloads as PNG, SVG and CSV.
+This is what a finding looks like when the machine cannot answer it. The NRC
+Emotion Lexicon is free for research and distributed through a request form, so
+it cannot be shipped: the screen says where to get it, what to call it, where to
+put it, and offers to check again.
 
-This is deliberately the crude analysis. A term being kept says it carries
-signal; its size says how much the penalty let it keep. **None of it is an
-estimate**: a lasso picks and shrinks, so what survives is biased by having been
-picked.
+When it is there, the finding leads with the figure that matters most — not the
+categories, but **how much of the corpus a word list can say anything about at
+all.** A document containing none of its words scores zero everywhere, which is
+a correct reading and not a gap; but those documents are overwhelmingly the
+short ones, so the columns carry a signal about length as well as one about
+emotion.
 
-Above the clouds, always, sits length alone:
+### 5.6 Put it together
 
-> *Out-of-sample, whole groups held out. The words beat length, so this is not
-> simply a count of who typed more.*
+![The export](images/17-export.png)
 
-And where they do not beat it, the page says that is the finding rather than
-something to tune away.
+Every finding that has an answer, in one page, in order — and, at the end, the
+ones that could not be computed and why. A summary that quietly dropped those
+would show two answers with no sign that six questions had been asked.
 
-The control worth moving is the **penalty**. Tighten it and the model keeps only
-what it is most sure of:
+## 6. Reading the conversations
 
-![A tight penalty](images/31-words-strict.png)
+![The conversations](images/11-corpus.png)
 
-Loosen it and it keeps hundreds of terms:
+Every other screen measures the text. This one shows it: the conversations
+grouped as they happened and in the order they happened, with the shape of each
+exchange beside it — how long it lasted, how fast the turns came, how many words
+a message carried.
 
-![A loose penalty](images/32-words-loose.png)
+There is a search over the message bodies, and the matches are marked where they
+appear.
 
-Watching them appear and disappear is the quickest way to see how fragile the
-selection is, which a single static table hides completely. Terms and minimum
-frequency work the same way, and every value is pulled into a known range rather
-than trusted, since it arrives from a browser.
+**The inspector is the part that matters.** A term in the coefficient table, a
+relation in the narratives one — click it and the messages behind it open in a
+drawer at the foot of the window, so you can go from term to term without losing
+your place in the table.
 
-### 6.3 Narratives — who does what to whom
-
-![Narratives](images/40-narratives.png)
-
-The same text read as (agent, verb, patient) relations rather than as words,
-using RELATIO. Two properties make that worth having.
-
-A relation comes out of a **sentence**, so nothing has to be generalisable at
-the level of a whole document — which is exactly where topic modelling gives up
-on short conversations. And a relation has a **direction**, which a word count
-cannot represent: in a study of who supports whom, "I support you" and "I
-support the other one" are opposite moves made of the same words, and any model
-built on word counts scores them identically.
-
-**The page will not run until you name the entities**, and that is deliberate.
-Left to be grouped by similarity, `i` and `you` fall together — they sit in the
-same positions and mean the same kind of thing — and the speaker stops being
-distinguishable from the person being spoken to. Nothing but the experiment can
-know which of its words are its participants.
-
-Every relation appearing in twenty-five or more units is tested, with length in
-the model and standard errors clustered by group, and the reported **q** carries
-a correction across the whole family tested. Reporting the one that came out
-significant, out of dozens tried, is how a list of nothing becomes a finding.
-
-### 6.4 Emotions — eight categories from a word list
-
-![Emotions](images/50-emotions.png)
-
-Counts from the NRC Emotion Lexicon: eight emotions and two sentiments, about
-fourteen thousand English words. It is free for research and distributed through
-a form, so it is not shipped — the page says where to request it, where to put
-it, and that `tidytext::get_sentiments("nrc")` is quicker if you have R. All
-three file shapes in circulation are read without conversion.
-
-*(The figure above uses a stand-in word list, so the page has something to draw.
-The real lexicon is larger and its numbers will differ.)*
-
-Half the page is about coverage, and that is the point of it rather than a
-caveat. **A zero is a real value**: a message with no frightening word in it did
-not frighten anyone, and that row belongs in the analysis.
-
-The care is needed elsewhere. A document containing *no listed word at all*
-scores zero on every category at once, and on short messages that happens
-constantly. Those all-zero rows are not spread at random — they are the short
-ones. So the emotion columns carry a signal about length mixed into the one
-about emotion, and the same rule applies as everywhere else in this tool: keep
-the zeros, and put length in the model.
-
-Category shares are reported over the documents that could be measured, not over
-all of them. Over everything, each category is divided by the same inflated
-denominator and a corpus of very short messages comes out looking uniformly
-unemotional rather than unmeasured.
-
-### 6.5 Compare — which representation to use
-
-![Compare](images/60-compare.png)
-
-All of them against the same outcome, on the same rows and the same folds, with
-whole groups held out. A feature set scored on a different split is not being
-compared to anything.
-
-Length is always the first row, because it is the null hypothesis of text
-analysis. The bar is the higher of length and chance — length can score below
-chance, and beating *that* would be no achievement at all.
-
-A representation that could not be built appears **with its reason** rather than
-being quietly dropped. Comparing three things while the reader believes they are
-seeing five is the worse failure.
-
-One distinction the page states in words, because a table cannot: **predicting
-well and mattering are different questions, and this table answers the first.**
-A relation can carry a large and reliable effect and still predict poorly,
-because it appears in a fraction of the rows and brings a handful of variables
-where a bag of words brings a thousand. Read this page to choose what to build
-on, and the Narratives page to decide what is true.
+It reports two counts and says which is which, because confusing them
+misrepresents the model: a term's *documents* are units at the outcome's level,
+and one unit can hold several messages.
 
 ## 7. A complete session
 
-Start to finish on the demo study, using every feature. About ten minutes, of
-which most is the narratives parsing.
+From nothing to an answer, on a machine where chatlens has just been installed.
 
-```bash
-uv tool install --reinstall "git+https://github.com/nicomil/chatlens.git#egg=chatlens[all]"
-python -m spacy download en_core_web_md
-chatlens install-relatio
-chatlens demo /tmp/study            # writes the synthetic study
-chatlens dashboard
-```
-
-Then, in the browser:
-
-1. **Create** — *Ultimatum with pre-play chat*, one message per row.
-2. **Settings → Files** — upload `messages.csv` and `roster.csv` from
-   `/tmp/study/input`, and set their roles to *messages* and *participants*.
-3. **Settings → Which column is which** — confirm the guess: `group`, `sender`,
-   `receiver`, `text`, `sent_at`, `treatment`.
-4. **Settings → Treatments** — name `open` and `restricted`.
-5. **Settings → What to explain** — column `accepted`, binary, one row per
-   person. Check the line underneath: *191 of 191 rows have a value*.
-6. **Start run**, preset *Measures only*. A few seconds.
-7. **Participation** — 570 possible pairs, 257 empty. Note how much of the
-   design never happened.
-8. **Words** — move the penalty from 0.02 to 1.0 and watch the term list grow
-   from a handful to hundreds. Check whether the words beat length.
-9. **Narratives** — set the entities to `i, you, we`, save, and wait. Read the
-   table of what was said before the table of what mattered.
-10. **Emotions** — the lexicon notice. Follow it if you want the page; the rest
-    of the guide works without it.
-11. **Compare** — the answer to what all of this was for.
-
-Then read the report, and take
-`output/datasets/*_nlp.csv` into Stata or R.
+1. `chatlens dashboard` — the library opens, empty.
+2. **Try an example**, or make a study and give it your export.
+3. **Data** — the files get their roles. For an oTree export there is nothing to
+   choose.
+4. **Columns** — confirm the mapping the guess proposed; name the treatments.
+5. **Outcome** — the column, its kind, and above all its *unit*. Look at the
+   distribution underneath before going on.
+6. **Run** — *Measures only*. Seconds, no key, no cost.
+7. **Findings** — the register fills in as the numbers arrive. Start with
+   *Which representation to trust*: it says which of the others is worth
+   reading.
+8. Click a term. Read the messages. That is the step that decides whether you
+   believe the number.
+9. **Put it together** when you want to send it to somebody.
 
 ## 8. Where things live
 
-An experiment is an ordinary folder:
+A study is one folder:
 
 ```
-<library>/my-experiment/
+<library>/my-study/
 ├── experiment.toml     name, adapter, columns, treatments, outcome, entities
-├── input/              the CSVs you uploaded
+├── input/              the export, exactly as it came
 └── output/
     ├── merged/         the canonical message tables
     ├── datasets/       the tables with the measures, for Stata or R
-    ├── runs/           every run, archived
+    ├── features/       the intermediate measures
+    ├── runs/           every run, archived, with what it produced
     └── *_report.html   the readable summary
 ```
 
@@ -453,3 +344,7 @@ The library lives in this machine's application data directory —
 `~/.local/share/chatlens/experiments` on Linux. The dashboard prints the path.
 It is a folder your backups may not cover by default, and if these are
 participant data, that is worth checking.
+
+**`input/` holds the export as it came, participant identifiers included.** It
+is outside your repository, which also means it is outside the places you look
+when you tidy one.

@@ -120,7 +120,7 @@ are there.
 
 ## Contents
 
-**[The illustrated guide](GUIDE.md)** — the whole tool,
+**[The illustrated guide](guide.md)** — the whole tool,
 step by step, with screenshots. Start there.
 
 1. [What it does, in brief](01-what-it-does-in-brief.md#what-it-does-in-brief)

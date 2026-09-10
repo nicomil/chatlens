@@ -76,6 +76,10 @@ def internal_links(text: str, targets: dict) -> str:
     text = re.sub(r'§(\d+)', by_number, text)
     for number, path in targets.items():
         text = text.replace(f'](#{number}-', f']({path}#')
+    # On GitHub the guide is `GUIDE.md` beside the README; on the site it is
+    # `guide.md` in the same folder. Left alone, the link points at a file the
+    # site does not have and `mkdocs build --strict` refuses to build.
+    text = text.replace('](GUIDE.md)', '](guide.md)')
     return text
 
 
