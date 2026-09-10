@@ -671,7 +671,7 @@ th {
 }
 td:not(:first-child), th:not(:first-child) { text-align: right; }
 .note {
-  background: var(--band); border-left: 3px solid var(--accent);
+  background: var(--surface); border-left: 3px solid var(--accent);
   padding: var(--space-4) var(--space-5); margin: var(--space-2) 0;
   font-size: var(--text-base); color: var(--soft);
 }

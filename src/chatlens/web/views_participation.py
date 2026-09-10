@@ -161,10 +161,14 @@ def body(name: str, query=None) -> str:
     messages_path, roster_path, by_partner_path = _sources()
 
     if messages_path is None:
-        body = ('<p class="muted">No messages table yet. Run the analysis once '
-                'and this page fills in — it reads what the merge produces, '
-                'and costs nothing.</p>')
-        return body
+        return ui.finding(
+            'Who spoke to whom, and who did not?',
+            'Not yet: nothing has been merged.',
+            evidence=ui.blocked(
+                'This finding needs the merge',
+                'It reads the message table the merge produces. That stage is '
+                'free and needs no key.',
+                retry=f'/experiment/{ui.esc(name)}/step/run'))
 
     messages = _read(messages_path)
     roster = _read(roster_path) if roster_path else None
@@ -257,11 +261,28 @@ excluded.</p>'''
                          'same person.</p>')
 
     matrix = _matrix(participation.seat_matrix(cells))
-    body = f'''{warning}
-<h2>The grid</h2>
-{stats}
-{matrix}
-{grid_note}
-{_histogram(cover["directions_histogram"], "How many groups used that many")}
-{sections}'''
-    return body
+
+    # The answer is the silence. Every other finding here can only see the
+    # pairs that produced text; this one can see the ones that did not, and on
+    # the study this grew out of that was the strongest result of the lot.
+    empty = cover['cells'] - cover['used']
+    share = empty / cover['cells'] if cover['cells'] else 0
+    answer = (f'<span class="figure">{empty}</span> of '
+              f'<span class="figure">{cover["cells"]}</span> possible '
+              f'directions carried nothing at all '
+              f'(<span class="figure">{100 * share:.0f}%</span>).')
+
+    return ui.finding(
+        'Who spoke to whom, and who did not?',
+        answer,
+        evidence=f'{warning}{stats}{matrix}{grid_note}',
+        detail=(f'<h2>How many directions each group used</h2>'
+                f'{_histogram(cover["directions_histogram"], "How many groups used that many")}'
+                f'{sections}'),
+        how_to_read='''<p>Every other finding here measures text, so it can
+        only see the pairs that produced some. This one shows the whole grid,
+        including the pairs where nothing was said — which is not missing data
+        when speaking is a choice.</p>
+        <p>A cell is the share of groups in which that direction carried at
+        least one message, counted against the groups that had both seats. A
+        zero is a direction nobody used.</p>''')

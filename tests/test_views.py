@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
 from chatlens.core import library  # noqa: E402
-from chatlens.web import active, views_compare, views_library  # noqa: E402
+from chatlens.web import active, ui, views_compare, views_library  # noqa: E402
 from chatlens.web import views_participation  # noqa: E402
 
 
@@ -177,6 +177,53 @@ class ConcurrencyTests(unittest.TestCase):
         self.assertTrue(first_done.wait(5))
         self.assertTrue(other_entered.wait(5), 'it never got its turn')
         self.assertTrue(other_done.wait(5))
+
+
+class FindingShapeTests(unittest.TestCase):
+    """Every finding opens with its question and its answer.
+
+    The order is the argument: these screens used to open with a paragraph of
+    reasoning, then the controls, then the numbers, and put the answer in a
+    grey sentence halfway down.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        library.use_library(Path(self.tmp.name))
+        library.ensure_root()
+        library.create('Bare study', 'generic_chat')
+
+    def _bodies(self):
+        from chatlens.web import (views_compare, views_emotions,
+                                  views_narratives, views_participation,
+                                  views_words)
+        return {
+            'participation': lambda: views_participation.body('bare-study'),
+            'compare': lambda: views_compare.panel('bare-study'),
+            'narratives': lambda: views_narratives.panel('bare-study'),
+            'emotions': lambda: views_emotions.panel(),
+            'words': lambda: views_words.body('bare-study'),
+        }
+
+    def test_each_one_asks_a_question_even_when_it_cannot_answer(self):
+        """A study with nothing run is the commonest state there is, and the
+        reader should still be told what the screen is for."""
+        with active.experiment('bare-study'):
+            for entry, render in self._bodies().items():
+                with self.subTest(finding=entry):
+                    body = render()
+                    self.assertIn('class="question"', body, entry)
+                    self.assertIn('class="answer"', body, entry)
+
+    def test_a_negative_answer_is_not_marked_as_an_error(self):
+        """`no` is the commonest honest result on a corpus of short messages;
+        the register must not colour it like a failure."""
+        markup = ui.register('s', [
+            {'id': 'words', 'name': 'The words', 'verdict': ui.NO, 'note': ''},
+        ])
+        self.assertIn('entry no', markup)
+        self.assertNotIn('entry bad', markup)
 
 
 if __name__ == '__main__':

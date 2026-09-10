@@ -125,8 +125,13 @@ VERDICT_MARK = {
 }
 
 
-def register(slug: str, findings, current: str = '') -> str:
-    """One row per question, ordered so that answers come before obstacles."""
+def register(slug: str, findings, current: str = '', refresh: str = '') -> str:
+    """One row per question, ordered so that answers come before obstacles.
+
+    `refresh` is where the same list, with its verdicts worked out, will come
+    from. The verdicts are the point of the register and they are expensive, so
+    the list arrives at once and fills in rather than holding the page.
+    """
     order = {YES: 0, NO: 1, OPEN: 2, UNAVAILABLE: 3}
     rows = []
     for finding in sorted(findings, key=lambda f: (order.get(f['verdict'], 9),
@@ -145,7 +150,10 @@ def register(slug: str, findings, current: str = '') -> str:
             f'<span class="entryname">{esc(finding["name"])}</span>'
             f'{note_html}'
             f'</span></a>')
-    return (f'<aside class="register" aria-label="What this study can answer">'
+    arriving = (f' hx-get="{attr(refresh)}" hx-trigger="load"'
+                f' hx-swap="outerHTML"' if refresh else '')
+    return (f'<aside class="register" aria-label="What this study can answer"'
+            f'{arriving}>'
             f'<h2>Findings</h2>{"".join(rows)}</aside>')
 
 

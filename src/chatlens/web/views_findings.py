@@ -42,6 +42,20 @@ def _body(entry: str, name: str, query) -> str:
             return render()
 
 
+def register(name: str, entry: str = '') -> str:
+    """The register with the verdicts worked out.
+
+    Asked for separately so that the page does not wait on it: the comparison
+    behind these verdicts cross-validates every representation, and the reader
+    should be looking at the finding they opened while that happens.
+    """
+    from chatlens.core import config
+
+    experiment = config.EXPERIMENT
+    entries = study_state.findings(experiment, study_state.verdicts())
+    return ui.register(name, entries, entry)
+
+
 def page(name: str, entry: str = '', query=None) -> str:
     """The register, and whichever finding was asked for."""
     from chatlens.core import config
@@ -63,5 +77,6 @@ def page(name: str, entry: str = '', query=None) -> str:
         study=experiment.name,
         steps=study_state.step_state(experiment),
         step='findings',
-        aside=ui.register(name, entries, entry),
+        aside=ui.register(name, entries, entry, refresh=(
+            f'/experiment/{ui.esc(name)}/findings/register?on={ui.esc(entry)}')),
     )

@@ -172,20 +172,41 @@ def _result(experiment):
 SHOWN = 12
 
 
+QUESTION = 'Read as who does what to whom, what was said — and what matters?'
+
+
 def panel(name: str) -> str:
     from chatlens.core import config
 
     experiment = config.EXPERIMENT
-    body = _entities_panel(name, experiment)
+    controls = _entities_panel(name, experiment)
     if not experiment.narrative_entities:
-        return body
+        return ui.finding(
+            QUESTION, 'Not yet: no entities have been declared.',
+            controls=controls,
+            evidence=ui.blocked(
+                'This finding needs the words that name someone',
+                'A relation has a subject and an object, and the extraction '
+                'has to be told which words name a participant rather than '
+                'describe something. Left to be grouped by similarity, "i" '
+                'and "you" fall together and the speaker stops being '
+                'distinguishable from the person spoken to.'))
 
     found, problem = _result(experiment)
     if problem == 'no messages':
-        return body + ('<p class="muted">No messages table yet. Run the '
-                       'analysis once.</p>')
+        return ui.finding(
+            QUESTION, 'Not yet: nothing has been merged.',
+            controls=controls,
+            evidence=ui.blocked(
+                'This finding needs the merge',
+                'It reads every message and parses its grammar. That stage is '
+                'free and needs no key.',
+                retry=f'/experiment/{_e(name)}/step/run'))
     if problem:
-        return body + f'<p class="formerror">{_e(problem)}</p>' 
+        return ui.finding(QUESTION, 'Something is in the way.',
+                          controls=controls,
+                          evidence=ui.notice(_e(problem), 'bad'))
+    body = ''
 
     common = found['frequencies'].most_common(SHOWN)
     rows = [(f'<b>{_e(a)}</b>', _e(v), _e(p), str(n))
@@ -205,7 +226,7 @@ def panel(name: str) -> str:
            'use. The method is theirs; this tool prepares the input and reads '
            'the output.')
 
-    body += f'''<h3>What was said</h3>
+    body += f'''<h2>What was said</h2>
 <p class="muted">{len(found["per_unit"])} units carry at least one relation, and
 {len(found["frequencies"])} distinct relations were found. {how}</p>
 {table}'''
@@ -214,7 +235,7 @@ def panel(name: str) -> str:
     if found.get('problem'):
         body += f'<p class="formerror">{_e(found["problem"])}</p>'
     elif tested is None:
-        body += ('<h3>Which of them matter</h3>'
+        body += ('<h2>Which of them matter</h2>'
                  '<p class="muted">Declare a binary outcome under Settings and '
                  'this becomes a test rather than a list.</p>')
     else:
@@ -229,7 +250,7 @@ def panel(name: str) -> str:
             empty_message='No relation appeared in enough units to be worth '
                           'testing, so there is nothing in this table. That '
                           'is the result, not a gap.')
-        body += f'''<h3>Which of them matter</h3>
+        body += f'''<h2>Which of them matter</h2>
 <p class="muted">Every relation appearing in {narratives.MIN_DOCUMENTS} or more
 units is tested — {tested["tested"]} of {tested["candidates"]} candidates —
 holding the length of what was written constant, with standard errors clustered
@@ -238,10 +259,44 @@ family: reporting the one that came out significant, out of dozens tried, is how
 a list of nothing becomes a finding. {tested["survivors"]} survive at
 q&nbsp;&lt;&nbsp;0.10.</p>
 {result_rows}
-<p class="muted">A relation naming a participant mixes the cases where that
-participant is the one being addressed with the cases where they are not, and
-those can be opposite moves. Reading direction properly needs the addressee's
-identity, which this page does not assume every experiment has.</p>'''
-    return body
+'''
+
+    # The answer is what survived the correction, because that is the whole
+    # point of testing a family of relations rather than reporting the one
+    # that came out significant.
+    tested = found.get('tested')
+    if tested is None:
+        answer = (f'<span class="figure">{len(found["frequencies"])}</span> '
+                  f'distinct relations were extracted. Nothing is tested '
+                  f'without an outcome.')
+        verdict = ui.OPEN
+    elif tested['survivors']:
+        answer = (f'<span class="with">{tested["survivors"]}</span> of '
+                  f'<span class="figure">{tested["tested"]}</span> tested '
+                  f'relations survive the correction.')
+        verdict = ui.YES
+    else:
+        answer = (f'None. Of <span class="figure">{tested["tested"]}</span> '
+                  f'relations tested, none survives a correction across the '
+                  f'whole family.')
+        verdict = ui.NO
+
+    return ui.finding(
+        QUESTION,
+        answer,
+        verdict=verdict,
+        controls=controls,
+        evidence=body,
+        how_to_read='''<p>A relation has a direction, which a word count does
+        not: in a study of who supports whom, "I support you" and "I support
+        the other one" are opposite moves made of the same words.</p>
+        <p><b>q</b> carries a Benjamini-Hochberg correction across the whole
+        family tested. Reporting the one that came out significant, out of
+        dozens tried, is how a list of nothing becomes a finding.</p>
+        <p>A relation naming a participant mixes the cases where that
+        participant is the one being addressed with the cases where they are
+        not, and those can be opposite moves. Reading direction properly needs
+        the addressee\'s identity, which this tool does not assume every
+        experiment has.</p>''')
 
 

@@ -80,18 +80,28 @@ def _bars(rows) -> str:
             f'</tr></thead><tbody>{bars}</tbody></table></div>')
 
 
+QUESTION = 'What emotional content is in these conversations?'
+
+
 def panel() -> str:
     if not nrc.available():
-        return _missing_panel()
+        return ui.finding(
+            QUESTION, 'Not without the word list.',
+            evidence=_missing_panel())
     try:
         marked = nrc.load()
     except (OSError, ValueError) as exc:
-        return f'<p class="formerror">{_e(exc)}</p>'
+        return ui.finding(QUESTION, 'The word list could not be read.',
+                          evidence=ui.notice(_e(exc), 'bad'))
 
     texts, source = _texts_and_source()
     if not texts:
-        return ('<p class="muted">Nothing to score yet: run the analysis once '
-                'so there are documents to read.</p>')
+        return ui.finding(
+            QUESTION, 'Not yet: there are no documents to score.',
+            evidence=ui.blocked(
+                'This finding needs a run',
+                'It scores the documents the measures stage writes. That '
+                'stage is free and needs no key.'))
 
     cover = nrc.coverage(texts, marked)
     rows = nrc.totals(texts, marked)
@@ -120,34 +130,48 @@ def panel() -> str:
         about emotion. Keep the zeros and put length in the model, the same way
         every other page here does.</p>''')
 
-    return f'''<p class="muted">{len(marked)} words in the lexicon, read from
-<b>{_e(nrc.lexicon_path().name)}</b>. Scored on
-{_e(source.name if source else "the documents")}.</p>
+    # The answer is the coverage, not the categories. A word list can only
+    # speak about the documents that contain one of its words, and on short
+    # messages that is a minority — read without that figure, the category
+    # shares look like a measurement where there is mostly a zero.
+    share = cover['share_measured']
+    answer = (f'On <span class="figure">{100 * share:.0f}%</span> of the '
+              f'documents. The rest contain no word from the list at all.')
 
-<div class="stats">
-  <div class="stat"><div class="v">{cover["documents"]}</div>
-    <div class="l">documents with any text</div></div>
-  <div class="stat"><div class="v">{cover["measured"]}</div>
-    <div class="l">contain at least one listed word</div></div>
-  <div class="stat"><div class="v">{100 * cover["share_measured"]:.0f}%</div>
-    <div class="l">could be measured at all</div></div>
-</div>
+    provenance = (f'<p class="muted">{len(marked)} words in the lexicon, read '
+                  f'from <b>{_e(nrc.lexicon_path().name)}</b>. Scored on '
+                  f'{_e(source.name if source else "the documents")}.</p>')
 
-{caveat}
+    tiles = ui.stat_tiles([
+        (cover['documents'], 'documents with any text'),
+        (cover['measured'], 'contain at least one listed word'),
+        (f'{100 * share:.0f}%', 'could be measured at all'),
+    ])
 
-<h3>Where nothing could be measured</h3>
+    where = f'''<h2>Where nothing could be measured</h2>
 <div class="scroll"><table class="grid">
 <thead><tr><th>Words</th><th class="num">Documents</th>
 <th class="num">No emotion word</th><th class="num">Share</th></tr></thead>
 <tbody>{buckets}</tbody></table></div>
 <p class="muted">{_e(cover["note"])}</p>
-{zeros}
+{zeros}'''
 
-<h3>What the measured documents contain</h3>
+    contain = f'''<h2>What the measured documents contain</h2>
 {totals}
 <p class="muted">Shares are of the {cover["measured"]} documents that could be
 measured, not of all {cover["documents"]}. Over all of them every category would
 be divided by the same inflated denominator, and a corpus that cannot be
 measured would look uniformly unemotional.</p>'''
+
+    return ui.finding(
+        QUESTION,
+        answer,
+        evidence=provenance + tiles + caveat + contain,
+        detail=where,
+        how_to_read='''<p>Eight emotions and two sentiments, from a word list.
+        A document containing none of its words scores zero everywhere, which
+        is a correct reading and not a gap — but those rows are overwhelmingly
+        the short ones, so these columns carry a signal about length as well as
+        one about emotion.</p>''')
 
 

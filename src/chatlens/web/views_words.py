@@ -176,39 +176,37 @@ def panel(name: str, query) -> str:
     """Everything that changes when a knob moves."""
     found, declared, problem, params = result(query)
 
-    if problem == 'no outcome':
-        return ('<p class="muted">No outcome is declared, so there is nothing '
-                f'for the words to predict. Set one under <a href="/experiment/'
-                f'{_e(name)}/step/outcome">Settings</a>.</p>')
-    if problem == 'no dataset':
-        return ('<p class="muted">The dataset for that unit has not been built '
-                'yet. Run the analysis once.</p>')
-    if problem == 'no text column':
-        return ('<p class="muted">That dataset has no column of text to read.'
-                '</p>')
     if problem:
-        return f'<p class="formerror">{_e(problem)}</p>'
+        return _cannot(name, problem)
 
     label = _e(declared['label'] or declared['column'])
     query_string = (f'ngrams={params["ngrams"]}&min_df={params["min_df"]}'
                     f'&penalty={params["penalty"]}')
     base = f'/experiment/{_e(name)}/findings/words'
 
+    # The answer is the comparison with length, because on a corpus of short
+    # messages that is what the selection is usually measuring.
     baseline = ''
+    answer = f'{len(found["kept"])} terms survive the penalty.'
+    verdict = ui.OPEN
     if found['auc_words'] is not None and found['auc_length'] is not None:
         beaten = found['auc_words'] > found['auc_length'] + 0.02
-        baseline = f'''<div class="stats">
-  <div class="stat"><div class="v">{found["auc_length"]:.3f}</div>
-    <div class="l">length alone</div></div>
-  <div class="stat"><div class="v">{found["auc_words"]:.3f}</div>
-    <div class="l">the words</div></div>
-</div>
-<p class="muted">Out-of-sample, whole groups held out. {
-    "The words beat length, so this is not simply a count of who typed more."
-    if beaten else
-    "The words do not beat length. What looks like content here is mostly how "
-    "much was written, and that is the finding rather than a problem to tune "
-    "away."}</p>'''
+        verdict = ui.YES if beaten else ui.NO
+        answer = (
+            f'{"Yes" if beaten else "No"}. The words score '
+            f'<span class="figure">{found["auc_words"]:.3f}</span> against '
+            f'<span class="figure">{found["auc_length"]:.3f}</span> for '
+            f'length alone.')
+        baseline = ui.stat_tiles([
+            (f'{found["auc_length"]:.3f}', 'length alone'),
+            (f'{found["auc_words"]:.3f}', 'the words'),
+        ]) + (
+            '<p class="muted">Out-of-sample, whole groups held out. ' + (
+                'The words beat length, so this is not simply a count of who '
+                'typed more.' if beaten else
+                'What looks like content here is mostly how much was written, '
+                'and that is the finding rather than a problem to tune '
+                'away.') + '</p>')
 
     warning = ''
     if found['penalty_did_nothing']:
@@ -258,15 +256,59 @@ def panel(name: str, query) -> str:
                f'terms appear in at least {found["min_df"]} documents; '
                f'<b>{len(kept)}</b> survive the penalty.')
 
-    return f'''{warning}
-<p class="muted">{summary}</p>
-{baseline}
-{clouds}
-<h3>The terms</h3>
-{ui.table(["Term", "Coefficient", "", unit_heading], rows,
-          numeric={1, 3}, caption=caption,
-          empty_message="No term survived the penalty, so there is nothing to "
-                        "list. Raise the penalty to keep more of them.")}'''
+    table = ui.table(
+        ['Term', 'Coefficient', '', unit_heading], rows,
+        numeric={1, 3}, caption=caption,
+        empty_message='No term survived the penalty, so there is nothing to '
+                      'list. Raise the penalty to keep more of them.')
+
+    return ui.finding(
+        f'Which words go with {label}?',
+        answer,
+        verdict=verdict,
+        controls=_controls(name, params),
+        evidence=f'{warning}<p class="muted">{summary}</p>{baseline}{clouds}',
+        detail=f'<h2>The terms</h2>{table}',
+        how_to_read='''<p>A penalised regression picks the terms, so a term
+        being here says it carries signal and its size says how much the
+        penalty let it keep — none of it is an estimate of an effect.</p>
+        <p>The penalty is the control worth moving. Watching terms appear and
+        disappear as it changes says how fragile the selection is, which a
+        single table hides.</p>
+        <p>Click a term to read the messages it came from. The count beside it
+        is units at the outcome's level, not messages: one unit can hold
+        several.</p>''')
+
+
+def _cannot(name: str, problem: str) -> str:
+    """The question, and why it cannot be answered here yet."""
+    question = 'Which words go with the outcome?'
+    if problem == 'no outcome':
+        return ui.finding(
+            question, 'Not yet: nothing has been declared to explain.',
+            evidence=ui.blocked(
+                'This finding needs an outcome',
+                'The terms are chosen by how well they separate one column. '
+                'Until a column is named there is nothing to separate.',
+                retry=f'/experiment/{_e(name)}/step/outcome'))
+    if problem == 'no dataset':
+        return ui.finding(
+            question, 'Not yet: nothing has been measured.',
+            evidence=ui.blocked(
+                'This finding needs a run',
+                'It reads the dataset built for the outcome\'s unit. Run the '
+                'analysis once — the free preset is enough.',
+                retry=f'/experiment/{_e(name)}/step/run'))
+    if problem == 'no text column':
+        return ui.finding(
+            question, 'Not on this dataset.',
+            evidence=ui.blocked(
+                'This finding needs a column of text',
+                'The dataset built for that unit carries no transcript to '
+                'read.',
+                retry=f'/experiment/{_e(name)}/step/outcome'))
+    return ui.finding(question, 'Something is in the way.',
+                      evidence=ui.notice(_e(problem), 'bad'))
 
 
 # Enough to see the shape of the selection without turning the page into a
@@ -286,8 +328,8 @@ def _clouds(found, label: str, base: str, query_string: str) -> str:
 
     figures = []
     for positive, caption, ink in (
-            (True, f'Goes with {label}', 'var(--accent)'),
-            (False, 'Goes against it', 'var(--ko)')):
+            (True, f'Goes with {label}', 'var(--with)'),
+            (False, 'Goes against it', 'var(--against)')):
         try:
             svg = words_core.cloud_svg(found['kept'], positive)
         except ValueError:
@@ -330,11 +372,20 @@ def body(name: str, query=None) -> str:
     params = _params(query)
     query_string = (f'ngrams={params["ngrams"]}&min_df={params["min_df"]}'
                     f'&penalty={params["penalty"]}')
-    return (f'{_controls(name, params)}'
-            f'<div id="wordpanel"'
+    # The question is there from the first byte. It used to be inside the
+    # panel, so the screen opened on a spinner with nothing saying what was
+    # being worked out.
+    from chatlens.core import config
+
+    declared = config.EXPERIMENT.outcome or {}
+    label = _e(declared.get('label') or declared.get('column') or 'the outcome')
+    waiting = ui.finding(
+        f'Which words go with {label}?',
+        'Working it out…',
+        evidence=ui.spinner('Fitting the model and drawing the figures…'))
+    return (f'<div id="wordpanel"'
             f' hx-get="/experiment/{_e(name)}/findings/words/panel'
             f'?{query_string}"'
-            f' hx-trigger="load" hx-swap="innerHTML">'
-            f'{ui.spinner("Fitting the model and drawing the figures…")}</div>')
+            f' hx-trigger="load" hx-swap="innerHTML">{waiting}</div>')
 
 

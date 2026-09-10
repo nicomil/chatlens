@@ -118,6 +118,116 @@ def findings(experiment, verdicts=None) -> list[dict]:
     return entries
 
 
+def verdicts() -> dict:
+    """What the analysis actually found, per entry of the register.
+
+    Every number here is already computed by the core; this only reads the
+    decisions out and says them in one line each. The heavy one — the
+    comparison — is cached by `views_compare`, so the second reader pays
+    nothing.
+    """
+    from chatlens.web import views_compare
+
+    found = {}
+    found.update(_corpus_verdict())
+    found.update(_participation_verdict())
+    found.update(_emotions_verdict())
+
+    scored, problem = views_compare._scored()
+    if problem or not scored:
+        return found
+
+    volume = scored.get('volume')
+    by_kind = {row['kind']: row for row in scored['results']}
+    for key, kind in (('words', 'words'), ('narratives', 'narratives')):
+        row = by_kind.get(kind)
+        if row is None:
+            continue
+        if row['auc'] is None:
+            found[key] = (ui.UNAVAILABLE, row.get('why', ''))
+        elif row['beats_volume']:
+            found[key] = (ui.YES, f'{row["auc"]:.3f} against {volume:.3f}')
+        else:
+            found[key] = (ui.NO, f'{row["auc"]:.3f} against {volume:.3f} '
+                                 f'for length')
+
+    winners = [r for r in scored['results']
+               if r['kind'] != 'volume' and r.get('beats_volume')]
+    scorable = [r for r in scored['results'] if r['auc'] is not None]
+    if scorable:
+        best = max(scorable, key=lambda r: r['auc'])
+        found['compare'] = (
+            (ui.YES, f'{best["name"].lower()} does best at {best["auc"]:.3f}')
+            if winners else
+            (ui.NO, f'nothing beats length at {volume:.3f}'))
+    return found
+
+
+def _corpus_verdict() -> dict:
+    """Not a verdict: a size. The corpus is the thing, not a claim about it."""
+    from chatlens.core import config, corpus
+
+    found = sorted(config.MERGED_DIR.glob('*_messages_long.csv'))
+    if not found:
+        return {}
+    try:
+        messages = corpus.load(found[0])
+    except OSError:
+        return {}
+    groups = len({str(m.get('group_uid') or '') for m in messages})
+    return {'corpus': (ui.OPEN,
+                       f'{len(messages)} messages in {groups} conversations')}
+
+
+def _participation_verdict() -> dict:
+    """Whether writing at all went with the outcome.
+
+    On the study this grew out of it was the strongest result of the lot, and
+    it is not about the text: it is about the pairs where there was none.
+    """
+    from chatlens.core import participation
+    from chatlens.web import views_participation
+
+    messages_path, roster_path, by_partner_path = views_participation._sources()
+    if messages_path is None:
+        return {}
+    try:
+        messages = views_participation._read(messages_path)
+        roster = (views_participation._read(roster_path)
+                  if roster_path else None)
+        members, _source = participation.membership(messages, roster=roster)
+        cover = participation.coverage(
+            participation.grid(messages, members), members)
+    except (OSError, ValueError):
+        return {}
+
+    empty = cover['cells'] - cover['used']
+    share = empty / cover['cells'] if cover['cells'] else 0
+    return {'participation': (ui.OPEN,
+                              f'{empty} of {cover["cells"]} directions silent '
+                              f'({100 * share:.0f}%)')}
+
+
+def _emotions_verdict() -> dict:
+    """How much of the corpus a word list can say anything about at all."""
+    from chatlens.core import nrc
+    from chatlens.web import views_emotions
+
+    try:
+        if not nrc.available():
+            return {}
+        marked = nrc.load()
+        texts, _source = views_emotions._texts_and_source()
+        if not texts:
+            return {}
+        cover = nrc.coverage(texts, marked)
+    except (OSError, ValueError):
+        return {}
+    share = cover['share_measured']
+    return {'emotions': (ui.OPEN,
+                         f'{100 * share:.0f}% of documents could be measured')}
+
+
 def entry_name(key: str) -> str:
     for candidate, name, _order in CATALOGUE:
         if candidate == key:

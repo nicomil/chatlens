@@ -128,75 +128,117 @@ def _scored():
 
 
 
-def _how_to_read(name: str) -> str:
-    base = f'/experiment/{_e(name)}'
-    return ui.disclosure(
-        'How to read this table, and where to go next',
-        f'''<p><b>Predicting well and mattering are different questions, and
-        this table answers the first.</b> A relation can carry a large and
-        reliable effect and still predict poorly, because it appears in a
-        fraction of the rows and brings a handful of variables where a bag of
-        words brings a thousand.</p>
-        <p>Length is first because it is the null hypothesis of text analysis:
-        longer documents contain more of everything, and a representation that
-        does not beat "how much was written" has not yet shown that content
-        matters.</p>
-        <p>"How well it separates" is the area under the ROC curve: 0.5 is a
-        coin, 1.0 is perfect. The spread beside it is how much that figure
-        moved between folds — a large one means the number is not to be read
-        closely.</p>
-        <p>From here: <a href="{base}/findings/words">the words</a> for which terms were
-        selected, <a href="{base}/findings/narratives">the narratives</a> for what is
-        true rather than what predicts, <a href="{base}/findings/participation">
-        participation</a> for who spoke at all.</p>''')
-
-
 def panel(name: str) -> str:
     """The comparison itself."""
     scored, problem = _scored()
 
-    if problem == 'no outcome':
-        body = ('<p class="muted">Nothing to compare against. Declare an '
-                f'outcome under <a href="/experiment/{_e(name)}/step/outcome">'
-                'Settings</a>.</p>')
-    elif problem == 'not binary':
-        body = ('<p class="muted">This page compares how well each '
-                'representation separates a yes/no outcome. The declared one is '
-                'continuous.</p>')
-    elif problem == 'no sklearn':
-        command = optional.install_command(
-            'words', ['scikit-learn', 'matplotlib', 'wordcloud'])
-        body = (f'<div class="panel"><h3>Needs scikit-learn</h3>'
-                f'<pre class="cmd">{_e(command)}</pre></div>')
-    elif problem == 'no dataset':
-        body = ('<p class="muted">Run the analysis once so there is a dataset '
-                'to read.</p>')
-    elif problem:
-        body = f'<p class="formerror">{_e(problem)}</p>'
-    else:
-        rows = ''.join(
-            (f'<tr><td>{_e(r["name"])}</td>'
-             f'<td class="num">{r["features"]}</td>'
-             f'<td class="num">{r["auc"]:.3f}</td>'
-             f'<td class="num">{r["spread"]:.3f}</td>'
-             f'<td>{"" if r["beats_volume"] is None else ("yes" if r["beats_volume"] else "no")}</td></tr>'
-             if r['auc'] is not None else
-             f'<tr class="absent"><td>{_e(r["name"])}</td>'
-             f'<td class="num">—</td><td class="num">—</td>'
-             f'<td class="num">—</td><td>{_e(r.get("why", ""))}</td></tr>')
-            for r in scored['results'])
-        body = f'''{_participation_line(name)}
-<p class="muted">{scored["rows"]} rows, {scored["folds"]} folds, whole groups
-held out. Every representation is fitted on the same training rows and scored on
-the same test rows — a feature set scored on a different split is not being
-compared to anything.</p>
-<div class="scroll"><table class="grid">
+    if problem:
+        return _cannot(name, problem)
+
+    rows = ''.join(
+        (f'<tr><td>{_e(r["name"])}</td>'
+         f'<td class="num">{r["features"]}</td>'
+         f'<td class="num">{r["auc"]:.3f}</td>'
+         f'<td class="num">{r["spread"]:.3f}</td>'
+         f'<td>{"" if r["beats_volume"] is None else ("yes" if r["beats_volume"] else "no")}</td></tr>'
+         if r['auc'] is not None else
+         f'<tr class="absent"><td>{_e(r["name"])}</td>'
+         f'<td class="num">—</td><td class="num">—</td>'
+         f'<td class="num">—</td><td>{_e(r.get("why", ""))}</td></tr>')
+        for r in scored['results'])
+    table = f'''<div class="scroll"><table class="grid">
 <thead><tr><th>Representation</th><th class="num">Variables</th>
 <th class="num">How well it separates</th>
 <th class="num">Spread across folds</th>
 <th>Beats length alone</th></tr></thead>
-<tbody>{rows}</tbody></table></div>
-<div class="verdictbox"><p>{_e(compare.verdict(scored))}</p></div>
-{_how_to_read(name)}'''
+<tbody>{rows}</tbody></table></div>'''
 
-    return body
+    sample = (f'<p class="muted">{scored["rows"]} rows, {scored["folds"]} '
+              f'folds, whole groups held out. Every representation is '
+              f'fitted on the same training rows and scored on the same '
+              f'test rows — a feature set scored on a different split is '
+              f'not being compared to anything.</p>')
+
+    volume = scored.get('volume')
+    scorable = [r for r in scored['results'] if r['auc'] is not None]
+    winners = [r for r in scorable
+               if r['kind'] != 'volume' and r.get('beats_volume')]
+    if winners:
+        best = max(winners, key=lambda r: r['auc'])
+        answer = (f'<span class="with">{_e(best["name"])}</span>, at '
+                  f'<span class="figure">{best["auc"]:.3f}</span> against '
+                  f'<span class="figure">{volume:.3f}</span> for length '
+                  f'alone.')
+        verdict = ui.YES
+    else:
+        answer = ('Nothing. No representation of the content beats how '
+                  f'much was written, at '
+                  f'<span class="figure">{volume:.3f}</span>.')
+        verdict = ui.NO
+
+    return ui.finding(
+        'Which representation of the text is worth using?',
+        answer,
+        verdict=verdict,
+        evidence=_participation_line(name) + sample + table,
+        detail=f'<p>{_e(compare.verdict(scored))}</p>',
+        how_to_read=_reading())
+
+
+def _cannot(name: str, problem: str) -> str:
+    """The question, and why it cannot be answered here yet."""
+    question = 'Which representation of the text is worth using?'
+    if problem == 'no outcome':
+        return ui.finding(
+            question, 'Not yet: nothing has been declared to explain.',
+            evidence=ui.blocked(
+                'This finding needs an outcome',
+                'Every representation here is scored on how well it separates '
+                'one column. Until a column is named there is nothing to score '
+                'against.',
+                retry=f'/experiment/{_e(name)}/step/outcome'))
+    if problem == 'not binary':
+        return ui.finding(
+            question, 'Not with this outcome.',
+            evidence=ui.blocked(
+                'This finding needs a yes/no outcome',
+                'It compares how well each representation separates two '
+                'groups. The declared outcome is continuous.',
+                retry=f'/experiment/{_e(name)}/step/outcome'))
+    if problem == 'no sklearn':
+        command = optional.install_command(
+            'words', ['scikit-learn', 'matplotlib', 'wordcloud'])
+        return ui.finding(
+            question, 'Not on this machine yet.',
+            evidence=ui.blocked(
+                'This finding needs scikit-learn',
+                'The models are fitted with it. Nothing is installed on your '
+                'behalf: chatlens is four megabytes and this is the part that '
+                'is not.',
+                commands=[('scikit-learn, matplotlib, wordcloud', command,
+                           'about 150 MB')]))
+    if problem == 'no dataset':
+        return ui.finding(
+            question, 'Not yet: nothing has been measured.',
+            evidence=ui.blocked(
+                'This finding needs a run',
+                'It reads the dataset the measures stage writes. Run the '
+                'analysis once — the free preset is enough.',
+                retry=f'/experiment/{_e(name)}/step/run'))
+    return ui.finding(question, 'Something is in the way.',
+                      evidence=ui.notice(_e(problem), 'bad'))
+
+
+def _reading() -> str:
+    return '''<p><b>Predicting well and mattering are different questions, and
+    this table answers the first.</b> A relation can carry a large and reliable
+    effect and still predict poorly, because it appears in a fraction of the
+    rows and brings a handful of variables where a bag of words brings a
+    thousand.</p>
+    <p>Length is first because it is the null hypothesis of text analysis:
+    longer documents contain more of everything, and a representation that does
+    not beat "how much was written" has not yet shown that content
+    matters.</p>
+    <p>"How well it separates" is the area under the ROC curve: 0.5 is a coin,
+    1.0 is perfect. The spread beside it is how much that figure moved between
+    folds — a large one means the number is not to be read closely.</p>'''

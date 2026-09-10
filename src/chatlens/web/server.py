@@ -308,6 +308,9 @@ class Handler(BaseHTTPRequestHandler):
                                cookie=cookie)
                 elif action == 'inspect':
                     self._html(views_corpus.inspector(name, query))
+                elif action == 'findings/register':
+                    self._html(views_findings.register(
+                        name, (query.get('on') or [''])[0]))
                 elif action == 'findings/words/panel':
                     self._html(views_words.panel(name, query))
                 elif action.startswith('findings/words/'):

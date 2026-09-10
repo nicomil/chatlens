@@ -456,6 +456,16 @@ p.why { margin: 0 0 var(--space-3); font-size: var(--text-sm); color: var(--mute
   border-radius: var(--radius-md); margin-bottom: var(--space-6);
 }
 .controls .field { margin-bottom: 0; }
+/* The knobs sit side by side: they are read together, and each one changes
+   what the other two are showing. */
+/* A grid, not a flex row: the hints under the three controls are different
+   lengths, and aligned at the bottom they pushed the selects to three
+   different heights. */
+.wordform {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--space-5); width: 100%; align-items: start;
+}
+.wordform .field { margin-bottom: 0; }
 
 .mapping { display: grid; gap: var(--space-3); margin: var(--space-4) 0 var(--space-5); }
 .field.maprow {
