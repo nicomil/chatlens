@@ -322,6 +322,24 @@ def read_jsonl(path: Path) -> list[dict]:
 API_ERROR = 'Error'
 
 
+def already_done(phase: str, path: Path, expected: int,
+                 allow_short: bool = False):
+    """What this phase produced last time, if it finished. Otherwise None.
+
+    `verify_phase` already knows what a complete output looks like, down to
+    the `"Error"` rows TopicGPT writes instead of raising, so it is what
+    decides. Anything it rejects — absent, truncated, carrying failures — is
+    treated here as absent: a half-finished phase is paid for again rather
+    than half-reused.
+    """
+    if not path.is_file():
+        return None
+    try:
+        return verify_phase(phase, path, expected, allow_short=allow_short)
+    except TopicGPTIncomplete:
+        return None
+
+
 def verify_phase(phase: str, path: Path, expected: int,
                  allow_short: bool = False) -> int:
     """Check a phase answered every document it was given; raise if it did not.
@@ -412,6 +430,7 @@ def run_topicgpt(
     induce_only: bool = False,
     shuffle_seed: int | None = None,
     assignment_documents=None,
+    reuse: bool = False,
 ) -> Path:
     """Run the official pipeline and return the assignments file.
 
@@ -473,24 +492,32 @@ def run_topicgpt(
     topics_lvl1 = outdir / 'generation_1.md'
 
     total = 2 if induce_only else 4
-    print(f'  [1/{total}] topic generation', flush=True)
-    with _quiet(verbose) as digest:
-        generate_topic_lvl1(
-            api=api,
-            model=model,
-            data=str(data_file),
-            prompt_file=str(repo_path / PROMPT_FILES['generation']),
-            seed_file=str(seed_path),
-            out_file=str(generation_out),
-            topic_file=str(topics_lvl1),
-            verbose=verbose,
-        )
-    if digest:
-        digest.report()
-    # Before anything downstream reads this file. Generation is the one phase
-    # allowed to stop early, because the method says so.
-    induced = verify_phase('topic generation', generation_out, len(documents),
-                           allow_short=True)
+    induced = (already_done('topic generation', generation_out,
+                            len(documents), allow_short=True)
+               if reuse else None)
+    if induced is not None:
+        print(f'  [1/{total}] topic generation — '
+              f'{generation_out.name} is complete, not run again',
+              flush=True)
+    else:
+        print(f'  [1/{total}] topic generation', flush=True)
+        with _quiet(verbose) as digest:
+            generate_topic_lvl1(
+                api=api,
+                model=model,
+                data=str(data_file),
+                prompt_file=str(repo_path / PROMPT_FILES['generation']),
+                seed_file=str(seed_path),
+                out_file=str(generation_out),
+                topic_file=str(topics_lvl1),
+                verbose=verbose,
+            )
+        if digest:
+            digest.report()
+        # Before anything downstream reads this file. Generation is the one phase
+        # allowed to stop early, because the method says so.
+        induced = verify_phase('topic generation', generation_out, len(documents),
+                               allow_short=True)
 
     topics_for_assignment = topics_lvl1
     # Topics can be induced on a broad unit and assigned to a finer one:
@@ -504,36 +531,44 @@ def run_topicgpt(
     if refine:
         refined_topics = outdir / 'generation_1_refined.md'
         refined_generation = outdir / 'generation_1_updated.jsonl'
-        print(f'  [2/{total}] refinement', flush=True)
-        with _quiet(verbose) as digest:
-            refine_topics(
-                api=api,
-                model=model,
-                prompt_file=str(repo_path / PROMPT_FILES['refinement']),
-                generation_file=str(generation_out),
-                topic_file=str(topics_lvl1),
-                out_file=str(refined_topics),
-                updated_file=str(refined_generation),
-                verbose=verbose,
-                remove=True,
-                mapping_file=str(outdir / 'refiner_mapping.json'),
-            )
-        if digest:
-            digest.report()
-            # Refinement writes nothing into its output to mark a failed call,
-            # so the count of the line it prints is the only evidence. With
-            # verbose=True there is no digest to count it and the lines reach
-            # the terminal instead, where the caller sees them directly.
-            if digest.api_failures:
-                raise TopicGPTIncomplete(
-                    f'refinement: {digest.api_failures} API calls failed.\n'
-                    f'  Refinement merges and prunes the induced topics, and a '
-                    f'failed call silently leaves that merge undone, so the '
-                    f'topic list would be neither the raw one nor the refined '
-                    f'one.\n'
-                    f'  The raw topics are in {topics_lvl1.name} and are '
-                    f'unaffected.')
-        verify_phase('refinement', refined_generation, induced)
+        # Both files: the taxonomy is what assignment reads, the updated
+        # generation is what says the phase finished.
+        done = (already_done('refinement', refined_generation, induced)
+                if reuse and refined_topics.is_file() else None)
+        if done is not None:
+            print(f'  [2/{total}] refinement — {refined_topics.name} is '
+                  f'complete, not run again', flush=True)
+        else:
+            print(f'  [2/{total}] refinement', flush=True)
+            with _quiet(verbose) as digest:
+                refine_topics(
+                    api=api,
+                    model=model,
+                    prompt_file=str(repo_path / PROMPT_FILES['refinement']),
+                    generation_file=str(generation_out),
+                    topic_file=str(topics_lvl1),
+                    out_file=str(refined_topics),
+                    updated_file=str(refined_generation),
+                    verbose=verbose,
+                    remove=True,
+                    mapping_file=str(outdir / 'refiner_mapping.json'),
+                )
+            if digest:
+                digest.report()
+                # Refinement writes nothing into its output to mark a failed call,
+                # so the count of the line it prints is the only evidence. With
+                # verbose=True there is no digest to count it and the lines reach
+                # the terminal instead, where the caller sees them directly.
+                if digest.api_failures:
+                    raise TopicGPTIncomplete(
+                        f'refinement: {digest.api_failures} API calls failed.\n'
+                        f'  Refinement merges and prunes the induced topics, and a '
+                        f'failed call silently leaves that merge undone, so the '
+                        f'topic list would be neither the raw one nor the refined '
+                        f'one.\n'
+                        f'  The raw topics are in {topics_lvl1.name} and are '
+                        f'unaffected.')
+            verify_phase('refinement', refined_generation, induced)
         topics_for_assignment = refined_topics
 
     if induce_only:
@@ -546,39 +581,49 @@ def run_topicgpt(
               f'{topics_for_assignment.name} holds the topics', flush=True)
         return None
 
-    assignment_out = outdir / 'assignment.jsonl'
-    print('  [3/4] assignment to documents', flush=True)
-    with _quiet(verbose) as digest:
-        assign_topics(
-            api=api,
-            model=model,
-            data=str(data_for_assignment),
-            prompt_file=str(repo_path / PROMPT_FILES['assignment']),
-            out_file=str(assignment_out),
-            topic_file=str(topics_for_assignment),
-            verbose=verbose,
-        )
-    if digest:
-        digest.report()
     n_assigned = len(assignment_documents if assignment_documents is not None
                      else documents)
-    verify_phase('assignment', assignment_out, n_assigned)
+    assignment_out = outdir / 'assignment.jsonl'
+    if reuse and already_done('assignment', assignment_out,
+                              n_assigned) is not None:
+        print(f'  [3/4] assignment — {assignment_out.name} is complete, '
+              f'not run again', flush=True)
+    else:
+        print('  [3/4] assignment to documents', flush=True)
+        with _quiet(verbose) as digest:
+            assign_topics(
+                api=api,
+                model=model,
+                data=str(data_for_assignment),
+                prompt_file=str(repo_path / PROMPT_FILES['assignment']),
+                out_file=str(assignment_out),
+                topic_file=str(topics_for_assignment),
+                verbose=verbose,
+            )
+        if digest:
+            digest.report()
+        verify_phase('assignment', assignment_out, n_assigned)
 
     corrected_out = outdir / 'assignment_corrected.jsonl'
-    print('  [4/4] correction of assignments', flush=True)
-    with _quiet(verbose) as digest:
-        correct_topics(
-            api=api,
-            model=model,
-            data_path=str(assignment_out),
-            prompt_path=str(repo_path / PROMPT_FILES['correction']),
-            topic_path=str(topics_for_assignment),
-            output_path=str(corrected_out),
-            verbose=verbose,
-        )
-    if digest:
-        digest.report()
-    verify_phase('correction', corrected_out, n_assigned)
+    if reuse and already_done('correction', corrected_out,
+                              n_assigned) is not None:
+        print(f'  [4/4] correction — {corrected_out.name} is complete, '
+              f'not run again', flush=True)
+    else:
+        print('  [4/4] correction of assignments', flush=True)
+        with _quiet(verbose) as digest:
+            correct_topics(
+                api=api,
+                model=model,
+                data_path=str(assignment_out),
+                prompt_path=str(repo_path / PROMPT_FILES['correction']),
+                topic_path=str(topics_for_assignment),
+                output_path=str(corrected_out),
+                verbose=verbose,
+            )
+        if digest:
+            digest.report()
+        verify_phase('correction', corrected_out, n_assigned)
 
     return corrected_out
 

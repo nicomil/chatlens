@@ -214,12 +214,35 @@ def run_topics_stage(messages, args):
         # real run by roughly half.
         induce_only = getattr(args, 'topicgpt_induce_only', False)
         n_assigned = len(assignment_documents or documents)
-        parts = [f'generation {len(documents)}']
-        planned = len(documents)
+        # A phase that will be reused is not a phase that will be paid for,
+        # and the figure quoted has to be the figure that will be spent —
+        # otherwise the guard asks about money nobody is about to spend, and
+        # the next honest figure is believed a little less.
+        outdir = config.topics_dir(args.stem)
+        reuse = getattr(args, 'topicgpt_reuse', False)
+        def skipped(phase, name, expected, allow_short=False):
+            return bool(reuse) and topicgpt.already_done(
+                phase, outdir / name, expected,
+                allow_short=allow_short) is not None
+
+        parts, planned = [], 0
+        if skipped('topic generation', 'generation_1.jsonl', len(documents),
+                   allow_short=True):
+            parts.append('generation already done')
+        else:
+            planned += len(documents)
+            parts.append(f'generation {len(documents)}')
         if not induce_only:
-            planned += 2 * n_assigned
-            parts.append(f'assignment {n_assigned}')
-            parts.append(f'correction up to {n_assigned}')
+            if skipped('assignment', 'assignment.jsonl', n_assigned):
+                parts.append('assignment already done')
+            else:
+                planned += n_assigned
+                parts.append(f'assignment {n_assigned}')
+            if skipped('correction', 'assignment_corrected.jsonl', n_assigned):
+                parts.append('correction already done')
+            else:
+                planned += n_assigned
+                parts.append(f'correction up to {n_assigned}')
         spend.check(
             planned, 'TopicGPT',
             refuse_above=getattr(args, 'max_calls', None) or spend.REFUSE_ABOVE,
@@ -255,6 +278,7 @@ def run_topics_stage(messages, args):
             # documents in the order they were written.
             shuffle_seed=(getattr(args, 'topicgpt_shuffle_seed', 1) or None),
             assignment_documents=assignment_documents,
+            reuse=getattr(args, 'topicgpt_reuse', False),
         )
     except topicgpt.TopicGPTUnavailable as exc:
         # A prerequisite is missing: something to fix, not a program error.

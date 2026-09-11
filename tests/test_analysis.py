@@ -419,6 +419,55 @@ class TopicGPTAdapterTests(unittest.TestCase):
             self.assertEqual(topicgpt_runner.induced_topics(path),
                              {'Coalition Proposal', 'Commitment'})
 
+    def test_a_finished_phase_is_reusable(self):
+        """`already_done` answers with what the phase produced, so a run that
+        is asked to reuse it does not pay for it again."""
+        import json
+        import tempfile
+
+        rows = [{'id': f'd{i}', 'responses': f'[1] Commitment: x{i}'}
+                for i in range(5)]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'assignment.jsonl'
+            path.write_text('\n'.join(json.dumps(r) for r in rows),
+                            encoding='utf-8')
+            self.assertEqual(
+                topicgpt_runner.already_done('assignment', path, 5), 5)
+
+    def test_a_phase_that_never_ran_is_not(self):
+        self.assertIsNone(topicgpt_runner.already_done(
+            'assignment', Path('/nowhere/assignment.jsonl'), 5))
+
+    def test_a_truncated_phase_is_paid_for_again_rather_than_half_reused(self):
+        """The run that motivated `verify_phase`: 1 333 documents in, 806
+        answers out, and a full set of files giving no sign of it."""
+        import json
+        import tempfile
+
+        rows = [{'id': f'd{i}', 'responses': f'[1] Commitment: x{i}'}
+                for i in range(3)]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'assignment.jsonl'
+            path.write_text('\n'.join(json.dumps(r) for r in rows),
+                            encoding='utf-8')
+            self.assertIsNone(
+                topicgpt_runner.already_done('assignment', path, 5))
+
+    def test_a_phase_whose_calls_failed_is_not_reused(self):
+        """TopicGPT writes "Error" as the answer instead of raising, so a file
+        can be the right length and still be worthless."""
+        import json
+        import tempfile
+
+        rows = [{'id': 'd0', 'responses': '[1] Commitment: x'},
+                {'id': 'd1', 'responses': 'Error'}]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'assignment.jsonl'
+            path.write_text('\n'.join(json.dumps(r) for r in rows),
+                            encoding='utf-8')
+            self.assertIsNone(
+                topicgpt_runner.already_done('assignment', path, 2))
+
     def test_rollup_from_directed_to_group_unions_topics(self):
         assignments = {
             'g1|1|2': dict(topics='Offer', topic_primary='Offer', n_topics=1),

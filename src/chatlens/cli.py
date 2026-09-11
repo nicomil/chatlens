@@ -202,6 +202,9 @@ def build_parser() -> argparse.ArgumentParser:
                              'induction (default 1); 0 keeps the file order')
         sp.add_argument('--topicgpt-no-refine', action='store_true',
                         help='skip topic refinement')
+        sp.add_argument('--topicgpt-reuse', action='store_true',
+                        help='skip any TopicGPT phase whose output is already '
+                             'complete, instead of paying for it again')
         sp.add_argument('--topicgpt-dry-run', action='store_true',
                         help='write the input file only, with no calls')
 
