@@ -126,9 +126,10 @@ class Workspace(unittest.TestCase):
         return unittest.mock.patch.multiple(
             nrc, available=lambda: True, load=lambda path=None: self.MARKED)
 
-    def build(self, **kwargs):
+    def build(self, min_documents=1, **kwargs):
         with self.with_lexicon():
-            built, notes = fulltables.build('s', min_documents=1, **kwargs)
+            built, notes = fulltables.build('s', min_documents=min_documents,
+                                            **kwargs)
         rows = {key: {tuple(r.get(k) for k in ('focal_id_in_group',
                                                 'partner_id_in_group')): r
                       for r in table.rows}
@@ -145,6 +146,19 @@ class RelationTests(Workspace):
         self.assertEqual(pairs[('1', '2')]['rel_you_support_i'], '0')
         self.assertEqual(pairs[('2', '1')]['rel_you_support_i'], '1')
         self.assertEqual(pairs[('2', '1')]['rel_sent_n'], '2')
+
+    def test_every_relation_is_there_as_text_most_frequent_first(self):
+        """The indicators hold only the frequent relations; a keyword search
+        for a rare verb needs all of them."""
+        self.store_relations()
+        _built, _notes, rows = self.build(min_documents=2)
+        pairs = rows['chat_by_partner']
+        self.assertEqual(pairs[('2', '1')]['rel_sent_all'],
+                         'i support you; you support i')
+        self.assertNotIn('rel_you_support_i', pairs[('2', '1')])
+        self.assertEqual(pairs[('3', '1')]['rel_sent_all'], '')
+        people = rows['chat_aggregated']
+        self.assertEqual(people[('1', None)]['rel_sent_all'], 'i support you')
 
     def test_nothing_written_is_blank_rather_than_zero(self):
         self.store_relations()

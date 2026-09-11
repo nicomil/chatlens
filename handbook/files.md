@@ -135,10 +135,18 @@ the pairs. Each is complete for its unit. Added to what `datasets/` has:
   `rel_i_support_you` is 1 when the focal participant sent a message carrying
   *i · support · you*. A participant's are the union of what they sent to each
   partner. Blank where nothing was sent.
+- `rel_sent_all`: every relation the row sent, frequent or not, as text —
+  `i support you; we get 3; purple leave other`, most frequent in the corpus
+  first. The 0/1 columns stop at 25 units, so a dimension built by searching
+  for words (`strpos(rel_sent_all, "leave")`) has to read this one: on the
+  study this was built for, "leave" is in 93 units and in none of the frequent
+  relations.
 - `nrc_<block>_<category>`: the ten NRC categories as a percentage of the
   words, for `sent` and `dyad` in the pair table and `sent` and `group` in the
-  participant table, with `nrc_<block>_matched`, how many words the lexicon
-  knew. Blank where there was no text; a zero is a real zero.
+  participant table — each where the dataset carries that transcript, which a
+  one-message-per-row export does only for `sent` — with
+  `nrc_<block>_matched`, how many words the lexicon knew. Blank where there was
+  no text; a zero is a real zero.
 
 The names follow one rule, so a script can be written against them: dots and
 anything else Stata refuses become `_`; an oTree name too long for 32

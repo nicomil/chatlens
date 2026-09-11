@@ -202,14 +202,21 @@ def _relations(stem, experiment, extract, notes):
         return None
 
 
-def _add_relations(table, unit, per_unit, terms) -> bool:
-    """Indicators for the frequent relations, plus how many each row has.
+def _add_relations(table, unit, per_unit, terms, counts) -> bool:
+    """Indicators for the frequent relations, how many each row has, and all
+    of them as text.
 
     What is counted is what the focal participant *sent*: in persuasion the
     speaker's language is the one that matters. A participant's relations are
     the union of what they sent to each partner — RELATIO reads each message
     the same way whatever unit the result is filed under, so nothing has to be
     extracted again to have them per person.
+
+    The indicators cover only the relations frequent enough to test, so a
+    dimension built from keywords — "agree", "leave" — found nothing in them
+    even where RELATIO had extracted such a relation. `rel_sent_all` carries
+    every relation of the row, most frequent in the corpus first, so a keyword
+    search reads the same extraction as everything else.
     """
     if table.key == 'chat_by_partner':
         if unit != 'dyad_directed':
@@ -227,19 +234,24 @@ def _add_relations(table, unit, per_unit, terms) -> bool:
         row_key = lambda r: (r.get('group_uid'), r.get('focal_id_in_group'))
 
     names = {term: 'rel_' + _clean('_'.join(term)) for term in terms}
+    order = lambda term: (-counts.get(term, 0), term)
     for row in table.rows:
         found = by_row.get(row_key(row), set())
         if not _spoke(row):
             # No text is no measurement, not an absence of relations.
-            row['rel_sent_n'] = ''
+            row['rel_sent_n'] = row['rel_sent_all'] = ''
             row.update(dict.fromkeys(names.values(), ''))
             continue
         row['rel_sent_n'] = str(len(found))
+        row['rel_sent_all'] = '; '.join(' '.join(term)
+                                        for term in sorted(found, key=order))
         for term, name in names.items():
             row[name] = '1' if term in found else '0'
 
-    table.columns += ['rel_sent_n', *names.values()]
+    table.columns += ['rel_sent_n', 'rel_sent_all', *names.values()]
     table.labels['rel_sent_n'] = 'Distinct relations in what was sent (RELATIO)'
+    table.labels['rel_sent_all'] = ('Every relation in what was sent, most '
+                                    'frequent first (RELATIO)')
     for term, name in names.items():
         table.labels[name] = 'Sent the relation: ' + ' | '.join(term)
     return True
@@ -296,7 +308,7 @@ def build(stem: str, experiment=None, extract: bool = True,
         terms = sorted((t for t, n in counts.items() if n >= min_documents),
                        key=lambda t: (-counts[t], t))
         for table in built.values():
-            if not _add_relations(table, unit, per_unit, terms):
+            if not _add_relations(table, unit, per_unit, terms, counts):
                 notes.append(f'Relations only in the participant table: they '
                              f'were extracted per {unit}, which a directed '
                              f'pair cannot be read out of.')

@@ -13,7 +13,10 @@ Notable changes to chatlens. The format follows
   two findings computed by their pages that never reached a file — every
   column renamed to something Stata and R both accept, a `.dta` beside each
   CSV when pandas is installed (the new `stata` extra), and a codebook. The
-  findings summary offers the same tables as a download.
+  findings summary offers the same tables as a download. Besides one 0/1
+  column per frequent relation, `rel_sent_all` carries every relation a row
+  sent as text: dimensions built by keyword ("agree", "leave") found nothing
+  in the frequent ones alone, where the rare verbs never reach 25 units.
 - **Six pages of analysis.** *Participation* shows the whole sender × receiver
   grid, including the directions nobody used, which every other page is blind
   to because it can only measure text that exists. *Words* fits a penalised
