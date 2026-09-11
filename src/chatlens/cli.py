@@ -225,6 +225,14 @@ def build_parser() -> argparse.ArgumentParser:
         help='regenerate the readable summary from existing files')
     add_input_options(sp_report)
 
+    sp_tables = sub.add_parser(
+        'tables', parents=[common],
+        help='write the complete datasets for Stata and R: every measure, '
+             'relations and emotions included')
+    add_input_options(sp_tables)
+    sp_tables.add_argument('--output', type=Path, default=None,
+                           help='where to write them (default: output/tables/)')
+
     sp_runs = sub.add_parser('runs', parents=[common], help='list the archived runs')
     sp_runs.add_argument('--prune', type=int, metavar='N',
                          help='keep the N most recent and delete the rest')
@@ -905,11 +913,33 @@ def cmd_subtopics(args) -> int:
     return 0
 
 
+def cmd_tables(args) -> int:
+    """The two datasets again, complete, with names Stata and R both accept.
+
+    The relations are extracted here if nothing is stored and RELATIO can run,
+    which takes minutes; the dashboard's download never does that.
+    """
+    from chatlens.core import fulltables
+
+    stem = resolve_stem(args)
+    try:
+        result = fulltables.write(stem, args.output)
+    except fulltables.TablesError as exc:
+        raise SystemExit(f'\n{exc}\n') from None
+    print('Complete datasets, for Stata and R:')
+    for path in result['paths']:
+        print(f'  {path}')
+    for note in result['notes']:
+        print(f'\n{note}')
+    return 0
+
+
 COMMANDS = {
     'all': cmd_all,
     'merge': cmd_merge,
     'analyze': cmd_analyze,
     'report': cmd_report,
+    'tables': cmd_tables,
     'runs': cmd_runs,
     'dashboard': cmd_dashboard,
     'experiments': cmd_experiments,

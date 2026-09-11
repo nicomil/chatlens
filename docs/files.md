@@ -108,6 +108,52 @@ With stages 2 and 3 active you also get `llm_analytic`, `llm_clout`,
 `llm_contains_support_commitment` and `llm_contains_support_request`, and
 `nlp_*_topics` / `nlp_*_topic_primary` / `nlp_*_n_topics`.
 
+### Everything in one table per unit
+
+`datasets/` holds what the run computed. The relations and the emotions are
+computed afterwards, by their pages, and never reach it; and some of its
+column names are ones Stata will not take — the oTree columns have dots in
+them, and a few names are longer than 32 characters. So
+
+```bash
+chatlens tables
+```
+
+writes both tables again, complete, into `output/tables/`:
+
+| File | |
+|---|---|
+| `..._chat_by_partner_full.csv` and `.dta` | the directed pair, with everything |
+| `..._chat_aggregated_full.csv` and `.dta` | the participant, with everything |
+| `..._codebook.csv` | every column: its name here, the original, a label, and where it came from |
+
+Two tables rather than one because they are two units of observation, and a
+single rectangle would have to repeat the participant on every pair or lose
+the pairs. Each is complete for its unit. Added to what `datasets/` has:
+
+- `rel_sent_n`, and one 0/1 column per relation found in at least 25 units —
+  `rel_i_support_you` is 1 when the focal participant sent a message carrying
+  *i · support · you*. A participant's are the union of what they sent to each
+  partner. Blank where nothing was sent.
+- `nrc_<block>_<category>`: the ten NRC categories as a percentage of the
+  words, for `sent` and `dyad` in the pair table and `sent` and `group` in the
+  participant table, with `nrc_<block>_matched`, how many words the lexicon
+  knew. Blank where there was no text; a zero is a real zero.
+
+The names follow one rule, so a script can be written against them: dots and
+anything else Stata refuses become `_`; an oTree name too long for 32
+characters keeps its field and shortens the rest to initials
+(`bargaining_tdl_intro.1.player.prolific_study_id` is
+`bti_1_p_prolific_study_id`); and in the few of ours that overflow, `contains_`
+is dropped and `compound` becomes `cmp`. In the `.dta` each variable is
+labelled with its original name.
+
+The CSVs have no byte-order mark, so R's `read.csv` reads the first column's
+name as it is. The `.dta` needs pandas — `chatlens[stata]` — and without it the
+CSVs are written anyway. From the dashboard the same tables are **Download the
+tables** on the findings summary, as a zip; there the relations are included
+only once the relations page has extracted them.
+
 ### The experiment's variables, built at step 2
 
 | Variable | Definition |

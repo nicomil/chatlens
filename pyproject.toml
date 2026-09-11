@@ -72,8 +72,13 @@ narratives = [
     "spacy>=3.7",
     "statsmodels>=0.14",
 ]
+# The Stata file beside each CSV that `chatlens tables` writes. The CSVs need
+# nothing; a .dta is a binary format, and pandas already writes it correctly.
+stata = [
+    "pandas>=1.5",
+]
 all = [
-    "chatlens[llm,topics,words,narratives]",
+    "chatlens[llm,topics,words,narratives,stata]",
 ]
 
 [project.scripts]

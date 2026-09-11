@@ -8,6 +8,12 @@ Notable changes to chatlens. The format follows
 
 ### Added
 
+- **`chatlens tables`: every measure in one table per unit, for Stata and R.**
+  The two datasets again, with the relations and the NRC emotions added — the
+  two findings computed by their pages that never reached a file — every
+  column renamed to something Stata and R both accept, a `.dta` beside each
+  CSV when pandas is installed (the new `stata` extra), and a codebook. The
+  findings summary offers the same tables as a download.
 - **Six pages of analysis.** *Participation* shows the whole sender × receiver
   grid, including the directions nobody used, which every other page is blind
   to because it can only measure text that exists. *Words* fits a penalised

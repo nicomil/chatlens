@@ -72,6 +72,7 @@ test: $(DEPS) ## Run the tests (no network, no credentials)
 	@$(PY) tests/test_views.py
 	@$(PY) tests/test_corpus.py
 	@$(PY) tests/test_bundle.py
+	@$(PY) tests/test_tables.py
 	@$(PY) tests/test_docs.py
 
 check: test ## Tests plus a look at the installed state

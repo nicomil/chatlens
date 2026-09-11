@@ -16,6 +16,7 @@ type, or script it.
 | `chatlens all --llm --topics` | everything: rubric and topics included | yes |
 | `chatlens experiments` | lists the experiments from the terminal | — |
 | `chatlens report` | regenerates the readable summary | — |
+| `chatlens tables` | the two complete datasets for Stata and R — every measure, relations and emotions included — and a codebook | — |
 | `chatlens runs` | lists the archived runs | — |
 | `chatlens runs --prune 2` | keeps the last 2 and deletes the others | — |
 | `chatlens status` | what is in input, in output and among the keys | — |

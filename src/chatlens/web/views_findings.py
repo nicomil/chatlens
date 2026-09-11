@@ -138,12 +138,37 @@ def export(name: str, query=None) -> str:
         f'Print this page to keep it, or send the link to someone who has the '
         f'dashboard open.</p>'
         + '\n'.join(parts)
+        + _take_the_data(name)
         + _send_to_a_colleague(name),
         slug=name,
         study=experiment.name,
         steps=study_state.step_state(experiment),
         step='findings',
     )
+
+
+def _take_the_data(name: str) -> str:
+    """Every measure, one table per unit, for somebody who analyses elsewhere.
+
+    `output/datasets/` lacks what the pages compute after a run — the
+    relations and the emotions — and not all of its column names are ones
+    Stata accepts. This is those two tables again with both added and every
+    name fixed, with a codebook saying what each column was called and where
+    it came from.
+    """
+    href = f'/experiment/{ui.esc(name)}/tables.zip'
+    return f'''<section class="exported">
+  <h2>Take the data into Stata or R</h2>
+  <p>Two tables, one per unit of observation — the directed pair and the
+  participant — each with the experiment's variables and every measure this
+  study has: the text measures, the rubric, the topics, the relations and the
+  emotions. As CSV and as a Stata <code>.dta</code>, with names both programs
+  accept and a codebook that maps each back to its original.</p>
+  <p><a class="btn primary" href="{href}">Download the tables</a></p>
+  <p class="muted small">The relations are included once the relations page
+  has extracted them, and the emotions once the word list is installed.
+  Whatever is missing is listed in <code>NOTES.txt</code> inside the file.</p>
+</section>'''
 
 
 def _send_to_a_colleague(name: str) -> str:

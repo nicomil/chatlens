@@ -329,6 +329,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._html(views_corpus.inspector(name, query))
                 elif action == 'bundle':
                     self._bundle(name, query)
+                elif action == 'tables.zip':
+                    self._tables(name)
                 elif action == 'findings/export':
                     self._html(views_findings.export(name, query),
                                cookie=cookie)
@@ -840,6 +842,44 @@ class Handler(BaseHTTPRequestHandler):
             self._deny(str(exc))
             return
         self._download(body, 'application/gzip', f'{name}{bundle.SUFFIX}')
+
+    def _tables(self, name: str) -> None:
+        """The complete datasets for Stata and R, zipped with the codebook.
+
+        Built in a temporary folder, like the bundle, so nothing is left in the
+        workspace. The relations are taken only if already extracted: a
+        download that quietly spent two minutes in RELATIO would look hung.
+        """
+        import io
+        import tempfile
+        import zipfile
+
+        from chatlens.core import fulltables
+        from chatlens.web import views_participation
+
+        suffix = '_chat_by_partner_nlp.csv'
+        found = views_participation._latest(config.DATASETS_DIR, suffix)
+        if found is None:
+            self._deny('There is nothing to export yet: run the analysis '
+                       'first.')
+            return
+        stem = found.name[:-len(suffix)]
+        buffer = io.BytesIO()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                result = fulltables.write(stem, Path(tmp), extract=False)
+                with zipfile.ZipFile(buffer, 'w',
+                                     zipfile.ZIP_DEFLATED) as archive:
+                    for path in result['paths']:
+                        archive.write(path, path.name)
+                    if result['notes']:
+                        archive.writestr(
+                            'NOTES.txt', '\n\n'.join(result['notes']) + '\n')
+        except fulltables.TablesError as exc:
+            self._deny(str(exc))
+            return
+        self._download(buffer.getvalue(), 'application/zip',
+                       f'{name}-tables.zip')
 
     def _download(self, body: bytes, content_type: str, filename: str) -> None:
         """Offered as a file rather than rendered, with a name worth keeping."""
