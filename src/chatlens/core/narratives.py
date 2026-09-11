@@ -304,20 +304,53 @@ def extracted(messages, entities, unit: str = 'dyad_directed',
     seconds either.
     """
     key = fingerprint(messages, entities, unit, model)
-    with _MEMO_LOCK:
-        if key in _MEMO:
-            return _MEMO[key]
-
-    path = cache_dir() / f'{key}.json'
-    per_unit = _load(path)
+    per_unit = _recall(key)
     if per_unit is None:
         message_key, _row_key = keys_for(unit)
         per_unit = extract_with_relatio(messages, entities, model=model,
                                         unit_key=message_key)
-        _store(path, per_unit)
+        _store(cache_dir() / f'{key}.json', per_unit)
+        with _MEMO_LOCK:
+            _MEMO[key] = per_unit
+    return per_unit
 
+
+def stored(messages, entities, unit: str = 'dyad_directed',
+           model: str = 'en_core_web_md'):
+    """The extraction already made for exactly this input, or None.
+
+    Reading one back needs nothing but this module. What is on disk is
+    RELATIO's own output — made on this machine, or on the one a study was
+    exported from — so showing it is not an approximation of the method but
+    its result. The package is needed to *make* an extraction, which is what
+    a change to the messages, the entities, the unit or the model asks for.
+    """
+    return _recall(fingerprint(messages, entities, unit, model))
+
+
+def has_stored() -> bool:
+    """Whether this workspace holds any extraction at all.
+
+    For the register, which is drawn on every page and should not read eight
+    thousand messages to choose a label. It can say yes to a file made for
+    other entities; the page then works out the exact answer and says what is
+    missing.
+    """
+    try:
+        return any(cache_dir().glob('*.json'))
+    except OSError:
+        return False
+
+
+def _recall(key: str):
+    """From this process, else from the workspace; None if neither has it."""
     with _MEMO_LOCK:
-        _MEMO[key] = per_unit
+        if key in _MEMO:
+            return _MEMO[key]
+    per_unit = _load(cache_dir() / f'{key}.json')
+    if per_unit is not None:
+        with _MEMO_LOCK:
+            _MEMO[key] = per_unit
     return per_unit
 
 

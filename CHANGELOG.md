@@ -60,6 +60,16 @@ Notable changes to chatlens. The format follows
 - `report` and `analyze` no longer need `input/` to still be there.
 - The default adapter is `generic_chat`: a workspace with no `experiment.toml`
   was silently configured for the coalition-formation study this grew out of.
+- **An imported study asked for RELATIO to show relations it already had.**
+  The bundle carries the extraction, but the relations page, the comparison
+  and the register all checked for the 1.6 GB package before looking for its
+  output, so the recipient was told "relatio unusable: not installed". An
+  extraction made for the same messages, entities, unit and model is now read
+  back without it; the package is needed only to extract. When it is needed,
+  the page lists the commands that install it instead of only saying that it
+  cannot run.
+- The comparison raised when RELATIO could not cluster a corpus, instead of
+  leaving the relations row out as its comment said it would.
 
 ### Changed
 

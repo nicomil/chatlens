@@ -124,19 +124,26 @@ def _result(experiment):
         return None, 'no messages'
     messages = views_participation._read(messages_path)
 
-    ready, why = narratives.available()
-    if not ready:
-        return None, f'relatio unusable: {why}'
     # The unit comes from the outcome when there is one: relations extracted per
     # directed pair cannot be joined to rows that are one per person.
     unit = (declared or {}).get('unit', 'dyad_directed')
     _message_key, row_key = narratives.keys_for(unit)
-    try:
-        per_unit = narratives.extracted(
-            messages, experiment.narrative_entities, unit,
-            model=experiment.narrative_model)
-    except ValueError as exc:
-        return None, str(exc)
+    # An extraction already made for exactly this input is read back without
+    # RELATIO: it is the package's own output, and a study that arrives in a
+    # bundle carries it so that its recipient need not install 1.6 GB to see
+    # it. The package is asked for only when there is something to extract.
+    per_unit = narratives.stored(messages, experiment.narrative_entities, unit,
+                                 model=experiment.narrative_model)
+    if per_unit is None:
+        ready, why = narratives.available()
+        if not ready:
+            return None, f'relatio unusable: {why}'
+        try:
+            per_unit = narratives.extracted(
+                messages, experiment.narrative_entities, unit,
+                model=experiment.narrative_model)
+        except ValueError as exc:
+            return None, str(exc)
     value = {'per_unit': per_unit, 'unit': unit,
              'frequencies': narratives.frequencies(per_unit), 'tested': None}
 
@@ -161,6 +168,16 @@ def _result(experiment):
                     group_of=lambda r: r['group_uid'])
             except ValueError as exc:
                 value['problem'] = str(exc)
+            except ImportError as exc:
+                # Relations read back from a bundle need no library to be
+                # listed, but testing them fits models. Said rather than
+                # raised, so the list still shows; and not remembered, so the
+                # page notices once the library is there.
+                value['problem'] = (
+                    f'Testing which relations matter needs '
+                    f'{exc.name or "statsmodels"}: '
+                    + optional.install_command('narratives', ['statsmodels']))
+                return value, ''
 
     with _LOCK:
         _CACHE.clear()
@@ -204,9 +221,13 @@ def panel(name: str) -> str:
                 'free and needs no key.',
                 retry=f'/experiment/{_e(name)}/step/run'))
     if problem:
+        evidence = ui.notice(_e(problem), 'bad')
+        if problem.startswith('relatio unusable'):
+            # Nothing stored matches, so there is an extraction to make: say
+            # what it needs, one command each, not only that it cannot run.
+            evidence += _requirements_panel(experiment.narrative_model)
         return ui.finding(QUESTION, 'Something is in the way.',
-                          controls=controls,
-                          evidence=ui.notice(_e(problem), 'bad'))
+                          controls=controls, evidence=evidence)
     body = ''
 
     common = found['frequencies'].most_common(SHOWN)

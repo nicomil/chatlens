@@ -321,6 +321,108 @@ class RememberedExtractionTests(unittest.TestCase):
         _got, calls = self.extract()
         self.assertEqual(calls, 1)
 
+    def test_a_stored_extraction_is_read_without_extracting(self):
+        """What an exported study carries: RELATIO's output, readable by a
+        recipient who never installed it."""
+        wanted, _calls = self.extract()
+        narratives.forget()
+        with unittest.mock.patch.object(
+                narratives, 'extract_with_relatio',
+                side_effect=AssertionError('extracted again')):
+            got = narratives.stored(self.MESSAGES, self.ENTITIES,
+                                    'dyad_directed')
+        self.assertEqual(got, wanted)
+
+    def test_nothing_stored_is_none_rather_than_an_extraction(self):
+        with unittest.mock.patch.object(
+                narratives, 'extract_with_relatio',
+                side_effect=AssertionError('extracted')):
+            got = narratives.stored(self.MESSAGES, self.ENTITIES,
+                                    'dyad_directed')
+        self.assertIsNone(got)
+        self.assertFalse(narratives.has_stored())
+
+    def test_the_register_can_tell_an_extraction_is_there(self):
+        self.extract()
+        self.assertTrue(narratives.has_stored())
+
+
+class ImportedStudyTests(unittest.TestCase):
+    """A study that arrives in a bundle carries its relations already
+    extracted. Its recipient was told "relatio unusable: not installed"
+    anyway, because the page asked for the package before it looked for the
+    package's output."""
+
+    MESSAGES = RememberedExtractionTests.MESSAGES
+    ENTITIES = RememberedExtractionTests.ENTITIES
+    ANSWER = {('g1', '1', '2'): {('i', 'support', 'you')}}
+
+    def setUp(self):
+        from chatlens.core import experiment, tables
+        from chatlens.web import views_narratives
+
+        self.tmp = tempfile.TemporaryDirectory()
+        previous = (config.WORKSPACE, config.EXPERIMENT)
+        config.use_workspace(self.tmp.name)
+        config.EXPERIMENT = experiment.Experiment(
+            {'narratives': {'entities': self.ENTITIES}})
+        config.MERGED_DIR.mkdir(parents=True, exist_ok=True)
+        tables.write(config.MERGED_DIR / 'study_messages_long.csv',
+                     self.MESSAGES)
+        narratives.forget()
+        views_narratives._CACHE.clear()
+
+        def restore():
+            config.use_workspace(previous[0])
+            config.EXPERIMENT = previous[1]
+
+        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(restore)
+        self.addCleanup(narratives.forget)
+        self.addCleanup(views_narratives._CACHE.clear)
+
+    def extract_elsewhere(self):
+        """As the machine the study was exported from did."""
+        from chatlens.web import views_participation
+
+        messages = views_participation._read(
+            config.MERGED_DIR / 'study_messages_long.csv')
+        with unittest.mock.patch.object(narratives, 'extract_with_relatio',
+                                        return_value=self.ANSWER):
+            narratives.extracted(messages, self.ENTITIES, 'dyad_directed')
+        narratives.forget()
+
+    def without_relatio(self):
+        from chatlens.core import optional
+
+        real = optional.have
+        return unittest.mock.patch.object(
+            optional, 'have', lambda m: False if m == 'relatio' else real(m))
+
+    def test_the_page_shows_what_the_bundle_carries(self):
+        from chatlens.web import views_narratives
+
+        self.extract_elsewhere()
+        with self.without_relatio():
+            found, problem = views_narratives._result(config.EXPERIMENT)
+        self.assertEqual(problem, '')
+        self.assertEqual(found['per_unit'], self.ANSWER)
+
+    def test_with_nothing_stored_the_package_is_still_required(self):
+        from chatlens.web import views_narratives
+
+        with self.without_relatio():
+            found, problem = views_narratives._result(config.EXPERIMENT)
+        self.assertIsNone(found)
+        self.assertEqual(problem, 'relatio unusable: not installed')
+
+    def test_the_register_does_not_call_it_unavailable(self):
+        from chatlens.web import ui
+
+        self.extract_elsewhere()
+        with self.without_relatio():
+            self.assertNotIn('narratives', ui.unavailable_reasons())
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

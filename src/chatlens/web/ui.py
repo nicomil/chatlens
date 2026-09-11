@@ -370,7 +370,7 @@ def spinner(label: str = 'Working…') -> str:
 
 def unavailable_reasons() -> dict:
     """Which findings cannot be computed here, and why, in one line each."""
-    from chatlens.core import nrc, optional
+    from chatlens.core import narratives, nrc, optional
 
     reasons = {}
     if not optional.have('sklearn'):
@@ -378,7 +378,9 @@ def unavailable_reasons() -> dict:
         reasons['words'] = needed
         reasons['lexical'] = needed
         reasons['volume'] = needed
-    if not optional.have('relatio'):
+    # An imported study can carry the relations already extracted, and the
+    # page shows those without the package.
+    if not optional.have('relatio') and not narratives.has_stored():
         reasons['narratives'] = 'needs spaCy and RELATIO'
     try:
         if not nrc.lexicon_path().is_file():

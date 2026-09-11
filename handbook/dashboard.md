@@ -62,6 +62,14 @@ somebody else's published pipeline is not that pipeline. A result from one could
 not honestly be attributed to the paper, so the page waits for the package
 instead of substituting anything of ours.
 
+**Reading an extraction needs none of that.** A study imported from somebody
+who has already opened this page carries RELATIO's output, and the page shows
+it without the extra, the model or the package — as long as the entities stay
+as they arrived. What cannot be done without installing them is a new
+extraction, which is what changing the entities asks for. Testing which
+relations matter against the outcome still needs statsmodels, and the page
+says so when it is missing.
+
 **It is slow the first time and only the first time.** Parsing eight thousand
 messages took a hundred and thirteen seconds on the study this was built for,
 and the comparison page needed the same extraction again. The result is now

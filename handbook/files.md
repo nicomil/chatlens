@@ -178,7 +178,9 @@ chatlens dashboard
 
 Every finding is there, computed. The rubric cache and TopicGPT's output are
 inside, so nothing is paid for twice, and so is the extracted relation table,
-which costs no money but a hundred seconds. The command says what it found:
+which costs no money but a hundred seconds — and a 1.6 GB install of RELATIO,
+which the recipient needs to extract again but not to read it. The command
+says what it found:
 *already computed inside: the rubric, the relations*. From the dashboard the same thing is a
 button on the findings summary and a fold on the library page — the file is
 the same file either way.

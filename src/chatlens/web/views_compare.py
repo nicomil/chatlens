@@ -93,27 +93,36 @@ def _scored():
 
     per_unit = terms = None
     key_of = None
-    # Only with the package: the relations are RELATIO's method, and this table
-    # would otherwise compare a representation nobody could reproduce.
-    if experiment.narrative_entities and narratives.available()[0]:
+    # Only RELATIO's own output — extracted here, or carried in by an imported
+    # study: anything else would compare a representation nobody could
+    # reproduce.
+    if experiment.narrative_entities:
         messages_path = views_participation._latest(config.MERGED_DIR,
                                                     '_messages_long.csv')
         if messages_path is not None:
+            messages = views_participation._read(messages_path)
             _message_key, key_of = narratives.keys_for(declared['unit'])
-            try:
-                # The same extraction the relations page makes, and the same
-                # call, so whichever page is opened first pays for both.
-                per_unit = narratives.extracted(
-                    views_participation._read(messages_path),
-                    experiment.narrative_entities, declared['unit'],
-                    model=experiment.narrative_model)
-            except ValueError:
-                # The comparison still stands without that row, and the
-                # narratives page explains why it is absent.
-                per_unit = None
-            counts = narratives.frequencies(per_unit)
-            terms = [n for n, c in counts.items()
-                     if c >= narratives.MIN_DOCUMENTS]
+            per_unit = narratives.stored(
+                messages, experiment.narrative_entities, declared['unit'],
+                model=experiment.narrative_model)
+            if per_unit is None and narratives.available()[0]:
+                try:
+                    # The same extraction the relations page makes, and the
+                    # same call, so whichever page is opened first pays for
+                    # both.
+                    per_unit = narratives.extracted(
+                        messages, experiment.narrative_entities,
+                        declared['unit'], model=experiment.narrative_model)
+                except ValueError:
+                    # The comparison still stands without that row, and the
+                    # narratives page explains why it is absent.
+                    per_unit = None
+            if per_unit is None:
+                key_of = None
+            else:
+                counts = narratives.frequencies(per_unit)
+                terms = [n for n, c in counts.items()
+                         if c >= narratives.MIN_DOCUMENTS]
 
 
     try:
