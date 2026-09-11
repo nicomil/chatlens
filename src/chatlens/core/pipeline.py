@@ -264,7 +264,11 @@ def run_topics_stage(messages, args):
         # Stopped after induction: a taxonomy to read, nothing yet to graft.
         return None, None, None
 
-    assignments = topicgpt.parse_assignments(corrected)
+    # Checked against the taxonomy the induction produced: a response naming
+    # anything else is prose or an invention, not an assignment.
+    known = topicgpt.induced_topics(Path(corrected).parent
+                                    / 'generation_1_refined.md')
+    assignments = topicgpt.parse_assignments(corrected, known=known)
     print(f'  topics assigned to {len(assignments)} documents')
 
     unit = assign_unit

@@ -50,7 +50,30 @@ from pathlib import Path
 from . import schema
 
 # TopicGPT's assignment response format: "[1] Name: description".
-TOPIC_RE = re.compile(r"\[(\d)\]\s*([\w\s\-'\&]+)")
+#
+# The name stops at the end of its line. It used to be matched with `\s` in
+# the character class, which includes the newline, so a label ran on into
+# whatever followed — and what follows, when the model declines to classify a
+# document, is a bulleted list of the topics it considered:
+#
+#     Unfortunately, it cannot be assigned to any topic in the hierarchy:
+#     - [1] Coalition Proposal
+#     - [1] Commitment
+#     - [1] Payoff Reasoning
+#
+# That refusal was read as three assignments, and the document came out
+# belonging to all three topics. A blemish in the label was the visible part
+# of it; the false positives were not visible at all.
+#
+# So an assignment is anchored to the start of its line. A well-formed answer
+# opens with it — 1 738 of the 2 438 on this study do, and the only response
+# carrying a bulleted list was the refusal above. `\s` before the bracket
+# allows indentation and nothing else: a `- ` does not match, which is what
+# separates a topic that was assigned from a topic that was merely named.
+TOPIC_RE = re.compile(r"^[ \t]*\[(\d)\]\s*([^\n:]+)", re.MULTILINE)
+
+# The tally the induction appends to each name: "Name (Count: 271)".
+COUNT_RE = re.compile(r"\s*\(Count\b[^)]*\)?\s*$")
 
 PROMPT_FILES = {
     'generation': 'prompt/generation_1.txt',
@@ -678,16 +701,50 @@ def subtopic_grounding(run_dir: Path) -> list:
     return found
 
 
-def parse_assignments(path: Path) -> dict:
-    """Extract the assigned topics, indexed by the document's ``id``."""
+def induced_topics(path: Path) -> set:
+    """The topic names the induction settled on, from its own file.
+
+    The list the assignment was given, which is the only list an assignment
+    may draw from. Anything else in a response is the model writing prose or
+    inventing a label — on this project, `[1] No suitable topic:`, which is
+    a refusal wearing the shape of an answer.
+    """
+    names = set()
+    if not path or not Path(path).is_file():
+        return names
+    for line in Path(path).read_text(encoding='utf-8').splitlines():
+        found = TOPIC_RE.match(line.strip())
+        if not found:
+            continue
+        # The induction writes "[1] Name (Count: 271): description", so the
+        # tally has to come off before the name is one the assignment could
+        # have answered with.
+        name = COUNT_RE.sub('', found.group(2)).strip()
+        if name:
+            names.add(' '.join(name.split()))
+    return names
+
+
+def parse_assignments(path: Path, known=None) -> dict:
+    """Extract the assigned topics, indexed by the document's ``id``.
+
+    `known` is the induced taxonomy. Given it, a name that is not in it is
+    dropped: the assignment prompt offers a fixed list, so a label outside it
+    is not a finding about the document but an artefact of the response.
+    Without it every name is kept, because filtering against a list we do not
+    have would silently empty the column.
+    """
     result = {}
     for row in read_jsonl(path):
         response = row.get('responses') or ''
         topics = []
         for _level, name in TOPIC_RE.findall(response):
-            cleaned = name.strip()
-            if cleaned and cleaned not in topics:
-                topics.append(cleaned)
+            cleaned = ' '.join(name.split())
+            if not cleaned or cleaned in topics:
+                continue
+            if known and cleaned not in known:
+                continue
+            topics.append(cleaned)
         result[row.get('id', '')] = dict(
             topics='|'.join(topics),
             topic_primary=topics[0] if topics else '',

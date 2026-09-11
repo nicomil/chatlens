@@ -354,6 +354,71 @@ class TopicGPTAdapterTests(unittest.TestCase):
         self.assertEqual(parsed['g1|1|2']['topic_primary'], 'Direct Offer')
         self.assertEqual(parsed['g1|2|1']['n_topics'], 0)
 
+    def _parsed(self, rows, known=None):
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'a.jsonl'
+            path.write_text('\n'.join(json.dumps(r) for r in rows),
+                            encoding='utf-8')
+            return topicgpt_runner.parse_assignments(path, known=known)
+
+    # The refusal this project actually received, verbatim. The model declines
+    # to classify and, in declining, lists the topics it considered.
+    REFUSAL = (
+        'The document provided is very limited in information and does not '
+        'include any clear discussions on forming partnerships or alliances. '
+        'Unfortunately, it cannot be properly assigned to any topic in the '
+        'provided hierarchy: \n\n'
+        '- [1] Coalition Proposal\n'
+        '- [1] Commitment\n'
+        '- [1] Payoff Reasoning\n\n'
+        'The content does not correlate with any specific topic.'
+    )
+
+    def test_a_refusal_that_lists_the_topics_assigns_none_of_them(self):
+        """It used to assign all three: a document the model explicitly
+        declined to classify came out belonging to the whole taxonomy."""
+        parsed = self._parsed([{'id': 'g1|3|1', 'responses': self.REFUSAL}],
+                              known={'Coalition Proposal', 'Commitment',
+                                     'Payoff Reasoning'})
+        self.assertEqual(parsed['g1|3|1']['n_topics'], 0)
+        self.assertEqual(parsed['g1|3|1']['topics'], '')
+
+    def test_a_label_stops_at_the_end_of_its_line(self):
+        """`\\s` in the character class included the newline, so a name ran on
+        into the next bullet and came out as "Commitment\\n- "."""
+        parsed = self._parsed([{'id': 'g1|1|2', 'responses': self.REFUSAL}])
+        for name in parsed['g1|1|2']['topics'].split('|'):
+            self.assertNotIn('\n', name)
+            self.assertEqual(name, name.strip())
+
+    def test_an_invented_topic_is_not_one(self):
+        """`[1] No suitable topic:` is a refusal wearing the shape of an
+        answer. The assignment prompt offers a fixed list."""
+        rows = [{'id': 'g1|1|2',
+                 'responses': '[1] No suitable topic: nothing fits here'}]
+        self.assertEqual(
+            self._parsed(rows, known={'Commitment'})['g1|1|2']['n_topics'], 0)
+        # Without a taxonomy to check against, nothing is dropped: filtering
+        # on a list we do not have would empty the column in silence.
+        self.assertEqual(self._parsed(rows)['g1|1|2']['n_topics'], 1)
+
+    def test_the_induced_names_lose_the_tally(self):
+        """The induction writes "[1] Name (Count: 271): description", and a
+        name carrying its own count matches nothing an assignment said."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'generation_1_refined.md'
+            path.write_text(
+                '[1] Coalition Proposal (Count: 271): forming alliances.\n'
+                '[1] Commitment (Count: 143): promises to support.\n',
+                encoding='utf-8')
+            self.assertEqual(topicgpt_runner.induced_topics(path),
+                             {'Coalition Proposal', 'Commitment'})
+
     def test_rollup_from_directed_to_group_unions_topics(self):
         assignments = {
             'g1|1|2': dict(topics='Offer', topic_primary='Offer', n_topics=1),
