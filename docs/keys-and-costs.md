@@ -86,6 +86,14 @@ labels the model produces, and the paper uses GPT-4. With a small local model
 the pipeline still runs, but the topics come out poorer. It is the right road
 for a trial run, not for publishable results.
 
+**A local model that reasons is asked not to, out loud.** Models such as
+`gemma4` write a long "thinking process" before their answer, and the rubric
+reads only the JSON that follows it. On the study this was built for that was
+794 tokens thrown away for every 72 used — 63 seconds a rating instead of 9, the
+rubric in 58 hours instead of 8.5. So the Ollama path sends `reasoning_effort`
+to switch it off, which is the one of the three ways that Ollama's
+OpenAI-compatible endpoint actually honours. Nothing to set.
+
 ## Which stages cost anything
 
 Three independent stages, each switchable on its own.

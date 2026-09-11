@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from capture import capture  # noqa: E402
+from capture import capture, crop_tail  # noqa: E402
 
 # (file, path, height, wait in ms, caption). The paths are the interface's
 # own: five steps and a findings area, not the flat pages this list used to
@@ -56,19 +57,37 @@ SHOTS = [
      'every finding, put together as one page'),
 ]
 
+# The foot of a long page, which a capture of the window never reaches: shot
+# taller than the page, then cropped to the band where the content ends. The
+# findings summary of the demo study is about 11,700 pixels.
+TAILS = [
+    ('18-take-away', '/findings/export', 900, 60000,
+     'the tables for Stata and R, and the study itself, to download'),
+]
+TALL = 24000
+
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--token', required=True)
-    parser.add_argument('--experiment', default='coalition-formation')
+    # The study the walkthrough makes on synthetic data; a real one would put
+    # participants' words into every copy of the guide.
+    parser.add_argument('--experiment', default='ultimatum-with-pre-play-chat')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--out', type=Path, default=Path('docs/images'))
     parser.add_argument('--width', type=int, default=1400)
     args = parser.parse_args(argv)
 
     base = f'http://127.0.0.1:{args.port}'
+
+    def url_of(page: str) -> str:
+        if page == '/__library__':
+            return f'{base}/?t={args.token}'
+        joiner = '&' if '?' in page else '?'
+        return (f'{base}/experiment/{args.experiment}{page}'
+                f'{joiner}t={args.token}')
 
     # Ask for the slow panels once before photographing anything. Each of them
     # answers at once and fills in, and each caches its result — so a shot
@@ -80,11 +99,8 @@ def main(argv=None) -> int:
             '/findings/words/panel?penalty=0.1&min_df=10&ngrams=both']
     print('Warming the slow findings, so that nothing is photographed mid-thought.')
     for path_part in warm:
-        joiner = '&' if '?' in path_part else '?'
-        url = (f'{base}/experiment/{args.experiment}{path_part}'
-               f'{joiner}t={args.token}')
         started = time.monotonic()
-        with urllib.request.urlopen(url, timeout=1800) as answer:
+        with urllib.request.urlopen(url_of(path_part), timeout=1800) as answer:
             answer.read()
         print(f'  {path_part.split("?")[0]:38s} '
               f'{time.monotonic() - started:5.1f} s')
@@ -92,15 +108,17 @@ def main(argv=None) -> int:
     # The settings page used to be one tall capture cut into four bands. It is
     # four screens now, so each is photographed as itself.
     for name, page, height, wait, caption in SHOTS:
-        if page == '/__library__':
-            url = f'{base}/?t={args.token}'
-        else:
-            joiner = '&' if '?' in page else '?'
-            url = (f'{base}/experiment/{args.experiment}{page}'
-                   f'{joiner}t={args.token}')
         out = args.out / f'{name}.png'
-        capture(url, out, args.width, height, wait)
+        capture(url_of(page), out, args.width, height, wait)
         print(f'  {name:22s} {out.stat().st_size // 1024:4d} KB   {caption}')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, page, height, wait, caption in TAILS:
+            tall = capture(url_of(page), Path(tmp) / f'{name}-tall.png',
+                           args.width, TALL, wait)
+            out = crop_tail(tall, args.out / f'{name}.png', height)
+            print(f'  {name:22s} {out.stat().st_size // 1024:4d} KB   '
+                  f'{caption}')
     return 0
 
 

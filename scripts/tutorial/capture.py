@@ -57,6 +57,35 @@ def crop(path: Path, out: Path, top: int, bottom: int) -> Path:
     return out
 
 
+def crop_tail(path: Path, out: Path, height: int, margin: int = 24) -> Path:
+    """The last `height` pixels of a page, from a capture taller than it.
+
+    Headless Chrome photographs the top of a page and cannot be told to
+    scroll — an anchor in the URL gave an empty frame — so the sections at
+    the foot of a long page are out of reach. A capture taller than the page
+    ends in background; this finds where the content stops and keeps the band
+    just above it. A capture with no background at its foot was cut short by
+    the window, and cropping it would photograph the wrong section, so that
+    is refused.
+    """
+    from PIL import Image
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(path) as image:
+        rgb = image.convert('RGB')
+        ground = rgb.getpixel((rgb.width - 1, rgb.height - 1))
+        last = rgb.height - 1
+        while last > 0 and all(rgb.getpixel((x, last)) == ground
+                               for x in range(0, rgb.width, 7)):
+            last -= 1
+        if rgb.height - 1 - last < margin:
+            raise SystemExit(f'{path.name}: the page is taller than the '
+                             f'{rgb.height}px capture; raise the height.')
+        bottom = last + margin
+        rgb.crop((0, max(0, bottom - height), rgb.width, bottom)).save(out)
+    return out
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__,

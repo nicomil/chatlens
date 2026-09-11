@@ -112,6 +112,31 @@ tried at some expense before the shape was looked at. Seeding with example topic
 does not help either: in four configurations the model reused what it was given
 and added nothing of its own.
 
+### When a run stops halfway
+
+A topics run is four paid phases, and on the study this was built for more than
+five thousand calls. A network blip, a spent credit balance or a Ctrl-C used to
+mean starting again from the first.
+
+```bash
+chatlens analyze --topics --topicgpt-reuse
+```
+
+skips every phase whose output is already complete on disk and pays only for
+the rest. "Complete" is checked, not assumed: a phase that stopped at 806 of
+1,333 documents, or whose file carries the `"Error"` rows TopicGPT writes
+instead of raising, counts as not done and is run again whole. The spending
+guard quotes the calls that will actually be made and names the phases it is
+skipping. With every phase present the run makes no calls at all and rewrites
+the datasets from the answers already paid for — which is also how a fix to
+the reading of those answers reaches the data without buying them twice.
+
+**A refusal is not a topic.** Asked about a document it cannot place, the model
+sometimes declines and lists the topics it considered, or answers
+`[1] No suitable topic:`. Only a line that opens with `[1] Name:` counts as an
+assignment, and only a name from the induced taxonomy is kept, so neither
+shape turns a refused document into one that belongs to every topic.
+
 ### Second-level topics
 
 ```bash

@@ -57,6 +57,7 @@ screen and it will be right.
 | The emotions | the NRC Emotion Lexicon | 4 MB |
 | The topics (paid) | the `topics` extra + TopicGPT + an OpenAI key | small |
 | The validation rubric (paid) | the `llm` extra + an OpenAI or Anthropic key | small |
+| The `.dta` files of `chatlens tables` | the `stata` extra (pandas) | 130 MB |
 
 For reference, here is every one of them written out. Replace the URL with
 wherever you installed from; if you used pip rather than uv, the shape is
@@ -79,6 +80,9 @@ chatlens keys                          # OPENAI_API_KEY, guided
 # ── the validation rubric: an extra and a key ──
 uv tool install --reinstall "chatlens[llm] @ git+https://github.com/nicomil/chatlens.git"
 chatlens keys                          # OpenAI or Anthropic, either will do
+
+# ── a Stata .dta beside each CSV of `chatlens tables` ──
+uv tool install --reinstall "chatlens[stata] @ git+https://github.com/nicomil/chatlens.git"
 
 # ── every library at once, if you would rather not choose ──
 # still leaves the three that are not libraries: the model, RELATIO, TopicGPT

@@ -33,7 +33,9 @@ Plus the deterministic language measures — volume, emotional tone, sentiment,
 analytical thinking, Clout, Authenticity — computed at pair and group level and
 grafted onto your choice datasets. Only the topics and the validation rubric
 cost anything; everything else runs on your machine, on data that never leaves
-it.
+it. `chatlens tables` then puts all of it — the experiment's variables and
+every measure, the relations and emotions included — into one table per unit,
+as CSV for R and `.dta` for Stata, with a codebook.
 
 **One idea runs through all of it.** Longer messages contain more of
 everything, so a text measure that looks impressive is often measuring how much

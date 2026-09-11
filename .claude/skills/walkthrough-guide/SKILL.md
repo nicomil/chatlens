@@ -68,7 +68,16 @@ Settings: upload `messages.csv` and `roster.csv`, give them the roles `messages`
 and `participants`, confirm the column mapping, name the treatments, and set the
 outcome to `accepted`, binary, one row per person. Then run **Measures only**.
 
-Finally set the narrative entities to `i, you, we` on the Narratives page.
+Finally set the narrative entities to `i, you, we` on the Narratives page, and
+download the tables from **Put it together** — open the zip and read
+`NOTES.txt`. On the demo the relations are extracted per person, the unit of
+its outcome, so they reach only the participant table and the note says so; a
+note that says anything else is something to look into.
+
+On a corpus this small no relation reaches the 25 units a test needs. The
+relations page then says *Nothing to test*, and the comparison and the register
+say no relation is frequent enough — if either says RELATIO is missing on a
+machine that has it, that defect is back.
 
 Clicks on native `<select>` elements are unreliable under automation. Driving the
 same forms with `curl` against the running server reaches the same state, and
@@ -78,20 +87,26 @@ same-origin`.
 
 ### 3. Photograph every page
 
-Fifteen figures: the empty library, the experiment made, four bands of the
-settings page, the finished run, the report, and each analysis page — with the
-words page shot three times at three penalties, because the point of that
-control is what changes when it moves.
+Fourteen figures: the library, the four setup steps, each finding — with the
+words page shot twice at two penalties, because the point of that control is
+what changes when it moves — the findings summary, and the foot of that summary,
+where the tables and the study are downloaded.
 
 ```bash
 python scripts/tutorial/shoot.py --token <the key the dashboard printed> \
-    --out docs/images
+    --port <its port> --out docs/images
 ```
 
+`--port` defaults to 8765; pass the one the dashboard printed if another
+dashboard already holds it.
+
 Headless Chrome against the same server, so what lands in the guide is the page
-as it renders. Heights are per page and the settings figures are bands cut from
-one tall capture — three shots of the same page at three window heights are
-three pictures of the same thing.
+as it renders. Heights are per page. Headless Chrome photographs the top of a
+page and cannot be told to scroll — an anchor in the URL gave an empty frame —
+so the foot of the summary, about 11,700 pixels down on the demo, is captured
+taller than the page and cropped where the content ends. If the page outgrows
+the capture the crop refuses rather than photographing the wrong section; raise
+`TALL` in `shoot.py`.
 
 `--wait` matters: the narratives page parses every message before it draws, and
 a shot taken too early shows an empty frame that reads as a bug.
