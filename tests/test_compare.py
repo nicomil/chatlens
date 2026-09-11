@@ -89,6 +89,24 @@ class BuildTests(unittest.TestCase):
         found = next(s for s in built['sets'] if s['kind'] == 'narratives')
         self.assertEqual(found['features'], 1)
 
+    def test_relations_too_rare_to_use_are_an_answer_not_a_missing_package(self):
+        """On a small corpus nothing reaches the threshold. That was reported
+        as "needs RELATIO" on a machine that had just run it."""
+        data = rows()
+        built = compare.build(
+            data, 'y', 'text',
+            per_unit={'g0': {('i', 'support', 'you')}},
+            key_of=lambda r: r['group_uid'], narrative_terms=[])
+        found = next(s for s in built['sets'] if s['kind'] == 'narratives')
+        self.assertIsNone(found['matrix'])
+        self.assertTrue(found['answered'])
+        self.assertNotIn('RELATIO', found['why'])
+
+    def test_no_extraction_at_all_is_still_unavailable(self):
+        built = compare.build(rows(), 'y', 'text')
+        found = next(s for s in built['sets'] if s['kind'] == 'narratives')
+        self.assertFalse(found.get('answered'))
+
     def test_too_little_data_says_so(self):
         with self.assertRaises(ValueError) as ctx:
             compare.build(rows(10), 'y', 'text')

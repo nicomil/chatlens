@@ -144,7 +144,11 @@ def verdicts() -> dict:
         if row is None:
             continue
         if row['auc'] is None:
-            found[key] = (ui.UNAVAILABLE, row.get('why', ''))
+            # Unavailable is for what could not be computed here. A row the
+            # data answered — relations found, none frequent enough to use —
+            # is open, with the reason as its note.
+            found[key] = (ui.OPEN if row.get('answered') else ui.UNAVAILABLE,
+                          row.get('why', ''))
         elif row['beats_volume']:
             found[key] = (ui.YES, f'{row["auc"]:.3f} against {volume:.3f}')
         else:

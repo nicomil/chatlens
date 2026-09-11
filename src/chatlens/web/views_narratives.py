@@ -292,6 +292,14 @@ q&nbsp;&lt;&nbsp;0.10.</p>
                   f'distinct relations were extracted. Nothing is tested '
                   f'without an outcome.')
         verdict = ui.OPEN
+    elif not tested['tested']:
+        # Not "none survives": nothing was put to the test. Said as a no, it
+        # read as a finding on a corpus too small to have one.
+        answer = (f'Nothing to test: none of the '
+                  f'<span class="figure">{len(found["frequencies"])}</span> '
+                  f'relations appears in {narratives.MIN_DOCUMENTS} or more '
+                  f'units.')
+        verdict = ui.OPEN
     elif tested['survivors']:
         answer = (f'<span class="with">{tested["survivors"]}</span> of '
                   f'<span class="figure">{tested["tested"]}</span> tested '

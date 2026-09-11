@@ -100,13 +100,21 @@ def build(rows, outcome_column, text_column, group_column='group_uid',
         sets.append({'name': 'Words', 'matrix': None, 'kind': 'words',
                      'why': 'no term appears in ten or more documents'})
 
-    if per_unit and key_of and narrative_terms:
+    if per_unit is not None and key_of and narrative_terms:
         present = np.array(
             [[float(term in per_unit.get(key_of(r), ()))
               for term in narrative_terms] for r in usable])
         sets.append({'name': 'Narrative relations', 'matrix': present,
                      'features': len(narrative_terms), 'kind': 'narratives',
                      'sparse': False})
+    elif per_unit is not None:
+        # Extracted, and none of it frequent enough to be a variable. That is
+        # an answer about this corpus, not a missing package — it used to be
+        # reported as "needs RELATIO" on a machine that had just run it.
+        sets.append({'name': 'Narrative relations', 'matrix': None,
+                     'kind': 'narratives', 'answered': True,
+                     'why': 'no relation appears in enough units to be a '
+                            'variable — see the narratives page'})
     else:
         sets.append({'name': 'Narrative relations', 'matrix': None,
                      'kind': 'narratives',

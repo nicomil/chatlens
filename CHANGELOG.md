@@ -76,6 +76,14 @@ Notable changes to chatlens. The format follows
   cannot run.
 - The comparison raised when RELATIO could not cluster a corpus, instead of
   leaving the relations row out as its comment said it would.
+- **Relations too rare to use were reported as a missing package.** On a
+  corpus where no relation reaches the 25 units a test needs, the comparison
+  and the register said "needs RELATIO and declared entities" on a machine
+  that had just extracted them, and marked the finding unavailable. They now
+  say that no relation is frequent enough, and the register shows it as an
+  answer. The relations page, which said "None. Of 0 relations tested, none
+  survives", now says there was nothing to test. Found by walking the guide
+  on the synthetic study.
 
 ### Changed
 
