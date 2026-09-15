@@ -36,22 +36,20 @@ analysis (directed dyad, dyad, group).
 from __future__ import annotations
 
 import math
-import re
 from collections import Counter
 
-from . import lexicons
+from . import lexicons, tokens
 from .lexicons import CATEGORIES, is_adverb
 
-# Tokenisation keeps words with internal apostrophes (don't, i'm) whole, so
-# contracted forms stay recognisable to the dictionaries.
+# One definition of a word for the whole project, in `core/tokens.py`, which is
+# also where the reason there used to be three of them is written down. The
+# dictionary measures count `words` and not `terms`: LIWC does not count
+# numerals, and the Categorical-Dynamic Index is a percentage of words in its
+# sense, so counting `60` here would stop `analytic_cdi` from being the
+# replication the handbook claims.
 #
-# English only, and deliberately visible as such: the pattern matches a-z, and
-# the dictionaries below are English word lists. On a conversation in another
-# language the volume measures (messages, characters) still mean something,
-# while every dictionary-based index — analytic, clout, authenticity, tone —
-# reads near zero and means nothing at all. There is no partial credit here:
-# another language needs its own lexicons, not a wider regex.
-TOKEN_RE = re.compile(r"[a-z]+(?:'[a-z]+)*", re.IGNORECASE)
+# Kept as a name because tests and a docstring elsewhere refer to it.
+TOKEN_RE = tokens.WORD
 
 COUNT_KEYS = sorted(set(CATEGORIES) | {'adverb'})
 
@@ -104,7 +102,7 @@ def _active_categories() -> dict:
 
 
 def tokenize(text: str) -> list[str]:
-    return [t.lower() for t in TOKEN_RE.findall(text or '')]
+    return tokens.words(text)
 
 
 def count_categories(text: str) -> dict:
@@ -114,21 +112,21 @@ def count_categories(text: str) -> dict:
     it. Categories are not mutually exclusive: a negation such as "don't"
     counts both as an auxiliary and as a negation, exactly as in LIWC.
     """
-    tokens = tokenize(text)
+    words = tokenize(text)
     active = _active_categories()
     index = _inverted(active)
     counts = {key: 0 for key in COUNT_KEYS}
-    for token in tokens:
+    for token in words:
         for name in index.get(token, ()):
             counts[name] += 1
         if is_adverb(token):
             counts['adverb'] += 1
 
-    counts['wc'] = len(tokens)
-    counts['unique_wc'] = len(set(tokens))
+    counts['wc'] = len(words)
+    counts['unique_wc'] = len(set(words))
     counts['char_count'] = len(text or '')
     # Long words: the lexical-density proxy LIWC calls "sixltr".
-    counts['sixltr'] = sum(1 for t in tokens if len(t) > 6)
+    counts['sixltr'] = sum(1 for t in words if len(t) > 6)
     counts['qmark'] = (text or '').count('?')
     counts['exclam'] = (text or '').count('!')
     return counts
@@ -279,7 +277,20 @@ def standardize(rows, keys=STANDARDIZED):
                 row[f'{name}_100'] = ''
                 continue
             sd = stats[key]['sd']
+            if stats[key]['n'] < 2:
+                # One unit, or none. There is no sample to be standardised
+                # against, so there is no position on a scale — and 0 and 50,
+                # which this used to write, are indistinguishable from a real
+                # reading in the middle of a real distribution. Blank says what
+                # happened; `standardised_on` below says how many units there
+                # were, for a caller that wants to tell its reader.
+                row[f'{name}_z'] = ''
+                row[f'{name}_100'] = ''
+                continue
             if sd <= 0:
+                # Several units, all with the same value. Unlike the case above
+                # there *is* a sample here, and every unit sits exactly at its
+                # mean, which is the middle. That is a reading, not a gap.
                 row[f'{name}_z'] = 0.0
                 row[f'{name}_100'] = 50.0
                 continue
@@ -287,6 +298,18 @@ def standardize(rows, keys=STANDARDIZED):
             row[f'{name}_z'] = round(z, 6)
             row[f'{name}_100'] = round(100.0 * _normal_cdf(z), 4)
     return stats
+
+
+def standardised_on(stats) -> dict:
+    """How many units each index was standardised against.
+
+    The scale is the sample, so the size of the sample is part of what the
+    number means — and on a level with one or two units there is no scale at
+    all. Returned separately rather than printed, so the caller decides whether
+    its reader needs to know.
+    """
+    return {name: stats[key]['n'] for key, name in STANDARDIZED_NAMES.items()
+            if key in stats}
 
 
 # --- Sentiment -------------------------------------------------------------

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from chatlens.web import ui
+from chatlens.web import active, ui
 from chatlens.core import nrc
 
 
@@ -51,14 +51,17 @@ def _texts_and_source():
     from chatlens.core import config
     from chatlens.web import views_participation
 
-    path = views_participation._latest(config.DATASETS_DIR,
+    path = views_participation._latest(active.datasets_dir(),
                                        '_chat_by_partner_nlp.csv')
     if path is None:
         path = views_participation._latest(config.MERGED_DIR,
                                            '_messages_long.csv')
         if path is None:
             return [], None
-        rows = views_participation._read(path)
+        # The merged messages are one table for every treatment, so the chosen
+        # study has to be applied here; the built datasets above are already
+        # that study's own.
+        rows = active.within(views_participation._read(path))
         return [r.get('body') or '' for r in rows], path
 
     rows = views_participation._read(path)
@@ -69,6 +72,31 @@ def _texts_and_source():
     from chatlens.core import words as words_module
 
     return [words_module.clean(r.get(column)) for r in rows], path
+
+
+def language_notice(texts) -> str:
+    """Said on the page when the corpus is not the language the lists are in.
+
+    Every dictionary in this tool — the NRC lexicon here, the LIWC-style
+    categories next door — is an English word list. On a corpus in another
+    language they match almost nothing, so every index built on them reads near
+    zero, and a column of zeros is indistinguishable from a measurement that
+    found no emotion. Until now the tool said this only in a code comment.
+    """
+    from chatlens.core import tokens
+
+    found = tokens.looks_like_english(texts)
+    if found['english'] is not False:
+        return ''
+    return ui.notice(
+        f'<b>This corpus does not look like English.</b> Only '
+        f'{100 * found["share"]:.0f}% of its words are English function words, '
+        f'where conversational English runs above 40%. Every word list in this '
+        f'tool is English, so these categories — and the analytic, clout, '
+        f'authenticity and tone indices — will read near zero whatever the '
+        f'conversations actually contain. That is not a measurement of calm: '
+        f'it is the absence of one. Another language needs its own lexicons.',
+        'bad')
 
 
 def _bars(rows) -> str:
@@ -154,7 +182,8 @@ def panel() -> str:
 
     provenance = (f'<p class="muted">{len(marked)} words in the lexicon, read '
                   f'from <b>{_e(nrc.lexicon_path().name)}</b>. Scored on '
-                  f'{_e(source.name if source else "the documents")}.</p>')
+                  f'{_e(source.name if source else "the documents")}.</p>'
+                  + language_notice(texts))
 
     tiles = ui.stat_tiles([
         (cover['documents'], 'documents with any text'),

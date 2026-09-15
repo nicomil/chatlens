@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+from statistics import median
 
 from . import tables
 
@@ -88,9 +89,25 @@ def aggregate_level(messages: list[dict], level: str) -> list[dict]:
         row['duration_seconds'] = (
             round(timestamps[-1] - timestamps[0], 3) if len(timestamps) > 1 else 0.0
         )
-        # Pace of the exchange: median gap between consecutive turns.
+        # Pace of the exchange: median gap between consecutive turns. The real
+        # median, not the upper of the two middle gaps — `statistics.median`,
+        # the same function `core/corpus.py:shape` already uses, so the number
+        # on a page and the number in a dataset agree.
         gaps = [b - a for a, b in zip(timestamps, timestamps[1:])]
-        row['median_gap_seconds'] = round(sorted(gaps)[len(gaps) // 2], 3) if gaps else ''
+        row['median_gap_seconds'] = round(median(gaps), 3) if gaps else ''
+
+        # Who opened it. At the dyad level this is the one that matters: the
+        # first mover of a conversation is a choice, and which of two people
+        # spoke first is not recoverable from anything else here — the counts
+        # say how much each wrote, never who began. Ordered by time where there
+        # are timestamps and by file order where there are none, which is the
+        # merge's order and the best answer available.
+        ordered = sorted(
+            bucket,
+            key=lambda m: (schema.parse_timestamp(m.get('timestamp')) is None,
+                           schema.parse_timestamp(m.get('timestamp')) or 0.0))
+        row['first_sender_id_in_group'] = (
+            str(ordered[0].get('sender_id_in_group', '')) if ordered else '')
 
         compounds = [
             float(m['sentiment_compound']) for m in bucket
@@ -118,7 +135,7 @@ def aggregate_all(messages: list[dict]) -> dict:
 # so as not to bloat the main CSVs beyond reason.
 MERGE_COLUMNS = [
     'n_messages', 'wc', 'mean_words_per_message', 'type_token_ratio',
-    'duration_seconds', 'median_gap_seconds',
+    'duration_seconds', 'median_gap_seconds', 'first_sender_id_in_group',
     'analytic_cdi', 'analytic_z', 'analytic_100',
     'clout_raw', 'clout_z', 'clout_100',
     'authenticity_raw', 'authenticity_z', 'authenticity_100',

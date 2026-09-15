@@ -94,6 +94,97 @@ class WhichMatterTests(unittest.TestCase):
             self.run_it(per_unit, rows)
         self.assertIn('same outcome', str(ctx.exception))
 
+    def test_without_a_length_to_count_the_relations_are_still_tested(self):
+        """A dataset with no text column is not a corpus with no relations.
+
+        The caller used to pass a function returning zero for every row: log
+        words was then a constant column, every design was singular, every fit
+        raised, and the page reported that nothing had been frequent enough to
+        test — a statement about the corpus, made when no model had been fitted
+        at all.
+        """
+        per_unit, rows = self.frame()
+        found = narratives.which_matter(
+            per_unit, rows, 'y',
+            key_of=lambda r: (r['group_uid'], r['a'], r['b']),
+            words_of=None,
+            group_of=lambda r: r['group_uid'],
+            min_documents=10)
+        self.assertEqual(found['tested'], 1)
+        self.assertFalse(found['controlled_for_length'])
+
+    def test_the_length_control_is_reported_when_it_held(self):
+        self.assertTrue(self.run_it(*self.frame())['controlled_for_length'])
+
+
+class BenjaminiHochbergTests(unittest.TestCase):
+    """The correction has two halves and only the first was here.
+
+    `p * m / rank` on its own is not monotone in p, so a relation could be
+    reported as weaker than one it dominates, and the count of survivors
+    inherited the error.
+    """
+
+    def adjust(self, ps):
+        """The q-values `which_matter` would attach to these p-values."""
+        results = [{'p': p} for p in sorted(ps)]
+        total = len(results)
+        running = 1.0
+        for rank in range(total, 0, -1):
+            running = min(running, results[rank - 1]['p'] * total / rank)
+            results[rank - 1]['q'] = min(1.0, running)
+        return [r['q'] for r in results]
+
+    def test_it_matches_the_published_method(self):
+        """Against statsmodels, which implements the same correction."""
+        try:
+            from statsmodels.stats.multitest import multipletests
+        except ImportError:
+            self.skipTest('statsmodels is not installed')
+        for ps in ([0.001, 0.0011, 0.03, 0.04, 0.5], [0.2, 0.01, 0.9],
+                   [0.5], [0.04, 0.04, 0.04, 0.04]):
+            with self.subTest(ps=ps):
+                theirs = multipletests(sorted(ps), method='fdr_bh')[1]
+                for mine, other in zip(self.adjust(ps), theirs):
+                    self.assertAlmostEqual(mine, other, places=12)
+
+    def test_the_q_values_never_fall_as_p_rises(self):
+        """The half that was missing, stated as the property it guarantees."""
+        qs = self.adjust([0.001, 0.0011, 0.03, 0.04, 0.5])
+        self.assertEqual(qs, sorted(qs))
+
+    def test_the_smallest_p_is_not_penalised_by_its_own_rank(self):
+        """Raw, the first of these is .005; the method gives .00275."""
+        self.assertAlmostEqual(self.adjust([0.001, 0.0011, 0.03, 0.04, 0.5])[0],
+                               0.00275, places=9)
+
+    def test_the_running_code_produces_the_same_q_values(self):
+        """Not only the arithmetic above: the function itself."""
+        try:
+            import statsmodels.api  # noqa: F401
+        except ImportError:
+            self.skipTest('statsmodels is not installed')
+        per_unit, rows = {}, []
+        for i in range(300):
+            key = ('g%d' % (i // 3), str(i), 'x')
+            found = set()
+            if i % 2 == 0:
+                found.add(('i', 'support', 'you'))
+            if i % 3 == 0:
+                found.add(('we', 'split', 'it'))
+            if found:
+                per_unit[key] = found
+            rows.append({'group_uid': key[0], 'a': key[1], 'b': key[2],
+                         'y': '1' if i % 2 == 0 else '0', 'words': 20})
+        got = narratives.which_matter(
+            per_unit, rows, 'y',
+            key_of=lambda r: (r['group_uid'], r['a'], r['b']),
+            words_of=lambda r: r['words'],
+            group_of=lambda r: r['group_uid'], min_documents=10)
+        expected = self.adjust([r['p'] for r in got['results']])
+        for row, q in zip(got['results'], expected):
+            self.assertAlmostEqual(row['q'], q, places=12)
+
 
 class ConfigurationTests(unittest.TestCase):
     def test_entities_round_trip_through_the_experiment(self):

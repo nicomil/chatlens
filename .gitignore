@@ -35,3 +35,6 @@ site/
 # repository, least of all one meant to be published.
 chatlens-guide.pdf
 chatlens-guide.html
+
+# macOS
+.DS_Store

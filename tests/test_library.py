@@ -50,6 +50,26 @@ class SlugTests(unittest.TestCase):
     def test_it_is_bounded(self):
         self.assertLessEqual(len(library.slug('x ' * 400)), 64)
 
+    def test_the_cut_never_leaves_a_trailing_dash(self):
+        """`path_for` refuses anything that is not its own slug.
+
+        The trailing dashes were stripped before the cut to 64 characters and
+        not after, so a name whose 65th character fell on a word boundary
+        produced a slug ending in a dash — and the experiment `create` had just
+        written could not be opened.
+        """
+        name = 'a' * 63 + ' b more words here'
+        identifier = library.slug(name)
+        self.assertFalse(identifier.endswith('-'))
+        self.assertEqual(library.slug(identifier), identifier)
+
+    def test_every_length_around_the_cut_round_trips(self):
+        for words in range(1, 40):
+            name = ' '.join(['aaaa'] * words)
+            with self.subTest(words=words):
+                identifier = library.slug(name)
+                self.assertEqual(library.slug(identifier), identifier)
+
 
 class PathConfinementTests(unittest.TestCase):
     """Whatever arrives from the browser must stay inside the library."""

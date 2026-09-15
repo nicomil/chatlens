@@ -56,3 +56,18 @@
     try { localStorage.setItem('chatlens-theme', next); } catch (e) { /* private mode */ }
   });
 })();
+
+// Changing the sample applies it. The select cannot carry an inline onchange —
+// the page's content security policy is `script-src 'self'`, which blocks one
+// without a word — so the behaviour lives here, and the "Use" button beside it
+// is what happens when this file does not load at all.
+(function () {
+  document.querySelectorAll('select[data-submit-on-change]').forEach(
+    function (select) {
+      select.addEventListener('change', function () {
+        var form = select.form;
+        if (!form) { return; }
+        if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
+      });
+    });
+})();

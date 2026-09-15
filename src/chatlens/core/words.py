@@ -25,6 +25,10 @@ beat it, that is the finding.
 
 from __future__ import annotations
 
+import re
+
+from . import tokens
+
 # The penalty is the parameter worth moving: watching terms appear and disappear
 # says how fragile the selection is, which a single table hides. Bounded because
 # it arrives from a browser, and because outside this range it either keeps
@@ -32,6 +36,20 @@ from __future__ import annotations
 PENALTIES = (0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0)
 NGRAMS = {'unigrams': (1, 1), 'bigrams': (2, 2), 'both': (1, 2)}
 MIN_DF = (3, 5, 10, 20, 50)
+
+# scikit-learn's default is `(?u)\b\w\w+\b`, which requires two characters and
+# therefore throws away every one-letter word before the model ever sees it.
+# In a chat corpus those are not noise: "i" and "u" are the two people in the
+# conversation, and in a game about who supports whom they are the words that
+# say who. On the study this was written for, `["i support you", "u and i"]`
+# produced a vocabulary of {and, support, you} — the pronouns gone, the verb
+# left standing on its own.
+#
+# `terms` rather than `words`, which is the one place in the project where the
+# difference matters: a bag of words should see `60` and `40`, because in a
+# bargaining corpus those are things people say. The dictionary measures must
+# not, because LIWC does not count numerals. See `core/tokens.py`.
+TOKEN_PATTERN = tokens.TERM_PATTERN
 
 
 def _lasso_kwargs(l1: bool) -> dict:
@@ -56,14 +74,29 @@ def _lasso_kwargs(l1: bool) -> dict:
     return {'penalty': 'l1' if l1 else 'l2'}
 
 
+# The speaker prefix the transcripts carry, in the three shapes the adapters
+# and the pipeline write it: `Yellow->Orange:`, `Yellow -> Orange:` and
+# `Yellow to Orange:`, with seat numbers in place of colours where the export
+# has no colours. Neither name may contain a colon, which is what keeps the
+# pattern from reaching across one.
+SPEAKER_PREFIX = re.compile(r'^\s*[^\s:]+\s*(?:->|→|\sto\s)\s*[^\s:]+\s*:\s*')
+
+
 def clean(text: str) -> str:
     """Drop the "Colour -> Colour:" prefix some transcripts carry per line.
 
     It is structure rather than speech, and left in it is learnt as if it were
     content — the names of the participants become the strongest predictors of
     what the participants did.
+
+    Only that prefix. This used to cut each line at its first colon whatever
+    stood before it, and the same function is applied to plain message columns
+    as well as to transcripts: `"ratio is 2:1 and i think: yes"` came back as
+    `"1 and i think: yes"`, so a bargaining corpus lost the words before every
+    number it argued about. A line with no speaker prefix is now returned as it
+    is.
     """
-    stripped = ' '.join(line.split(':', 1)[-1]
+    stripped = ' '.join(SPEAKER_PREFIX.sub('', line)
                         for line in (text or '').splitlines())
     # Whitespace is collapsed so the result is predictable. Neither the
     # tokeniser nor a word count cares, but a function whose output depends on
@@ -102,7 +135,8 @@ def fit(rows, text_column, outcome_column, group_column='group_uid',
     groups = np.array([str(r.get(group_column, '')) for r in usable])
 
     vectoriser = CountVectorizer(lowercase=True, ngram_range=NGRAMS[ngrams],
-                                 min_df=min_df, binary=True)
+                                 min_df=min_df, binary=True,
+                                 token_pattern=TOKEN_PATTERN)
     try:
         X = vectoriser.fit_transform(texts)
     except ValueError as exc:
@@ -128,9 +162,18 @@ def fit(rows, text_column, outcome_column, group_column='group_uid',
     selected.sort(key=lambda t: -abs(t['coef']))
 
     length = np.array([[len(t.split())] for t in texts], float)
+    as_array = np.array(texts, dtype=object)
 
     def scored(matrix, sparse):
-        """Out-of-sample AUC with whole groups held out."""
+        """Out-of-sample AUC with whole groups held out.
+
+        For the bag of words the vocabulary is chosen **inside** each fold, from
+        the training rows alone — `matrix` is then used for nothing but its
+        shape. The list of coefficients above is fitted on every row on purpose:
+        it is a description of this corpus, not an estimate, and the reader is
+        looking at which terms survive the penalty here. The AUC is the
+        estimate, and an estimate may not see the rows it is scored on.
+        """
         splits = min(5, len(set(groups)))
         if splits < 2:
             return None
@@ -138,12 +181,27 @@ def fit(rows, text_column, outcome_column, group_column='group_uid',
         for train, test in GroupKFold(n_splits=splits).split(matrix, y, groups):
             if len(set(y[train])) < 2 or len(set(y[test])) < 2:
                 continue
+            if sparse:
+                inside = CountVectorizer(lowercase=True,
+                                         ngram_range=NGRAMS[ngrams],
+                                         min_df=min_df, binary=True,
+                                         token_pattern=TOKEN_PATTERN)
+                try:
+                    xtr = inside.fit_transform(as_array[train])
+                except ValueError:
+                    # No term frequent enough among the training rows of this
+                    # fold. It happens on a small corpus, and the fold is
+                    # skipped rather than scored on an empty design.
+                    continue
+                xte = inside.transform(as_array[test])
+            else:
+                xtr, xte = matrix[train], matrix[test]
             fitted = LogisticRegression(
                 C=penalty if sparse else 1.0, solver='liblinear',
                 max_iter=6000, random_state=0,
-                **_lasso_kwargs(sparse)).fit(matrix[train], y[train])
-            aucs.append(roc_auc_score(
-                y[test], fitted.predict_proba(matrix[test])[:, 1]))
+                **_lasso_kwargs(sparse)).fit(xtr, y[train])
+            aucs.append(roc_auc_score(y[test],
+                                      fitted.predict_proba(xte)[:, 1]))
         return float(np.mean(aucs)) if aucs else None
 
     return {
@@ -242,7 +300,14 @@ def cloud_svg(selected, positive: bool) -> str:
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
         f'height="{height}" viewBox="0 0 {width} {height}" '
-        f'preserveAspectRatio="xMidYMid meet" role="img">',
+        f'preserveAspectRatio="xMidYMid meet" role="img" '
+        f'aria-labelledby="cloud-title">',
+        # A figure with `role="img"` and no accessible name is announced as
+        # "image" and nothing else. The words themselves are in the SVG and are
+        # read out, which is a list of terms with no indication of what they are.
+        f'<title id="cloud-title">The terms that go '
+        f'{"with" if positive else "against"} the outcome, sized by '
+        f'coefficient</title>',
         # The colour is handed to the stylesheet: that is what makes the figure
         # follow the light and the dark theme without being redrawn.
         '<style>text{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;'
@@ -296,18 +361,29 @@ def cloud_image(selected, positive: bool, fmt: str = 'png',
     return buffer.getvalue()
 
 
-def table_csv(selected) -> str:
-    """The coefficients, for a spreadsheet or an appendix."""
+def table_csv(selected, params=None) -> str:
+    """The coefficients, for a spreadsheet or an appendix.
+
+    The settings go in the file, named as scikit-learn names them. The page
+    calls the control "how selective" and the value it passes is `C`, the
+    *inverse* of the regularisation strength — so a file whose column said
+    `penalty` told whoever refits this in R or Stata to turn the knob the wrong
+    way. Here it is `inverse_penalty_C`, which is what it is.
+    """
     import csv
     import io
 
+    params = params or {}
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(['term', 'words_in_term', 'coefficient', 'direction',
-                     'documents'])
+    header = ['term', 'words_in_term', 'coefficient', 'direction', 'documents']
+    settings = [key for key in ('inverse_penalty_C', 'min_df', 'ngrams')
+                if key in params]
+    writer.writerow(header + settings)
     for term in selected:
         writer.writerow([term['term'], len(term['term'].split()),
                          f'{term["coef"]:.6f}',
                          'outcome' if term['coef'] > 0 else 'not outcome',
-                         term['documents']])
+                         term['documents']]
+                        + [params[key] for key in settings])
     return buffer.getvalue()

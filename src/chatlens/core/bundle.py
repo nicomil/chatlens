@@ -71,6 +71,16 @@ NEVER = (
 HISTORY = 'output/runs'
 HISTORY_BULK = 'datasets'
 
+# The most a bundle may weigh once opened. The real study this was written for
+# is 77 MB with its history; twenty gigabytes is far past anything legitimate
+# and well short of a modern disk, which is the right place for a limit that
+# exists to stop an accident rather than to ration space.
+MAX_UNPACKED = 20 * 1000 ** 3
+
+# Passed to `TarFile.extract` where the running Python has it. 3.11 has no
+# extraction filter at all, and passing the argument there is a TypeError.
+_FILTER = {'filter': 'data'} if hasattr(tarfile, 'data_filter') else {}
+
 
 class BundleError(RuntimeError):
     """The bundle could not be made, or could not be trusted."""
@@ -146,7 +156,27 @@ def describe(folder: Path, with_runs: bool = False,
         has_relations=_has(folder, 'output/cache/narratives', '*.json'),
         has_runs=_has(folder, HISTORY),
         pseudonymised=bool(pseudonymised),
+        # What is in the messages that a pattern can recognise. The identifier
+        # columns can be rewritten; the texts cannot, because they are what is
+        # being analysed. So the manifest carries a figure rather than a
+        # reassurance, and whoever opens the bundle sees it before they decide
+        # where to put it.
+        identifiers_in_text=_scan_messages(folder),
     )
+
+
+def _scan_messages(folder: Path) -> dict:
+    """The merged message table, scanned for identifying detail."""
+    from . import privacy, tables
+
+    found = sorted((folder / 'output' / 'merged').glob('*_messages_long.csv'))
+    if not found:
+        return {}
+    try:
+        rows = tables.read(found[0])
+    except (OSError, ValueError):
+        return {}
+    return privacy.scan_text(row.get('body') for row in rows)
 
 
 # --- packing ---------------------------------------------------------------
@@ -284,6 +314,19 @@ def _checked_members(archive: tarfile.TarFile, slug: str) -> list:
                 f'{member.name} is outside {slug}/, which is the only folder '
                 f'this archive says it contains. Refusing it.')
         keep.append(member)
+
+    # What it will weigh once opened, checked before a byte is written. A gzip
+    # member declares its uncompressed size, so this costs nothing and closes
+    # the case where a small archive expands to fill a disk — by malice or, far
+    # more likely here, by somebody packing a workspace with a stray multi-
+    # gigabyte file in it.
+    total = sum(member.size for member in keep if member.isfile())
+    if total > MAX_UNPACKED:
+        raise BundleError(
+            f'{slug} unpacks to {total / 1e9:.1f} GB, past the '
+            f'{MAX_UNPACKED / 1e9:.0f} GB this will write. Nothing was '
+            f'extracted. An experiment is CSVs and a few reports; something '
+            f'else is in there.')
     return keep
 
 
@@ -327,7 +370,16 @@ def unpack(archive_path, root, name=None) -> Path:
                               f'stopped half-way. Remove it and try again.')
         try:
             for member in members:
-                archive.extract(member, path=staging)
+                # `filter='data'` is Python's own extraction filter: it refuses
+                # absolute paths, traversal, links, devices and setuid bits, and
+                # strips ownership. Every one of those is already refused by
+                # `_checked_members` above, deliberately, because the filter
+                # arrived in 3.12 and this supports 3.11. It is passed as well
+                # rather than instead: two independent checks on an archive from
+                # outside this machine is the right number, the default changes
+                # to this in 3.14, and without it 3.12 and 3.13 emit a
+                # DeprecationWarning at every import.
+                archive.extract(member, path=staging, **_FILTER)
             (staging / slug).rename(target)
         finally:
             _remove(staging)

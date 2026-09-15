@@ -15,8 +15,9 @@ import subprocess
 import sys
 import threading
 from datetime import datetime
+from pathlib import Path
 
-from chatlens.core import config
+from chatlens.core import config, llm_rubric, topicgpt
 
 # Allowed values. Everything arriving from the browser is checked against these
 # lists: anything absent is ignored, not passed to the command.
@@ -31,17 +32,25 @@ PRESETS = {
     'full': {'llm': True, 'topics': True},
 }
 
+# The models the interface offers, in the order it offers them, and — as sets
+# — the models this module will accept from a browser. One list for both,
+# because they were two: the allow-list here and the dropdown in views.py were
+# kept in step by hand, and a model added to one of them alone either never
+# appeared on screen or was silently dropped from the command by the other.
+#
+# `''` is "automatic" on the rubric: the provider's own default, chosen from
+# whichever key is present.
+MODELS_RUBRIC = ['', *llm_rubric.JUDGE_MODELS]
+MODELS_TOPIC = list(topicgpt.MODELS)
+
 ALLOWED = {
     'preset': set(PRESETS) | {''},
     'command': {'all', 'merge', 'analyze'},
     'llm_provider': {'', 'openai', 'anthropic', 'ollama'},
-    'llm_model': {
-        '', 'gpt-4o', 'gpt-4.1', 'gpt-5.6-terra', 'gpt-5.6-luna',
-        'gpt-5.6-sol', 'claude-opus-5', 'llama3',
-    },
+    'llm_model': set(MODELS_RUBRIC),
     'llm_replicates': {'1', '2', '3'},
     'llm_level': {'group', 'dyad_directed', 'dyad', 'sender_group'},
-    'topicgpt_model': {'gpt-4o', 'gpt-4.1'},
+    'topicgpt_model': set(MODELS_TOPIC),
     'topicgpt_unit': {'group', 'dyad_directed', 'dyad', 'sender_group'},
     'topicgpt_assign_unit': {'dyad_directed', 'dyad', 'sender_group', 'group'},
 }
@@ -223,4 +232,41 @@ class Runner:
         return True
 
 
-runner = Runner()
+# One runner per workspace, not one per process.
+#
+# There used to be a single `Runner()` here, and with it a single log, a single
+# Stop button and a single "a run is already in progress". With one experiment
+# open that was invisible; with a library of them it meant the Run page of study
+# B showed study A's log and refused to start, because the state it read was
+# A's. Two runs in two workspaces write to two output folders and do not collide,
+# which is what made the process-wide lock unnecessary in the first place.
+_RUNNERS: dict = {}
+_REGISTRY = threading.Lock()
+
+
+def current() -> Runner:
+    """The runner of the workspace this request is about."""
+    key = str(config.WORKSPACE)
+    with _REGISTRY:
+        return _RUNNERS.setdefault(key, Runner())
+
+
+def elsewhere() -> list:
+    """The other workspaces with a run in progress right now.
+
+    Not a refusal — they write to their own folders — but worth saying on the
+    page, because the paid stages of two studies at once cost twice as much and
+    share one rate limit.
+    """
+    here = str(config.WORKSPACE)
+    with _REGISTRY:
+        found = list(_RUNNERS.items())
+    return [Path(key).name for key, runner in found
+            if key != here and runner.running]
+
+
+def forget_all() -> None:
+    """Drop every runner. For tests, which make workspaces and throw them
+    away far faster than any user does."""
+    with _REGISTRY:
+        _RUNNERS.clear()

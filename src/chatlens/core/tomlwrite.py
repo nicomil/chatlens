@@ -98,6 +98,23 @@ def _table(name: str, values: dict, out: list) -> None:
     out.append('')
 
 
+def _array_of_tables(name: str, entries, out: list) -> None:
+    """`[[name]]`, once per entry, skipping the keys that say nothing.
+
+    Two sections need this shape — the rubric's dimensions and the studies — and
+    it used to be written out by hand for the one that existed.
+    """
+    for entry in entries or []:
+        pairs = [(k, v) for k, v in dict(entry).items()
+                 if v not in (None, '', [], {})]
+        if not pairs:
+            continue
+        out.append(f'[[{name}]]')
+        for k, v in pairs:
+            out.append(f'{key(k)} = {value(v)}')
+        out.append('')
+
+
 def dumps(config: dict, header: str = '') -> str:
     """The configuration as TOML text.
 
@@ -109,19 +126,18 @@ def dumps(config: dict, header: str = '') -> str:
         out += [f'# {line}' if line else '#' for line in header.splitlines()]
         out.append('')
 
-    for name in ('experiment', 'input', 'columns', 'treatments', 'outcome',
-                 'narratives', 'lexicons'):
+    for name in ('experiment', 'input', 'sample', 'columns', 'treatments',
+                 'outcome', 'narratives', 'lexicons'):
         _table(name, config.get(name) or {}, out)
+
+    # After the single tables and before the rubric: a reader looks for what the
+    # samples are before what the rubric measures on them.
+    _array_of_tables('studies', config.get('studies'), out)
 
     rubric = dict(config.get('rubric') or {})
     dimensions = rubric.pop('dimensions', None)
     _table('rubric', rubric, out)
-    for dimension in dimensions or []:
-        out.append('[[rubric.dimensions]]')
-        for k, v in dimension.items():
-            if v not in (None, '', [], {}):
-                out.append(f'{key(k)} = {value(v)}')
-        out.append('')
+    _array_of_tables('rubric.dimensions', dimensions, out)
 
     while out and out[-1] == '':
         out.pop()
@@ -136,6 +152,18 @@ def _comparable(config: dict) -> dict:
     """
     cleaned = {}
     for name, table in config.items():
+        if isinstance(table, list):
+            # An array of tables. It comes back from `tomllib` as a list of
+            # dicts, so the comparison has to be against a list too — run
+            # through the same dict comprehension the single tables get, it
+            # would compare a list against nothing and refuse to save.
+            entries = [{k: v for k, v in dict(entry).items()
+                        if v not in (None, '', [], {})}
+                       for entry in table]
+            entries = [entry for entry in entries if entry]
+            if entries:
+                cleaned[name] = entries
+            continue
         if name == 'rubric':
             rubric = {k: v for k, v in (table or {}).items()
                       if k != 'dimensions' and v not in (None, '', [], {})}

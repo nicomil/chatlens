@@ -71,6 +71,17 @@ OLLAMA_BASE_URL = 'http://localhost:11434/v1'
 
 DEFAULT_MODEL = PROVIDERS['anthropic']['default_model']
 
+# The judges a run may name, across the providers above: the list the interface
+# offers and the list the dashboard's runner accepts, which is one list and
+# lives here because which models can score a rubric is a fact about the
+# rubric. Leaving the model unset asks the provider for its default instead,
+# which is what most runs do.
+#
+# Unlike TopicGPT below, the rubric sends no `temperature` and no `top_p`, so a
+# model that allows only the default sampling settings is usable here.
+JUDGE_MODELS = ('gpt-4o', 'gpt-4.1', 'gpt-5.6-terra', 'gpt-5.6-luna',
+                'gpt-5.6-sol', 'claude-opus-5', 'llama3')
+
 def dimensions() -> tuple:
     """What this workspace's rubric measures.
 
@@ -322,8 +333,72 @@ def check_models_available(provider: str, models) -> None:
         )
 
 
+# The Anthropic path is built on `client.messages.parse` with an output schema:
+# the rating comes back already validated against the rubric, so a malformed
+# answer is the library's problem and not a parser of ours. That call, and the
+# `output_config` that goes with it, arrived in the Anthropic SDK **0.77.0**.
+# Below that version there is no `parse` at all, and the failure is an
+# `AttributeError` several hundred lines into a paid run.
+#
+# This was not a hypothetical. `pyproject.toml` asked for `anthropic>=0.40,<1`
+# — a floor copied from when the module used `messages.create` — and the
+# environment this was developed in resolved to 0.69.0, which cannot run it.
+# The floor is now the version that introduced the call, and this check is here
+# because a dependency resolved for some other package's sake can still put an
+# older one back.
+SDK_FLOOR = (0, 77, 0)
+
+
+def _version_tuple(text: str) -> tuple:
+    parts = []
+    for piece in str(text).split('.')[:3]:
+        digits = ''.join(c for c in piece if c.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def sdk_problem() -> str:
+    """Why the installed Anthropic SDK cannot run the rubric, or an empty string.
+
+    Checked both ways round: the version, which is what a user can act on, and
+    the presence of the method, which is what actually matters and which a
+    pre-release or a vendored copy can contradict.
+    """
+    import importlib.util
+
+    if importlib.util.find_spec('anthropic') is None:
+        return ('the anthropic package is not installed: '
+                "pip install 'anthropic>=0.77'")
+
+    floor = '.'.join(str(n) for n in SDK_FLOOR)
+    try:
+        from importlib import metadata
+        installed = metadata.version('anthropic')
+    except Exception:                       # noqa: BLE001 - version unreadable
+        installed = ''
+
+    if installed and _version_tuple(installed) < SDK_FLOOR:
+        return (f'anthropic {installed} is installed and the rubric needs '
+                f'{floor} or later, for the structured-output call it is '
+                f"built on: pip install -U 'anthropic>={floor}'")
+
+    try:
+        from anthropic.resources.messages import Messages
+        if not hasattr(Messages, 'parse'):
+            return (f'the installed anthropic package '
+                    f'({installed or "version unknown"}) has no '
+                    f'messages.parse, which the rubric is built on: '
+                    f"pip install -U 'anthropic>={floor}'")
+    except Exception:                       # noqa: BLE001 - layout changed
+        pass
+    return ''
+
+
 def make_client(provider: str):
     if provider == 'anthropic':
+        problem = sdk_problem()
+        if problem:
+            raise SystemExit(f'\nThe rubric cannot run: {problem}\n')
         import anthropic
         return anthropic.Anthropic()
 
@@ -662,11 +737,10 @@ def submit_batch(units, model: str = DEFAULT_MODEL, replicates: int = 1):
     Returns the batch id: keep it, because the results are collected with
     `collect_batch`, possibly in a later session.
     """
-    import anthropic
     from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
     from anthropic.types.messages.batch_create_params import Request
 
-    client = anthropic.Anthropic()
+    client = make_client('anthropic')
     requests = []
     for index, unit in enumerate(units):
         for replicate in range(replicates):
@@ -706,9 +780,7 @@ def collect_batch(batch_id: str, units, poll_seconds: int = 60, progress=None,
     it is still on the provider's side under the id in the message, and
     collecting it later costs nothing more.
     """
-    import anthropic
-
-    client = anthropic.Anthropic()
+    client = make_client('anthropic')
     started = time.monotonic()
     while True:
         batch = client.messages.batches.retrieve(batch_id)

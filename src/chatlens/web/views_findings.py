@@ -9,7 +9,7 @@ reader chooses.
 
 from __future__ import annotations
 
-from chatlens.web import ui
+from chatlens.web import active, ui
 from chatlens.web import study as study_state
 
 # Which module draws which entry. `corpus` has no module yet: the reader is
@@ -93,6 +93,56 @@ EXPORT_ORDER = ('corpus', 'participation', 'compare', 'words', 'narratives',
                 'emotions')
 
 
+def sample_picker(name: str, back: str) -> str:
+    """Which declared sample the findings are read on.
+
+    Nothing at all when the experiment declares no studies, which is every
+    experiment until somebody writes a `[[studies]]` block: a control offering
+    one choice is furniture.
+
+    The whole sample stays an option and stays first. Two treatments varying two
+    things at once is not a comparison anybody should make by accident, but
+    "everything together" is the right sample for describing a corpus, and it is
+    what every figure in this tool meant before studies existed.
+    """
+    declared = active.studies()
+    if not declared:
+        return ''
+    current = active.chosen()
+    options = ['<option value=""'
+               + (' selected' if not current else '')
+               + '>The whole sample</option>']
+    for item in declared:
+        options.append(
+            f'<option value="{ui.attr(item.slug)}"'
+            + (' selected' if item.slug == current else '')
+            + f'>{ui.esc(item.name)}</option>')
+    return (
+        f'<form class="samplepick" method="post" '
+        f'action="/experiment/{ui.attr(name)}/sample">'
+        f'<input type="hidden" name="back" value="{ui.attr(back)}">'
+        f'<label class="offscreen" for="samplepick">'
+        f'Which sample these findings are computed on</label>'
+        # No inline handler: the content security policy this server sends is
+        # `script-src \'self\'`, which blocks one silently, and the control
+        # would look broken. `app.js` submits on change; the button beside it is
+        # what works when scripting is off altogether.
+        f'<select id="samplepick" name="slug" data-submit-on-change="1">'
+        + ''.join(options) +
+        '</select>'
+        # For a browser with scripting off, and for a keyboard user who has
+        # changed the value without leaving the control.
+        '<button type="submit" class="samplego">Use</button>'
+        '</form>')
+
+
+def sample_notice() -> str:
+    """A word when the chosen study has no tables of its own yet."""
+    problem = active.missing_datasets()
+    # Escaped: the sentence is prose, and `ui.notice` takes markup.
+    return ui.notice(f'<p>{ui.esc(problem)}</p>', 'warn') if problem else ''
+
+
 def export(name: str, query=None) -> str:
     """Every finding that has an answer, in one document.
 
@@ -137,6 +187,8 @@ def export(name: str, query=None) -> str:
         f'<p class="lead">Every finding this study can answer, in order. '
         f'Print this page to keep it, or send the link to someone who has the '
         f'dashboard open.</p>'
+        + sample_notice()
+        + _what_was_analysed()
         + '\n'.join(parts)
         + _take_the_data(name)
         + _send_to_a_colleague(name),
@@ -144,7 +196,76 @@ def export(name: str, query=None) -> str:
         study=experiment.name,
         steps=study_state.step_state(experiment),
         step='findings',
+        selector=sample_picker(name, f'/experiment/{name}/findings/export'),
     )
+
+
+def _what_was_analysed() -> str:
+    """The sample, and what to keep in mind about it.
+
+    This document and `core/report.py` used to describe the same run and share
+    nothing: the report knew the coverage, the treatments and the data-quality
+    notes and none of the findings; this knew the findings and not what they were
+    computed on. A reader who had only one of them was missing half, and the
+    missing half was never named. The report's two sections that are about the
+    *sample* rather than about a stage now open this page as well.
+    """
+    from chatlens.core import archive, config, report
+
+    found = sorted(config.MERGED_DIR.glob('*_messages_long.csv'))
+    if not found:
+        return ''
+    suffix = '_messages_long.csv'
+    stem = found[0].name[:-len(suffix)]
+    try:
+        data = report.collect(config.OUTPUT_DIR, stem)
+    except (OSError, ValueError, KeyError):
+        return ''
+
+    cover = data['coverage']
+    tiles = ui.stat_tiles([
+        (cover['n_triads'], 'groups'),
+        (cover['n_participants'], 'participants'),
+        (cover['n_pairs'], 'directed pairs'),
+        (cover.get('n_messages') or '—', 'messages'),
+    ])
+
+    # Which sample this is, where the experiment declares more than one. Without
+    # it two printed documents from two studies are indistinguishable.
+    experiment = config.EXPERIMENT
+    which = ''
+    if getattr(experiment, 'studies', ()):
+        which = ui.notice(
+            'This experiment declares more than one study, and this page is '
+            'the pooled sample. The per-study datasets are written by '
+            '<code>chatlens studies</code>; the standardised measures differ '
+            'between them, so a figure here is not a figure from either.',
+            'warn')
+
+    runs = archive.list_runs(config.OUTPUT_DIR)
+    failed = str(runs[0].get('failed_stage') or '') if runs else ''
+    incomplete = ui.notice(
+        f'The last run did not finish: the <b>{ui.esc(failed)}</b> stage '
+        f'stopped, so the columns it produces are missing from everything '
+        f'below.', 'bad') if failed else ''
+
+    notes = data['quality']['notes']
+    caveats = ''
+    if notes:
+        caveats = ('<h2>Worth keeping in mind</h2><ul>'
+                   + ''.join(f'<li>{ui.esc(note)}</li>' for note in notes)
+                   + '</ul>')
+
+    per_arm = ''
+    if cover['per_treatment']:
+        per_arm = ui.table(
+            ['Treatment', 'Groups', 'Participants'],
+            [(ui.esc(row['label']), str(row['n_triads']),
+              str(row['n_participants'])) for row in cover['per_treatment']],
+            numeric={1, 2})
+
+    return (f'<section class="exported"><h2>What was analysed</h2>'
+            f'{which}{incomplete}{tiles}{per_arm}{caveats}</section>')
 
 
 def _take_the_data(name: str) -> str:
@@ -208,7 +329,8 @@ def page(name: str, entry: str = '', query=None) -> str:
 
     # One place for the inspector on every finding: a term or a relation is
     # clicked here and the messages behind it arrive without leaving the page.
-    canvas = (_body(entry, name, query or {})
+    canvas = (sample_notice()
+              + _body(entry, name, query or {})
               + '<div id="inspector" class="inspectorslot"></div>')
     return ui.shell(
         f'{experiment.name} — {study_state.entry_name(entry).lower()}',
@@ -219,4 +341,6 @@ def page(name: str, entry: str = '', query=None) -> str:
         step='findings',
         aside=ui.register(name, entries, entry, refresh=(
             f'/experiment/{ui.esc(name)}/findings/register?on={ui.esc(entry)}')),
+        selector=sample_picker(
+            name, f'/experiment/{name}/findings/{entry}'),
     )

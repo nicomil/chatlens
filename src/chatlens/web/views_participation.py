@@ -12,7 +12,7 @@ from pathlib import Path
 
 from chatlens.core import tables
 
-from chatlens.web import ui
+from chatlens.web import active, ui
 
 csv.field_size_limit(10 ** 7)
 
@@ -33,16 +33,28 @@ def _latest(directory: Path, suffix: str):
     dated pilot, and the page would then describe the wrong study without
     saying so. The stem of the declared input is the authority; failing that,
     the most recently written file.
+
+    The stem comes from the first input the *active adapter* requires, the same
+    rule the command line uses to name what it writes. This asked for the role
+    called "wide", which only the oTree adapter has: on every other experiment
+    the lookup raised, the exception was swallowed, and the authority silently
+    became the modification time — the fallback, on every study that is not the
+    one this grew out of.
     """
     from chatlens.core import config
 
     found = list(directory.glob(f'*{suffix}'))
     if not found:
         return None
-    try:
-        stem = config.dataset_stem(config.find_input('wide'))
-    except Exception:            # no input declared, or none on disk yet
-        stem = None
+    stem = None
+    for role, pattern in config.INPUT_PATTERNS.items():
+        if pattern is None:
+            continue                 # optional input: not what names the run
+        try:
+            stem = config.dataset_stem(config.find_input(role))
+            break
+        except config.InputError:
+            continue                 # absent, or several of them: try the next
     if stem:
         exact = [p for p in found if p.name == f'{stem}{suffix}']
         if exact:
@@ -74,7 +86,7 @@ def _outcomes(by_partner_path, outcome):
         return {}, ('The outcome is continuous; the comparisons below need a '
                     'yes/no one. Only the grid is shown.')
 
-    rows = _read(by_partner_path)
+    rows = active.within(_read(by_partner_path))
     column = outcome['column']
     if rows and column not in rows[0]:
         return {}, (f'{_e(by_partner_path.name)} has no column '
@@ -170,8 +182,13 @@ def body(name: str, query=None) -> str:
                 'free and needs no key.',
                 retry=f'/experiment/{ui.esc(name)}/step/run'))
 
-    messages = _read(messages_path)
-    roster = _read(roster_path) if roster_path else None
+    # Filtered to the chosen study when there is one. This page reads the
+    # merged tables rather than the built datasets, so it is the one place the
+    # selector has to narrow by hand — and it is also the page where getting it
+    # wrong would matter most, because a participant counted here as silent is
+    # the whole finding.
+    messages = active.within(_read(messages_path))
+    roster = active.within(_read(roster_path)) if roster_path else None
     members, source = participation.membership(messages, roster=roster)
     cells = participation.grid(messages, members)
     cover = participation.coverage(cells, members)

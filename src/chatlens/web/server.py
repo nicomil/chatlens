@@ -45,7 +45,8 @@ from chatlens.web import views_findings
 from chatlens.web import views_library
 from chatlens.web import (views_narratives,
                           views_words)
-from chatlens.web.runner import build_command, runner
+from chatlens.web import runner as runner_module
+from chatlens.web.runner import build_command
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
 
@@ -169,6 +170,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Security-Policy', CSP)
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
+        # The page asks for none of these and there is no reason for a frame or
+        # an extension to be able to. Free to send, and they close the gap
+        # between "we never use the camera" and "the browser will not let us".
+        self.send_header('Permissions-Policy',
+                         'camera=(), microphone=(), geolocation=(), '
+                         'usb=(), serial=(), payment=()')
+        # Severs the window from anything it opens or that opens it, so a
+        # reference to this page cannot be held by another document.
+        self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
+        self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
         if cookie:
             self.send_header('Set-Cookie', cookie)
         self.end_headers()
@@ -227,6 +238,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def _not_found(self, explanation: str = ''):
         self._error(404, 'Not found', explanation)
+
+    def _busy(self, explanation: str = ''):
+        """Another study holds the analysis. Temporary, and it says so.
+
+        503 rather than an error page, because the request was well formed and
+        will work in a moment: `Retry-After` lets a browser and a script both do
+        the sensible thing.
+        """
+        self._html(
+            ui.shell('One moment',
+                     f'<h1 class="question">Another study is using the '
+                     f'analysis</h1><p>{ui.esc(explanation)}</p>'
+                     f'<p><a href="/">Back to your studies</a></p>',
+                     htmx=False),
+            status=503, extra_headers=(('Retry-After', '15'),))
 
     def _file(self, path: Path, base: Path):
         """Serve a file, refusing any path outside its root."""
@@ -379,6 +405,8 @@ class Handler(BaseHTTPRequestHandler):
                                config.OUTPUT_DIR / 'runs')
                 else:
                     self._not_found()
+        except active.Busy as exc:
+            self._busy(str(exc))
         except (active.Unknown, views_findings.Unknown) as exc:
             self._not_found(str(exc))
 
@@ -480,8 +508,18 @@ class Handler(BaseHTTPRequestHandler):
         permission error came out as a traceback, and the runner had already
         recorded the command, so the page then showed a run that never began.
         """
+        from chatlens.core import spend
+
+        # Above the confirmation threshold the interface asks, because the run
+        # cannot: the pipeline's own guard waits for a yes at a terminal, and a
+        # subprocess of this server has none. See `views.confirm_panel`.
+        if (form.get('confirmed') or [''])[0] != 'yes':
+            calls, parts = views.estimated_calls(form)
+            if calls > spend.CONFIRM_ABOVE:
+                self._html(views.confirm_panel(form, calls, parts))
+                return
         try:
-            started = runner.start(build_command(form))
+            started = runner_module.current().start(build_command(form))
         except OSError as exc:
             self._html(views.log_body_message(
                 f'The run could not be started: {exc}'))
@@ -500,7 +538,7 @@ class Handler(BaseHTTPRequestHandler):
         rather than kill: the pipeline writes what it has and the paid ratings
         already in the cache stay paid for.
         """
-        if not runner.stop():
+        if not runner_module.current().stop():
             self._html(views.log_head())
             return
         self._html(views.log_head())
@@ -615,6 +653,23 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         destination = path / 'input'
+
+        # Not while that study is being analysed. The run reads `input/` as it
+        # goes, and replacing a file underneath it produces a dataset built half
+        # from one export and half from another — with nothing in the output to
+        # say so. Refused rather than queued, because the person uploading is
+        # the person who can wait.
+        with active.experiment(name):
+            busy = runner_module.current().running
+        if busy:
+            with active.experiment(name):
+                self._html(views_library.files_panel(
+                    name,
+                    error='A run of this study is in progress and is reading '
+                          'these files. Wait for it to finish, or stop it from '
+                          'the run screen, then upload again.'))
+            return
+
         # Uploads are the one route where a large body is legitimate, so the
         # cap is the upload's own rather than the form's — but the header
         # still has to be a number.
@@ -636,13 +691,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._html(views_library.files_panel(name, error=str(exc)))
             return
 
-        added = []
+        added, replaced = [], []
         for saved in files:
             target = destination / saved['filename']
+            # Kept rather than lost. A file of the same name is the usual way to
+            # correct an export, so replacing is right — but the previous one was
+            # the input of every result already in `output/`, and silently
+            # destroying it leaves those results unreproducible. It goes beside
+            # the new one with a suffix, once.
+            if target.is_file():
+                keep = target.with_suffix(target.suffix + '.replaced')
+                if not keep.exists():
+                    target.replace(keep)
+                replaced.append(saved['filename'])
             Path(saved['path']).replace(target)
             added.append(saved['filename'])
 
         message = ('Added ' + ', '.join(added)) if added else 'No file chosen.'
+        if replaced:
+            message += (f'. {", ".join(replaced)} was already here: the previous '
+                        f'copy is beside it as ".replaced", because the results '
+                        f'in output/ were built from it.')
         with active.experiment(name):
             self._html(views_library.files_panel(name, message=message))
 
@@ -801,7 +870,13 @@ class Handler(BaseHTTPRequestHandler):
                 f'{"with" if direction == "positive" else "against"}')
         try:
             if action == 'words/terms.csv':
-                body = views_words.words.table_csv(found['kept']).encode('utf-8')
+                # The settings travel in the file: a list of coefficients
+                # without the penalty that produced them cannot be reproduced.
+                body = views_words.words.table_csv(
+                    found['kept'],
+                    {'inverse_penalty_C': params['penalty'],
+                     'min_df': params['min_df'],
+                     'ngrams': params['ngrams']}).encode('utf-8')
                 self._download(body, 'text/csv; charset=utf-8',
                                f'terms-{params["ngrams"]}-'
                                f'{params["penalty"]}.csv')
@@ -858,7 +933,10 @@ class Handler(BaseHTTPRequestHandler):
         from chatlens.web import views_participation
 
         suffix = '_chat_by_partner_nlp.csv'
-        found = views_participation._latest(config.DATASETS_DIR, suffix)
+        # The chosen study's tables when there are any: the download and the
+        # pages above it have to be the same numbers.
+        source = active.datasets_dir()
+        found = views_participation._latest(source, suffix)
         if found is None:
             self._deny('There is nothing to export yet: run the analysis '
                        'first.')
@@ -867,7 +945,8 @@ class Handler(BaseHTTPRequestHandler):
         buffer = io.BytesIO()
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                result = fulltables.write(stem, Path(tmp), extract=False)
+                result = fulltables.write(stem, Path(tmp), extract=False,
+                                          source_dir=source)
                 with zipfile.ZipFile(buffer, 'w',
                                      zipfile.ZIP_DEFLATED) as archive:
                     for path in result['paths']:
@@ -973,11 +1052,34 @@ class Handler(BaseHTTPRequestHandler):
                     self._start_run(self._form())
                 elif action == 'estimate':
                     self._html(views.estimate_panel(self._form()))
+                elif action == 'sample':
+                    self._choose_sample(name)
                 else:
                     self._not_found()
+        except active.Busy as exc:
+            self._busy(str(exc))
         except (active.Unknown, library.LibraryError,
                 views_findings.Unknown) as exc:
             self._not_found(str(exc))
+
+
+    def _choose_sample(self, name: str) -> None:
+        """Read this experiment through one declared study, or through all of it.
+
+        Server-side state rather than a query parameter, deliberately: the
+        findings pages pull a dozen fragments and offer as many downloads, and a
+        sample carried in the URL is a sample one of them can forget. See
+        `active.chosen()`.
+        """
+        form = self._form()
+        active.choose((form.get('slug') or [''])[0])
+        back = (form.get('back') or [''])[0]
+        # Only inside this experiment: a "where to go next" that came from a
+        # form is somewhere a form should not be able to send anybody.
+        prefix = f'/experiment/{name}/'
+        if not back.startswith(prefix) or '//' in back[1:]:
+            back = f'{prefix}findings'
+        self._go(back)
 
 
 def _where_to_resume(name: str) -> str:

@@ -286,14 +286,22 @@ def _add_emotions(table, marked) -> None:
 
 
 def build(stem: str, experiment=None, extract: bool = True,
-          min_documents: int = narratives.MIN_DOCUMENTS):
-    """Both tables in memory, and what could not be added to them."""
+          min_documents: int = narratives.MIN_DOCUMENTS, source_dir=None):
+    """Both tables in memory, and what could not be added to them.
+
+    `source_dir` is where the built datasets are read from, and it exists for
+    the study selector: a study declared in `[[studies]]` has its own tables
+    under `output/studies/<slug>/datasets/`, with the standardised columns
+    recomputed on that sample. Defaulting it to the pooled folder keeps every
+    existing caller unchanged.
+    """
     experiment = experiment or config.EXPERIMENT
+    source = Path(source_dir) if source_dir else config.DATASETS_DIR
     built, notes = {}, []
     for key in TABLES:
-        path = config.DATASETS_DIR / f'{stem}_{key}_nlp.csv'
+        path = source / f'{stem}_{key}_nlp.csv'
         if not path.is_file():
-            raise TablesError(f'No {path.name} in {config.DATASETS_DIR}: run '
+            raise TablesError(f'No {path.name} in {source}: run '
                               f'the analysis first.')
         rows = tables.read(path)
         columns = list(rows[0]) if rows else tables.columns_of(path)
@@ -329,10 +337,11 @@ def build(stem: str, experiment=None, extract: bool = True,
 
 
 def write(stem: str, out_dir=None, experiment=None, extract: bool = True,
-          min_documents: int = narratives.MIN_DOCUMENTS) -> dict:
+          min_documents: int = narratives.MIN_DOCUMENTS,
+          source_dir=None) -> dict:
     """Write the tables and the codebook. Returns the paths and the notes."""
     out_dir = Path(out_dir) if out_dir else config.OUTPUT_DIR / FOLDER
-    built, notes = build(stem, experiment, extract, min_documents)
+    built, notes = build(stem, experiment, extract, min_documents, source_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     have_pandas = optional.have('pandas')

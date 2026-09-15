@@ -64,6 +64,7 @@ class ConfigError(RuntimeError):
 
 
 from chatlens.core import outcome as outcome_module
+from chatlens.core import studies as studies_module
 
 
 # Everything the file may contain. A key not in here was silently dropped: a
@@ -78,6 +79,18 @@ KNOWN_TABLES = {
     'rubric': {'context', 'dimensions'},
     'outcome': {'column', 'kind', 'unit', 'label'},
     'narratives': {'entities', 'model'},
+    # Which collected sessions are the experiment. Everything else in the export
+    # — pilots, internal tests, sessions launched without the recruitment
+    # parameter — is noise, and the only person who can say which is which is
+    # the experimenter. A list rather than a rule inferred from the data: a
+    # missing Prolific label happened to coincide with the test sessions on the
+    # collection this was written for, and that is a coincidence, not a design.
+    'sample': {'sessions'},
+    # An array of tables, like [[rubric.dimensions]]: one collection of sessions
+    # can be the material of two papers, and each of those is a sample of its
+    # own. The keys of each entry are checked by core/studies.py, which is also
+    # where the reason it matters is written down.
+    'studies': None,
 }
 
 
@@ -118,6 +131,22 @@ def check_shape(data: dict, path: Path) -> None:
                 f'  It takes: {", ".join(sorted(allowed))}.')
 
 
+def _sessions(value) -> tuple:
+    """The declared session codes, cleaned, in the order given, without repeats."""
+    if value in (None, ''):
+        return ()
+    if isinstance(value, str):
+        value = value.replace(',', ' ').split()
+    if not isinstance(value, (list, tuple)):
+        raise ConfigError('[sample] sessions must be a list of session codes.')
+    seen = []
+    for item in value:
+        code = str(item).strip()
+        if code and code not in seen:
+            seen.append(code)
+    return tuple(seen)
+
+
 class Experiment:
     """The workspace's description of its experiment."""
 
@@ -138,13 +167,19 @@ class Experiment:
         self.declared = {
             name: dict(data.get(name) or {})
             for name in ('experiment', 'input', 'columns', 'treatments',
-                         'lexicons', 'rubric', 'outcome', 'narratives')
+                         'lexicons', 'rubric', 'outcome', 'narratives',
+                         'sample')
         }
         self.declared['rubric'].pop('dimensions', None)
         if (data.get('rubric') or {}).get('dimensions'):
             self.declared['rubric']['dimensions'] = [
                 dict(d) for d in data['rubric']['dimensions']
             ]
+        # An array of tables rather than a table, so it is kept as a list and
+        # not run through `dict()` like the others.
+        self.declared['studies'] = [dict(entry) for entry
+                                    in (data.get('studies') or [])
+                                    if isinstance(entry, dict)]
 
         block = data.get('experiment') or {}
         self.name = str(block.get('name') or '').strip()
@@ -178,9 +213,27 @@ class Experiment:
         self.narrative_model = str(
             narratives.get('model') or 'en_core_web_md').strip()
 
+        # The sessions the analysis is restricted to. Empty means every session
+        # the adapter's own rules keep, which is what an experiment that does not
+        # declare this has always had.
+        self.sessions = _sessions((data.get('sample') or {}).get('sessions'))
+
         # What the experiment is trying to explain, if it says. None is a
         # legitimate answer: everything descriptive works without it.
         self.outcome = outcome_module.parse(data.get('outcome'))
+
+        # The samples it is analysed as. Empty is the ordinary case — one
+        # collection, one sample — and every page then behaves as it always
+        # has. See core/studies.py for why more than one changes the numbers.
+        try:
+            self.studies = studies_module.parse(data.get('studies'))
+        except studies_module.StudyError as exc:
+            raise ConfigError(f'{path or FILENAME}, [[studies]]: {exc}') from None
+        # Written back normalised — a slug is lower-cased on the way in, and
+        # `declared` is what `save()` emits, so without this the file would keep
+        # saying "S1" while everything else called the study "s1".
+        if self.studies:
+            self.declared['studies'] = studies_module.to_config(self.studies)
 
         rubric = data.get('rubric') or {}
         self.rubric_dimensions = rubric.get('dimensions')
@@ -199,8 +252,8 @@ class Experiment:
         Only what was declared, plus whatever has since been set through the
         interface. Empty tables are dropped by the writer.
         """
-        config = {name: dict(table) for name, table in self.declared.items()
-                  if table}
+        config = {name: (list(table) if isinstance(table, list) else dict(table))
+                  for name, table in self.declared.items() if table}
         # These two are the identity of the experiment and are always written,
         # even when the file was created empty.
         experiment = config.setdefault('experiment', {})
@@ -217,6 +270,14 @@ class Experiment:
         """
         if table not in self.declared:
             raise ConfigError(f'There is no [{table}] to set.')
+        if table == 'studies':
+            # An array of tables: a list in, a list kept, and validated on the
+            # way through so a bad declaration is refused here rather than
+            # discovered by whatever reads it next.
+            entries = [dict(entry) for entry in (values or [])]
+            self.studies = studies_module.parse(entries)
+            self.declared['studies'] = studies_module.to_config(self.studies)
+            return
         kept = {k: v for k, v in (values or {}).items()
                 if v not in (None, '', [], {})}
         self.declared[table] = kept
@@ -243,6 +304,8 @@ class Experiment:
                 kept.get('model') or 'en_core_web_md').strip()
         elif table == 'lexicons':
             self.lexicons = kept
+        elif table == 'sample':
+            self.sessions = _sessions(kept.get('sessions'))
 
     def save(self, path: Path | None = None) -> Path:
         """Write the configuration back. Verified before it counts as saved."""

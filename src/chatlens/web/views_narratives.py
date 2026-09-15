@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import threading
-
-from chatlens.web import ui
+from chatlens.web import active, pagecache, ui
 from chatlens.core import narratives, optional
 
-_CACHE = {}
-_LOCK = threading.Lock()
+# A few entries, keyed on the study among other things: see
+# `web/pagecache.py` for why one was not enough.
+_CACHE = pagecache.Cache()
 
 _WORDS = ['spacy', 'statsmodels']
 
@@ -112,11 +111,12 @@ def _result(experiment):
     from chatlens.web import views_participation
 
     declared = experiment.outcome
-    key = (tuple(experiment.narrative_entities), experiment.narrative_model,
-           declared and declared['column'])
-    with _LOCK:
-        if _CACHE.get('key') == key:
-            return _CACHE['value'], ''
+    # The study is part of the key: see `active.scope()`.
+    key = (active.scope(), tuple(experiment.narrative_entities),
+           experiment.narrative_model, declared and declared['column'])
+    remembered = _CACHE.get(key)
+    if remembered is not None:
+        return remembered, ''
 
     messages_path = views_participation._latest(config.MERGED_DIR,
                                                 '_messages_long.csv')
@@ -144,12 +144,21 @@ def _result(experiment):
                 model=experiment.narrative_model)
         except ValueError as exc:
             return None, str(exc)
+    # Extracted on the whole corpus and *then* narrowed to the chosen study,
+    # rather than extracted per study. A relation comes out of one sentence, so
+    # the two give the same relations for the same messages — but parsing eight
+    # thousand messages takes two minutes, and doing it once for a corpus that
+    # two studies share is the version that costs one. Narrowing matters all the
+    # same: the frequencies beside the table and the threshold a relation has to
+    # reach to be tested are properties of the sample, and showing the pooled
+    # ones beside a per-study test would be two samples in one table.
+    per_unit = active.units_within(per_unit, messages)
     value = {'per_unit': per_unit, 'unit': unit,
              'frequencies': narratives.frequencies(per_unit), 'tested': None}
 
     if declared and declared['kind'] == 'binary':
         suffix = f'_{outcome_module.DATASET_OF[declared["unit"]]}_nlp.csv'
-        path = views_participation._latest(config.DATASETS_DIR, suffix)
+        path = views_participation._latest(active.datasets_dir(), suffix)
         if path is not None:
             rows = views_participation._read(path)
             text_column = next(
@@ -162,9 +171,12 @@ def _result(experiment):
                 return len(words_module.clean(row.get(text_column)).split())
 
             try:
+                # None, not a function returning zero: without a text column
+                # there is no length to hold constant, and saying so leaves the
+                # relations testable. See `which_matter`.
                 value['tested'] = narratives.which_matter(
                     per_unit, rows, declared['column'], key_of=row_key,
-                    words_of=words_of if text_column else (lambda r: 0),
+                    words_of=words_of if text_column else None,
                     group_of=lambda r: r['group_uid'])
             except ValueError as exc:
                 value['problem'] = str(exc)
@@ -179,9 +191,7 @@ def _result(experiment):
                     + optional.install_command('narratives', ['statsmodels']))
                 return value, ''
 
-    with _LOCK:
-        _CACHE.clear()
-        _CACHE.update(key=key, value=value)
+    _CACHE.put(key, value)
     return value, ''
 
 
@@ -193,8 +203,25 @@ SHOWN = 12
 QUESTION = 'Read as who does what to whom, what was said — and what matters?'
 
 
-def panel(name: str) -> str:
+def panel(name: str, query=None) -> str:
+    """The finding, and — on "Check again" — a fresh look for the package.
+
+    The control has always been there and has never been able to do anything.
+    Two things remember that RELATIO is missing: `narratives.available()` keeps
+    the outcome of the import for the life of the process, because the import
+    is slow and its failure mode is a dependency clash that does not resolve
+    itself; and the import machinery caches the contents of every directory on
+    `sys.path`, so a package installed after this process started is not found
+    even by `find_spec`. Somebody who ran the command the page printed was told
+    to run it again, and only a restart of the dashboard helped.
+    """
+    import importlib
+
     from chatlens.core import config
+
+    if (query or {}).get('checked'):
+        narratives.forget_route()
+        importlib.invalidate_caches()
 
     experiment = config.EXPERIMENT
     controls = _entities_panel(name, experiment)
@@ -272,11 +299,20 @@ def panel(name: str) -> str:
             empty_message='No relation appeared in enough units to be worth '
                           'testing, so there is nothing in this table. That '
                           'is the result, not a gap.')
+        # The length control is the claim this page rests on, so its absence is
+        # stated where the claim is made rather than left for the reader to
+        # assume it held.
+        held = ('holding the length of what was written constant, with '
+                'standard errors clustered by group'
+                if tested.get('controlled_for_length', True) else
+                '<b>without holding length constant</b> — this dataset carries '
+                'no text to count, so a relation common among those who wrote '
+                'a lot cannot be told apart from one that matters; standard '
+                'errors are clustered by group')
         body += f'''<h2>Which of them matter</h2>
 <p class="muted">Every relation appearing in {narratives.MIN_DOCUMENTS} or more
 units is tested — {tested["tested"]} of {tested["candidates"]} candidates —
-holding the length of what was written constant, with standard errors clustered
-by group. <b>q</b> carries a Benjamini-Hochberg correction across the whole
+{held}. <b>q</b> carries a Benjamini-Hochberg correction across the whole
 family: reporting the one that came out significant, out of dozens tried, is how
 a list of nothing becomes a finding. {tested["survivors"]} survive at
 q&nbsp;&lt;&nbsp;0.10.</p>

@@ -883,6 +883,70 @@ class PreflightTests(unittest.TestCase):
             self.pipeline.preflight(self._args(llm=True, llm_batch=True))
         self.assertIn('--llm-batch', str(ctx.exception))
 
+    def test_an_anthropic_library_too_old_is_caught_upfront(self):
+        """The version that cannot run the rubric, named before any spending.
+
+        `messages.parse` arrived in the Anthropic SDK 0.77.0, and the project
+        asked for `>=0.40` — so an environment could satisfy the declared
+        dependencies and still fail on the first call, several hundred paid
+        requests into a run in the worst case.
+        """
+        self.os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-fake'
+        real = self.llm.sdk_problem
+        self.llm.sdk_problem = lambda: 'anthropic 0.69.0 is installed'
+        try:
+            with self.assertRaises(SystemExit) as ctx:
+                self.pipeline.preflight(self._args(llm=True))
+        finally:
+            self.llm.sdk_problem = real
+        self.assertIn('0.69.0', str(ctx.exception))
+
+    def test_a_recent_enough_library_passes(self):
+        self.os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-fake'
+        real = self.llm.sdk_problem
+        self.llm.sdk_problem = lambda: ''
+        try:
+            self.pipeline.preflight(self._args(llm=True))  # must not raise
+        finally:
+            self.llm.sdk_problem = real
+
+
+class AnthropicSdkFloorTests(unittest.TestCase):
+    """What `sdk_problem()` says, and about which versions.
+
+    The floor is not a guess: the wheels were read. `messages.parse` and the
+    `output_config` beside it are absent in 0.76.0 and present in 0.77.0, and
+    still present in 1.0.0 — which is why the declared range has an upper bound
+    of 2 rather than 1.
+    """
+
+    def setUp(self):
+        from chatlens.core import llm_rubric
+        self.llm = llm_rubric
+
+    def test_the_floor_is_the_version_that_introduced_the_call(self):
+        self.assertEqual(self.llm.SDK_FLOOR, (0, 77, 0))
+
+    def test_versions_are_compared_numerically_not_as_text(self):
+        tuple_of = self.llm._version_tuple
+        self.assertLess(tuple_of('0.69.0'), self.llm.SDK_FLOOR)
+        self.assertLess(tuple_of('0.9.0'), self.llm.SDK_FLOOR)
+        self.assertGreaterEqual(tuple_of('0.77.0'), self.llm.SDK_FLOOR)
+        self.assertGreaterEqual(tuple_of('0.125.0'), self.llm.SDK_FLOOR)
+        self.assertGreaterEqual(tuple_of('1.5.0'), self.llm.SDK_FLOOR)
+
+    def test_a_prerelease_suffix_does_not_break_the_comparison(self):
+        tuple_of = self.llm._version_tuple
+        self.assertGreaterEqual(tuple_of('1.0.0rc1'), self.llm.SDK_FLOOR)
+        self.assertGreaterEqual(tuple_of('0.77.0b2'), self.llm.SDK_FLOOR)
+
+    def test_the_message_says_what_to_install(self):
+        message = self.llm.sdk_problem()
+        if not message:
+            self.skipTest('the installed SDK is recent enough')
+        self.assertIn('anthropic', message)
+        self.assertIn('0.77', message)
+
 
 class PartialResultsTests(unittest.TestCase):
     """If a later stage fails, the one already paid for must still be saved."""

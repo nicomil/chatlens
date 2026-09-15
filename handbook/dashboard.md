@@ -7,6 +7,20 @@ exist for scripting and for the stages that take minutes.
 Each page answers one question, and they are ordered so the cheap and certain
 ones come first.
 
+### Which sample, first of all
+
+When the experiment declares more than one study — see
+[the procedure](procedure.md) — the masthead carries a selector, and it applies
+to every page at once. It is worth a sentence because the alternative is a
+silent error: the standardised measures are computed against the sample under
+analysis, so the same participant's `clout_100` differs between two studies off
+an identical raw score, and a figure from the pooled dataset belongs to neither
+paper.
+
+The whole sample stays the first option, and it is the right one for describing a
+corpus. What it is not is a comparison: two arms that differ in two respects at
+once cannot be read against each other.
+
 ### Participation — who spoke to whom
 
 Every other page measures text, so it can only see the pairs that produced some.
@@ -99,6 +113,13 @@ building anything on a set of columns.
 Length is always the first row, because it is the null hypothesis of text
 analysis: longer documents contain more of everything, and a representation that
 does not beat "how much was written" has not shown that content matters.
+
+Each block is therefore fitted **beside** length rather than instead of it, and
+what the table reports is the difference from length alone with a 95% interval on
+the paired per-fold differences. Three verdicts follow from the interval — adds
+something, adds nothing, too close to call — and the third is the commonest on a
+few hundred groups. [The procedure](procedure.md) has the arithmetic and the
+figures for this design.
 
 ### Settings — everything about one experiment
 

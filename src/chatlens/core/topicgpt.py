@@ -75,6 +75,14 @@ TOPIC_RE = re.compile(r"^[ \t]*\[(\d)\]\s*([^\n:]+)", re.MULTILINE)
 # The tally the induction appends to each name: "Name (Count: 271)".
 COUNT_RE = re.compile(r"\s*\(Count\b[^)]*\)?\s*$")
 
+# The models this stage may be run with, offered by the interface and accepted
+# by the dashboard's runner. Short by necessity rather than by choice:
+# TopicGPT fixes `temperature` and `top_p` inside the authors' code, and a
+# model that allows only their defaults answers 400 to every phase — see
+# `check_model_compatibility`, which is what catches the rest. gpt-4o is also
+# the paper's own model.
+MODELS = ('gpt-4o', 'gpt-4.1')
+
 PROMPT_FILES = {
     'generation': 'prompt/generation_1.txt',
     'seed': 'prompt/seed_1.md',

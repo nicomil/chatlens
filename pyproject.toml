@@ -44,20 +44,51 @@ dev = [
     "build>=1.0",
     "mkdocs-material>=9.5",
 ]
-# The validation rubric. The upper bounds are not our choice: TopicGPT declares
-# openai<2 and anthropic<1, and installing it downgrades these libraries
-# whatever we ask for. Declaring them here makes the environment identical
-# regardless of install order.
+# The validation rubric.
+#
+# The anthropic floor is not decoration: the rubric is built on
+# `client.messages.parse` with an output schema, and that call arrived in 0.77.0.
+# This used to read `anthropic>=0.40,<1` — a floor left behind from when the
+# module used `messages.create` — and an environment that resolved to 0.69.0
+# could not run the Anthropic provider at all. `llm_rubric.sdk_problem()` says
+# so in words if a resolver puts an older one back.
+#
+# The upper bounds are deliberately wide rather than absent: both libraries have
+# had a major release since this was written, and the calls used here
+# (`messages.parse`, `chat.completions.create` with a JSON response format) are
+# present across them.
 llm = [
-    "openai>=1.54,<2",
+    "openai>=1.54,<4",
     "pydantic>=2.0",
-    "anthropic>=0.40,<1",
+    "anthropic>=0.77,<2",
 ]
 # TopicGPT itself is not installed from here: the prompt files are part of the
 # method and live in the repository, not in the published package.
 #     chatlens install-topicgpt
 topics = [
+    "openai>=1.54,<4",
+]
+# The environment TopicGPT wants, which is not the one everything else wants.
+# Its `requirements.txt` (release 0.2.8) declares `openai>=1.54.3,<2.0.0`,
+# `anthropic>=0.39.0,<1.0.0` and `numpy>=1.26.2,<2.0.0`, so installing it into a
+# shared interpreter pulls all three back — and that is how this project ended
+# up with anthropic 0.69.0, which cannot run the rubric at all.
+#
+# `anthropic<1` is not itself a problem: 0.77 to 0.125 satisfy both it and the
+# rubric, which is why the pin below is a range and not `<1` alone. `openai<2`
+# and `numpy<2` are the ones that hold other libraries a major version back for
+# everybody, scikit-learn included.
+#
+# Install this extra when TopicGPT will live in the same interpreter, so that the
+# downgrade is a declared state rather than a surprise:
+#     pip install -e ".[llm,words,narratives,stata,topics-legacy]"
+#
+# The alternative, and the better one when a machine can afford it, is a second
+# virtual environment for the topic stage alone: nothing is shared between them
+# but the CSV files.
+topics-legacy = [
     "openai>=1.54,<2",
+    "anthropic>=0.77,<1",
 ]
 # Word clouds and the coefficient tables. Kept out of the base install: the
 # tool is four megabytes and these are about a hundred and fifty.

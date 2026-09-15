@@ -107,6 +107,56 @@ def pseudonym(value: str, key: bytes) -> str:
     return f'p_{digest.hexdigest()[:16]}'
 
 
+# What people write into a chat window that identifies them. Deliberately a
+# short, high-precision list rather than a clever one: the point is to give an
+# ethics submission a number it can cite, and a detector that cries wolf gets
+# switched off. Nothing here is ever removed — the texts are the object of the
+# analysis and altering them would change every measure — it is counted.
+IN_TEXT = (
+    ('an e-mail address', re.compile(r'[\w.+-]+@[\w-]+\.[\w.]{2,}')),
+    ('a web address', re.compile(r'\bhttps?://\S+|\bwww\.\S+', re.I)),
+    # Long runs of digits: a phone number, a student number, an IBAN fragment.
+    # Short ones are offers and splits, which is most of this corpus.
+    ('a long number', re.compile(r'\b\d{8,}\b')),
+    ('a social handle', re.compile(r'(?<!\w)@[A-Za-z]\w{2,}')),
+)
+
+
+def scan_text(texts) -> dict:
+    """What in these messages might identify somebody, counted not removed.
+
+    `--pseudonymise` rewrites the identifier *columns*, and the module docstring
+    is careful to say that this does not make a dataset anonymous: the messages
+    are untouched, and people write their names, their towns and their jobs in
+    them. That was true and unquantified, which left an ethics submission with
+    nothing to say beyond "some risk".
+
+    This gives it a figure. It finds what a pattern can find — addresses, links,
+    long numbers, handles — and says nothing about names, which no regular
+    expression recognises and which are the commonest case. So a count of zero
+    here is not a clean bill of health, and the caller has to say so.
+    """
+    found = {label: 0 for label, _pattern in IN_TEXT}
+    documents = flagged = 0
+    for text in texts or ():
+        text = str(text or '')
+        if not text.strip():
+            continue
+        documents += 1
+        hit = False
+        for label, pattern in IN_TEXT:
+            n = len(pattern.findall(text))
+            if n:
+                found[label] += n
+                hit = True
+        flagged += bool(hit)
+    return {'documents': documents, 'documents_flagged': flagged,
+            'found': {k: v for k, v in found.items() if v},
+            'note': 'Patterns only. Names, places and occupations are the '
+                    'commonest identifying detail in a chat message and no '
+                    'pattern finds them, so zero here does not mean none.'}
+
+
 def pseudonymise_rows(rows, key: bytes) -> list:
     """Replace every identifier column in place. Returns the columns touched."""
     touched = set()

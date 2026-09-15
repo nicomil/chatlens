@@ -806,6 +806,24 @@ class PseudonymisationTests(unittest.TestCase):
         """A missing identifier must not become a pseudonym of its own."""
         self.assertEqual(self.privacy.pseudonym('', b'k' * 64), '')
 
+    def test_a_very_short_hexadecimal_identifier_can_hash_to_itself(self):
+        """Known, bounded, and not worth engineering around.
+
+        A hexadecimal value keeps its length, because something downstream
+        checks the shape: a Prolific id is 24 hexadecimal characters and an
+        adapter reads it to decide who is a real participant. That means a
+        two-character identifier has one chance in 256 of coming back
+        unchanged — harmless at 24 characters (one in 2^96), and stated here so
+        that nobody meets it as a mystery.
+        """
+        key = b'k' * 64
+        same = sum(self.privacy.pseudonym(f'{n:02x}', key) == f'{n:02x}'
+                   for n in range(256))
+        self.assertLess(same, 10)
+        long_ids = [f'{n:024x}' for n in range(256)]
+        self.assertFalse([v for v in long_ids
+                          if self.privacy.pseudonym(v, key) == v])
+
     def test_the_key_is_created_once_and_reused(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             first = self.privacy.load_or_create_key(Path(tmpdir))
@@ -814,8 +832,16 @@ class PseudonymisationTests(unittest.TestCase):
             self.assertTrue((Path(tmpdir) / self.privacy.SALT_FILE).is_file())
 
     def test_the_merge_replaces_the_identifiers_and_nothing_else(self):
+        # Eight characters, and not all of them hexadecimal, which is the shape
+        # of a real oTree participant code. With the two-character codes this
+        # fixture used to build, the test failed about once in twenty runs and
+        # looked like a bug in the merge: a hexadecimal identifier keeps its
+        # length by design, so a two-character one has one chance in 256 of
+        # hashing to itself. The property is real and it is not worth
+        # engineering around — a Prolific id is 24 characters — but a test must
+        # not depend on a coin landing the same way every time.
         wide = [
-            make_player('s1', f'c{pid}', pid, 'private',
+            make_player('s1', f'pcode{pid:03d}', pid, 'private',
                         ('Right', 'Left', 'NoOne')[pid - 1],
                         'split_you', 'split_you', 0, group_db_id='7')
             for pid in (1, 2, 3)

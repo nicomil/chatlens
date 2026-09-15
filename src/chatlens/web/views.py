@@ -11,17 +11,17 @@ cannot drift apart.
 
 from __future__ import annotations
 
+import itertools
 import re
 from pathlib import Path
 
 from chatlens.web import ui
 from chatlens.core import archive, config
 from chatlens.web import active
-from chatlens.web.runner import runner, stages as runner_stages
+from chatlens.web.runner import MODELS_RUBRIC, MODELS_TOPIC
+from chatlens.web import runner as runner_module
+from chatlens.web.runner import stages as runner_stages
 
-MODELS_RUBRIC = ['', 'gpt-4o', 'gpt-4.1', 'gpt-5.6-terra', 'gpt-5.6-luna',
-                 'gpt-5.6-sol', 'claude-opus-5', 'llama3']
-MODELS_TOPIC = ['gpt-4o', 'gpt-4.1']
 LEVELS = ['group', 'dyad_directed', 'dyad', 'sender_group']
 
 def _noun() -> str:
@@ -110,16 +110,113 @@ def presets_panel(active='base') -> str:
 
 
 def _unit_counts() -> dict:
-    """How many units there are per level, from the last archived run.
+    """How many units there are per level.
 
     It makes the choice concrete: "two replicates" says nothing, "about two
     hundred calls" does.
+
+    From the last archived run where there is one, and otherwise counted from
+    the merged messages — which is the case that matters, because the first run
+    is the one nobody has a figure for and the paid presets are right there on
+    the same screen. The page used to say "the estimate appears after the first
+    run", so the one time it was most needed it said nothing.
     """
     for run in archive.list_runs(config.OUTPUT_DIR):
         levels = run.get('levels')
         if levels:
             return levels
-    return {}
+    return _counts_from_merge()
+
+
+def _counts_from_merge() -> dict:
+    """The units the merge implies, counted without analysing anything.
+
+    The same keys `core/aggregate.py` groups by, so the figure is the one a run
+    would produce rather than an approximation of it.
+    """
+    from chatlens.core import aggregate, tables
+
+    found = sorted(config.MERGED_DIR.glob('*_messages_long.csv'))
+    if not found:
+        return {}
+    try:
+        messages = tables.read(found[0])
+    except (OSError, ValueError):
+        return {}
+    counts = {}
+    for level, keys in aggregate.LEVEL_KEYS.items():
+        counts[level] = len({tuple(str(message.get(key, '')) for key in keys)
+                             for message in messages})
+    return counts
+
+
+def estimated_calls(form=None) -> tuple:
+    """How many paid calls this configuration implies, and where they go.
+
+    Its own function because two callers need the number rather than the
+    sentence: the panel that shows it, and the guard that asks before spending
+    it. Returns `(calls, parts)`; `calls` is 0 when there is nothing to go on,
+    which is also what it is when nothing is paid for.
+    """
+    form = form or {}
+    counts = _unit_counts()
+    if not counts:
+        return 0, []
+
+    calls, parts = 0, []
+    wanted = runner_stages(form)
+    if wanted['llm']:
+        levels = [v for v in form.get('llm_level', []) if v in counts]
+        try:
+            replicates = max(1, int((form.get('llm_replicates') or ['1'])[0] or 1))
+        except (TypeError, ValueError):
+            replicates = 1
+        n = sum(counts[lv] for lv in levels) * replicates
+        if n:
+            calls += n
+            parts.append(f'rubric {n}')
+    if wanted['topics']:
+        unit = (form.get('topicgpt_unit') or ['group'])[0]
+        assign = (form.get('topicgpt_assign_unit') or ['dyad_directed'])[0]
+        n = counts.get(unit, 0) + counts.get(assign, 0)
+        if n:
+            calls += n
+            parts.append(f'topics ~{n}')
+    return calls, parts
+
+
+def confirm_panel(form, calls: int, parts) -> str:
+    """Asked here, because the command line cannot ask from in here.
+
+    `core/spend.py` stops and waits for a yes above its confirmation threshold —
+    at a terminal. The dashboard runs the pipeline as a subprocess with no
+    terminal attached, where `isatty()` is false and the guard's own comment says
+    it proceeds with the figure printed. So every run the dashboard started under
+    the hard ceiling spent whatever it spent, and the only warning was an
+    estimate nobody had to read. This is the question, in the one place that can
+    ask it.
+    """
+    from chatlens.core import spend
+
+    detail = f' ({" + ".join(parts)})' if parts else ''
+    hidden = ''.join(
+        f'<input type="hidden" name="{_e(field)}" value="{_e(value)}">'
+        for field, values in (form or {}).items() for value in values)
+    return f'''<div id="logbody" class="logbody">
+  {ui.notice(
+      f'<b>This run makes about {calls} paid calls</b>{_e(detail)}. That is '
+      f'above the {spend.CONFIRM_ABOVE} this asks about, and the run itself '
+      f'cannot ask: it has no terminal. Ratings already in the cache are not '
+      f'paid for twice, so a re-run of the same configuration costs less than '
+      f'this.', 'warn')}
+  <form hx-post="{active.base()}/run" hx-target="#logwrap"
+        hx-swap="innerHTML">
+    {hidden}
+    <input type="hidden" name="confirmed" value="yes">
+    <button type="submit" class="btn danger">Yes, spend it</button>
+    <a class="btn quiet" href="{active.base()}/step/run">Go back</a>
+  </form>
+</div>'''
 
 
 def estimate_panel(form=None) -> str:
@@ -175,9 +272,19 @@ def estimate_panel(form=None) -> str:
             f'about {minutes} min</div>')
 
 
+_HELP_IDS = itertools.count()
+
+
 def _help(text: str) -> str:
-    """A question mark carrying the explanation on hover."""
-    return f'<span class="help" data-tip="{_e(text)}">?</span>' 
+    """A question mark carrying the explanation on hover — and to a reader.
+
+    `data-tip` is a stylesheet trick and invisible to a screen reader, so the
+    same words are in the document as well, referenced by `aria-describedby`.
+    """
+    marker = f'help-{next(_HELP_IDS)}'
+    return (f'<span class="help" data-tip="{_e(text)}" tabindex="0" '
+            f'aria-describedby="{marker}">?'
+            f'<span id="{marker}" class="sronly">{_e(text)}</span></span>')
 
 
 _e = ui.esc
@@ -240,14 +347,15 @@ def _level_options(selected: str) -> str:
 
 
 def form_panel() -> str:
-    disabled = ' disabled' if runner.running else ''
+    running = runner_module.current().running
+    disabled = ' disabled' if running else ''
 
     return f'''
 <form id="launch" hx-post="{active.base()}/run" hx-target="#logwrap" hx-swap="innerHTML">
   <fieldset{disabled}>
     {presets_panel()}
     {estimate_panel()}
-    <button type="submit" class="btn primary wide">{'Running…' if runner.running else 'Start run'}</button>
+    <button type="submit" class="btn primary wide">{'Running…' if running else 'Start run'}</button>
 
     <details class="advanced">
       <summary>Adjust the details</summary>
@@ -382,7 +490,7 @@ def _render_line(line: str) -> str:
 
 def log_body() -> str:
     """The log's content. It lives inside a container that is never swapped."""
-    state = runner.snapshot()
+    state = runner_module.current().snapshot()
     lines = state['lines']
 
     if not lines and not state['running']:
@@ -435,8 +543,21 @@ def log_body_message(text: str) -> str:
     return f'<div class="logbody empty">{_e(text)}</div>'
 
 
+def _other_studies_running() -> str:
+    """Said, not refused: two workspaces write to two folders and do not
+    collide. What they do share is the rate limit and the bill."""
+    others = runner_module.elsewhere()
+    if not others:
+        return ''
+    which = ', '.join(others)
+    return ui.notice(
+        f'A run is also in progress in {_e(which)}. They do not interfere — '
+        f'each writes to its own folder — but the paid stages of two studies at '
+        f'once cost twice as much and share one rate limit.', 'warn')
+
+
 def log_head() -> str:
-    state = runner.snapshot()
+    state = runner_module.current().snapshot()
     control = ''
     if state['running']:
         badge = '<span class="badge run">running</span>'
@@ -465,7 +586,8 @@ def log_head() -> str:
     short = short.split(' --topicgpt-repo')[0]
     return (f'<div id="loghead" class="loghead">{badge}'
             f'<code title="{_e(command)}">{_e(short)}</code>'
-            f'<span class="muted when">{when}</span>{control}</div>')
+            f'<span class="muted when">{when}</span>{control}</div>'
+            f'{_other_studies_running()}')
 
 
 def log_panel() -> str:
@@ -581,9 +703,15 @@ def runs_panel() -> str:
         name = run['path'].name
         # The whole row opens the run: it is the index of what was done, not
         # a list of links to a single file.
+        # `role="button"` with `tabindex` puts the row in the tab order and
+        # tells a screen reader it can be pressed; htmx, left alone, listens
+        # for a click and nothing else, so the promise was not kept and the
+        # row could be reached from the keyboard but never opened. Enter is
+        # what the row now answers to as well.
         rows.append(
             f'<li hx-get="{active.base()}/run/{_e(name)}" hx-target="#report" '
-            f'hx-swap="innerHTML" tabindex="0" role="button">'
+            f'hx-swap="innerHTML" hx-trigger="click, keyup[key==\'Enter\']" '
+            f'tabindex="0" role="button">'
             f'<span class="when">{_e(_run_time(run.get("timestamp", "")))}</span>'
             f'<span class="chips">{stages}{current}</span>'
             f'{note}<span class="go-arrow">›</span></li>'
@@ -596,14 +724,22 @@ def _human_size(n: int) -> str:
 
 
 def _run_files(run_dir: Path, name: str) -> str:
-    """What that run produced, downloadable."""
+    """What that run produced, downloadable.
+
+    Through `active.base()`, like every other address on this page. Written to
+    the root, as these were, they name a route that only exists when the
+    dashboard was pointed at a single workspace: in library mode `/runs/...`
+    is served out of whichever folder the process was started in, which is not
+    the study, so every file here answered 404.
+    """
     items = []
     for path in sorted(run_dir.rglob('*')):
         if not path.is_file() or path.name == archive.RUN_INFO:
             continue
         rel = path.relative_to(run_dir).as_posix()
         items.append(
-            f'<li><a href="/runs/{_e(name)}/{_e(rel)}" target="_blank">'
+            f'<li><a href="{active.base()}/runs/{_e(name)}/{_e(rel)}" '
+            f'target="_blank">'
             f'{_e(rel)}</a>'
             f'<span class="muted">{_e(_human_size(path.stat().st_size))}</span></li>'
         )
@@ -667,10 +803,11 @@ def run_detail(name: str) -> str:
 
     report = run['path'] / 'report.html'
     if report.is_file():
+        base = active.base()
         viewer = (f'<div class="reportbar">'
-                  f'<a href="/runs/{_e(name)}/report.html" target="_blank">'
-                  f'open full page</a></div>'
-                  f'<iframe src="/runs/{_e(name)}/report.html" '
+                  f'<a href="{base}/runs/{_e(name)}/report.html" '
+                  f'target="_blank">open full page</a></div>'
+                  f'<iframe src="{base}/runs/{_e(name)}/report.html" '
                   f'title="Report"></iframe>')
     else:
         viewer = ('<p class="muted">This run produced no report: it was a data '

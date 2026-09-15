@@ -64,12 +64,17 @@ IMPERSONAL_PRONOUNS = {
     'which', 'whichever', 'who', 'whoever', 'whom', 'whose',
 }
 
+# The contracted forms are here whole — "don't", "i'm" — and not as the bare
+# suffixes "'m", "'re", "n't". The tokeniser in `text_metrics` matches
+# `[a-z]+(?:'[a-z]+)*`, so a token never begins with an apostrophe and an entry
+# that does could not be counted by anything. They were listed and unreachable,
+# which reads as coverage the dictionary has not got; the whole forms below are
+# what actually does the work.
 AUXILIARY_VERBS = {
     'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
     'have', 'has', 'had', 'having',
     'do', 'does', 'did', 'doing',
     'will', 'would', 'shall', 'should', 'can', 'could', 'may', 'might', 'must',
-    "'m", "'re", "'s", "'ve", "'ll", "'d",
     "isn't", "aren't", "wasn't", "weren't", "haven't", "hasn't", "hadn't",
     "don't", "doesn't", "didn't", "won't", "wouldn't", "shouldn't", "can't",
     "cannot", "couldn't", "mustn't", "shan't", "mightn't",
@@ -82,9 +87,11 @@ CONJUNCTIONS = {
     'however', 'moreover', 'nevertheless', 'plus', 'also',
 }
 
+# Whole forms only, for the reason given above AUXILIARY_VERBS: "n't" was here
+# and no tokeniser in this project can produce it.
 NEGATIONS = {
     'no', 'not', 'never', 'none', 'nothing', 'nobody', 'nowhere', 'neither',
-    'nor', 'cannot', 'without', "n't", "don't", "doesn't", "didn't", "won't",
+    'nor', 'cannot', 'without', "don't", "doesn't", "didn't", "won't",
     "wouldn't", "shouldn't", "can't", "couldn't", "isn't", "aren't", "wasn't",
     "weren't", "haven't", "hasn't", "hadn't", "ain't", 'nope', 'nah',
 }

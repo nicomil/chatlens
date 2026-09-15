@@ -369,6 +369,15 @@ def which_matter(per_unit, rows, outcome_column, key_of, words_of,
                  group_of, min_documents=MIN_DOCUMENTS):
     """Which narratives go with the outcome, holding length constant.
 
+    `words_of` may be None, for a dataset that carries no text to count. The
+    length control is then left out and `controlled_for_length` says so, which
+    the page prints. It used to be passed a function returning zero for every
+    row instead: log words was a constant column, every design was singular,
+    every fit raised, every narrative was skipped by the guard below, and the
+    page reported that nothing had been frequent enough to test — a statement
+    about the corpus, made when what had happened was that no model had been
+    fitted at all.
+
     Every narrative common enough to test is tested, and the p-values carry a
     Benjamini-Hochberg correction across that whole family. Reporting the one
     that came out significant, out of dozens tried, is how a list of nothing
@@ -403,7 +412,8 @@ def which_matter(per_unit, rows, outcome_column, key_of, words_of,
     if len(set(y)) < 2:
         raise ValueError('Every row has the same outcome: nothing to separate.')
 
-    volume = np.array([[np.log1p(words_of(r))] for r in usable], float)
+    volume = (np.array([[np.log1p(words_of(r))] for r in usable], float)
+              if words_of is not None else None)
     clusters = np.unique(np.array([str(group_of(r)) for r in usable]),
                          return_inverse=True)[1]
     keys = [key_of(r) for r in usable]
@@ -420,7 +430,8 @@ def which_matter(per_unit, rows, outcome_column, key_of, words_of,
                             for k in keys])
         if len(set(present.ravel())) < 2:
             continue
-        design = np.hstack([present, volume, np.ones((len(y), 1))])
+        columns = [present] if volume is None else [present, volume]
+        design = np.hstack(columns + [np.ones((len(y), 1))])
         try:
             model = sm.Logit(y, design).fit(
                 disp=0, cov_type='cluster', cov_kwds={'groups': clusters})
@@ -436,8 +447,24 @@ def which_matter(per_unit, rows, outcome_column, key_of, words_of,
 
     results.sort(key=lambda r: r['p'])
     total = len(results)
-    for rank, row in enumerate(results, start=1):
-        row['q'] = min(1.0, row['p'] * total / rank)
+    # Benjamini-Hochberg has two halves and only the first was here: the
+    # adjusted value is `p * m / rank`, and then each one is pulled down to the
+    # smallest such value at or above its own rank. Without that second step
+    # the q-values are not monotone in p — on a family of five with p = .001,
+    # .0011, .03, .04, .5 the smallest p came out at q = .005 where the method
+    # gives .0028 — and a relation can be reported as weaker than one it
+    # dominates. The count of survivors inherits the error.
+    #
+    # Walked from the largest p down, keeping the running minimum, which is
+    # that second step written out. `statsmodels.stats.multitest` does the same
+    # thing; it is not imported here because this function is the one place
+    # that needs it and the correction is four lines.
+    running = 1.0
+    for rank in range(total, 0, -1):
+        row = results[rank - 1]
+        running = min(running, row['p'] * total / rank)
+        row['q'] = min(1.0, running)
     return {'tested': total, 'candidates': len(counts), 'rows': len(usable),
             'results': results,
+            'controlled_for_length': volume is not None,
             'survivors': sum(1 for r in results if r['q'] < 0.10)}

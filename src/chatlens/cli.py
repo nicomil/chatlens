@@ -233,6 +233,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp_tables.add_argument('--output', type=Path, default=None,
                            help='where to write them (default: output/tables/)')
 
+    sp_studies = sub.add_parser(
+        'studies', parents=[common],
+        help='one dataset per declared study, standardised on its own sample')
+    add_input_options(sp_studies)
+    sp_studies.add_argument('--only', metavar='SLUG', action='append',
+                            default=[],
+                            help='build just this study; repeatable')
+    sp_studies.add_argument('--output', type=Path, default=None,
+                            help='where to write them '
+                                 '(default: output/studies/)')
+    sp_studies.add_argument('--bow-min-documents', type=int, default=None,
+                            metavar='N',
+                            help='a term gets a bag-of-words column when it '
+                                 'occurs in at least N documents of the study '
+                                 '(default: 10)')
+
     sp_runs = sub.add_parser('runs', parents=[common], help='list the archived runs')
     sp_runs.add_argument('--prune', type=int, metavar='N',
                          help='keep the N most recent and delete the rest')
@@ -432,6 +448,16 @@ def cmd_merge(args) -> int:
                if hasattr(args, name)}
     if 'columns' in getattr(adapter, 'OPTIONS', ()):
         options['columns'] = experiment.columns
+    # The declared sessions, for an adapter that knows what a session is. Passed
+    # only when declared, so an adapter without the parameter is unaffected.
+    if experiment.sessions:
+        import inspect
+
+        if 'sessions' not in inspect.signature(adapter.run).parameters:
+            raise SystemExit(
+                f'\n[sample] sessions is declared, but the {experiment.adapter} '
+                f'adapter has no notion of a session to filter on.\n')
+        options['sessions'] = experiment.sessions
 
     summary = adapter.run(
         **{role: path for role, path in paths.items()},
@@ -716,6 +742,15 @@ def cmd_install_topicgpt(args) -> int:
     print('Installing it (heavy dependencies, this may take minutes).')
     print('The warning about google-cloud-aiplatform and the "all" extra is '
           'harmless.')
+    # Not harmless, and it has already happened once: TopicGPT asks for
+    # openai<2, anthropic<1 and numpy<2, and pip satisfies it by downgrading
+    # whatever is there. The rubric then stops working, in a way that only
+    # shows up when somebody spends money.
+    print()
+    print('Note: TopicGPT pins openai<2, anthropic<1 and numpy<2, so this may')
+    print('downgrade libraries already installed. Run `chatlens status`')
+    print('afterwards — it says so if the rubric can no longer run — or give')
+    print('the topic stage a virtual environment of its own.')
     installed = subprocess.run(optional.pip_argv(str(repo)))
     if installed.returncode:
         raise SystemExit('\nInstallation failed: see the messages above.\n')
@@ -777,6 +812,17 @@ def cmd_status(_args) -> int:
         print(f'  git ignores it: {label}')
     for name, purpose, present in config.key_status():
         print(f'  {"present" if present else "absent ":8s} {name:20s} {purpose}')
+
+    # Only worth a line when there is something wrong with it: the rubric's
+    # Anthropic path needs a version of the SDK that installing TopicGPT into
+    # the same interpreter can take away again, and the symptom otherwise
+    # appears halfway through a paid run.
+    from chatlens.core import llm_rubric
+    problem = llm_rubric.sdk_problem()
+    if problem:
+        print()
+        print('Rubric (Anthropic provider):')
+        print(f'  unusable — {problem}')
     return 0
 
 
@@ -787,12 +833,16 @@ def cmd_install_relatio(args) -> int:
     build, because its pinned gensim cannot generate metadata under a modern
     setuptools. The master branch installs cleanly.
 
-    This is optional. The narratives page works without it, using spaCy
-    dependency parsing, and on the corpus this tool was built for the two agree
-    on the finding that matters. What the package adds is its own clustering of
-    the phrases that are *not* declared entities, and the automatic choice of
-    how many clusters to use — worth having when a corpus has many entities and
-    you do not yet know what they are.
+    This is required for a new extraction, and the docstring used to say it was
+    optional — describing a spaCy fallback that no longer exists. The extraction
+    is RELATIO's method, and an approximation of somebody else's published
+    pipeline is not that pipeline: a result from ours could not honestly be
+    attributed to their paper. So the page waits for the package rather than
+    substituting anything.
+
+    What does not need it: *reading* an extraction that arrived inside an
+    imported study, as long as its entities are unchanged. The relations were
+    computed once, by this package, and travel with the study.
 
     It is also large: torch and transformers come with it, about 1.6 GB against
     the four megabytes chatlens itself takes. Hence a command rather than a
@@ -934,12 +984,94 @@ def cmd_tables(args) -> int:
     return 0
 
 
+def cmd_studies(args) -> int:
+    """One dataset per declared study, each standardised on its own sample.
+
+    The samples share arms — a baseline compared against two different things is
+    two studies over three conditions — so this is not a partition and the total
+    across studies exceeds the pooled dataset. That is correct: each study is
+    the sample of one paper.
+
+    Nothing here costs money. The measures are recomputed on the subset, which
+    is what fixes the standardised columns, and the rubric and topic columns are
+    copied across from the pooled run.
+    """
+    from chatlens.core import perstudy, studies as studies_module
+
+    experiment = config.EXPERIMENT
+    declared = experiment.studies
+    if not declared:
+        raise SystemExit(
+            '\nThis experiment declares no studies, so there is nothing to '
+            'build.\n'
+            '  A study is a sample: which treatments one paper compares.\n'
+            '  Add them to experiment.toml and run this again:\n\n'
+            '      [[studies]]\n'
+            '      slug       = "study1"\n'
+            '      name       = "Study 1"\n'
+            '      treatments = ["private", "public"]\n'
+            '      baseline   = "private"\n')
+
+    wanted = [s.strip().lower() for s in (args.only or []) if s.strip()]
+    if wanted:
+        chosen, missing = [], []
+        for slug in wanted:
+            found = studies_module.find(declared, slug)
+            (chosen if found else missing).append(found or slug)
+        if missing:
+            raise SystemExit(
+                f'\nNo study called {", ".join(repr(m) for m in missing)}.\n'
+                f'  Declared: {", ".join(s.slug for s in declared)}\n')
+    else:
+        chosen = list(declared)
+
+    stem = resolve_stem(args)
+    messages_path = config.MERGED_DIR / f'{stem}_messages_long.csv'
+    messages = None
+    if messages_path.is_file():
+        # Read once and handed to each study, rather than re-read per study: it
+        # is the same file and the largest one here.
+        from chatlens.core import tables as tables_module
+        messages = tables_module.read(messages_path)
+
+    failed = 0
+    for study in chosen:
+        print(f'{study.describe()}')
+        try:
+            result = perstudy.write(
+                study, stem, args.output, messages=messages,
+                bow_min_documents=getattr(args, 'bow_min_documents', None))
+        except perstudy.StudyBuildError as exc:
+            print(f'  not built: {exc}')
+            failed += 1
+            continue
+        census = result['census']
+        groups = ', '.join(f'{arm} {n}' for arm, n
+                           in census['groups_per_treatment'].items())
+        silent = census.get('n_silent_groups') or 0
+        print(f'  {census["n_groups"]} groups ({groups}), '
+              f'{census["n_messages"]} messages'
+              + (f', {silent} of the groups said nothing at all' if silent
+                 else ''))
+        for path in result['paths']:
+            print(f'  {path}')
+        for note in result['notes']:
+            print(f'  note: {note}')
+        print()
+
+    print('The standardised columns — the _z and _100 ones — are computed on')
+    print('each study\'s own units, so the same participant has different')
+    print('values in the two files. That is the point: the scale is the study.')
+    return 1 if failed else 0
+
+
 COMMANDS = {
     'all': cmd_all,
     'merge': cmd_merge,
     'analyze': cmd_analyze,
     'report': cmd_report,
     'tables': cmd_tables,
+    'studies': cmd_studies,
     'runs': cmd_runs,
     'dashboard': cmd_dashboard,
     'experiments': cmd_experiments,

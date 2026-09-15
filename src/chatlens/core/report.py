@@ -123,7 +123,7 @@ def _triads(rows):
     return list(seen.values())
 
 
-def collect(outdir: Path, stem: str, stages=None) -> dict:
+def collect(outdir: Path, stem: str, stages=None, failed=None) -> dict:
     """Collect everything needed from the files the run produced."""
     datasets = outdir / 'datasets'
     aggregated = _read(datasets / f'{stem}_chat_aggregated_nlp.csv')
@@ -142,6 +142,10 @@ def collect(outdir: Path, stem: str, stages=None) -> dict:
     data = dict(
         stem=stem,
         stages=list(stages) if stages else None,
+        # Which stage did not finish, if one did not. It lived only in
+        # `run.json` before, so a report missing its topic columns read exactly
+        # like a complete one.
+        failed=tuple(failed) if failed else None,
         generated=datetime.now().strftime('%d/%m/%Y %H:%M'),
         merge=merge_summary,
         coverage=_coverage(aggregated, by_partner, merge_summary),
@@ -499,6 +503,23 @@ def _md_table(headers, rows) -> str:
     return '\n'.join(out)
 
 
+def _failure_note(data: dict) -> str:
+    """What a reader has to know before anything else in the report.
+
+    A stage that did not finish leaves the report shorter rather than wrong —
+    the topic section simply is not there — and a shorter report is
+    indistinguishable from a complete one for a study that never ran topics. So
+    it is said at the top, in both formats.
+    """
+    failed = data.get('failed')
+    if not failed:
+        return ''
+    stage = failed[0] if isinstance(failed, (tuple, list)) else str(failed)
+    return (f'The {stage} stage did not finish, so the columns it produces are '
+            f'absent from everything below. What the earlier stages produced '
+            f'was kept and is unaffected.')
+
+
 def render_markdown(data: dict) -> str:
     cov = data['coverage']
     parts = [
@@ -508,6 +529,8 @@ def render_markdown(data: dict) -> str:
         + (f" Stages run: {', '.join(data['stages'])}."
            if data.get('stages') else ''),
         '',
+        *((f'> **Incomplete.** {_failure_note(data)}', '')
+          if data.get('failed') else ()),
         '## Coverage',
         '',
     ]
@@ -712,6 +735,9 @@ def render_html(data: dict) -> str:
         f"<p class=\"meta\">Run of {html.escape(data['generated'])}"
         + (f" &middot; stages: {html.escape(', '.join(data['stages']))}"
            if data.get('stages') else '') + "</p>",
+        *((f'<div class="note"><b>Incomplete.</b> '
+           f'{html.escape(_failure_note(data))}</div>',)
+          if data.get('failed') else ()),
         '<div class="stats">',
         *(f'<div class="stat"><div class="v">{v}</div>'
           f'<div class="l">{l}</div></div>' for v, l in cards),
@@ -810,9 +836,9 @@ def render_html(data: dict) -> str:
     )
 
 
-def write(outdir: Path, stem: str, stages=None) -> list[Path]:
+def write(outdir: Path, stem: str, stages=None, failed=None) -> list[Path]:
     """Generate the report in both formats and return the paths."""
-    data = collect(outdir, stem, stages=stages)
+    data = collect(outdir, stem, stages=stages, failed=failed)
     md_path = outdir / f'{stem}_report.md'
     html_path = outdir / f'{stem}_report.html'
     md_path.write_text(render_markdown(data), encoding='utf-8')

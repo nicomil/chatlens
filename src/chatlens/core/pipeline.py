@@ -325,6 +325,14 @@ def preflight(args) -> None:
             llm_rubric.check_models_available(
                 provider, models or [llm_rubric.default_model_for(provider)]
             )
+            # The installed SDK, checked here rather than at the first call:
+            # this function exists so that a run fails before it spends, and an
+            # Anthropic library too old for the rubric is exactly that kind of
+            # failure.
+            if provider == 'anthropic':
+                sdk = llm_rubric.sdk_problem()
+                if sdk:
+                    problems.append(f'The rubric cannot run: {sdk}')
             if args.llm_batch and provider != 'anthropic':
                 problems.append(
                     '--llm-batch is available with the anthropic provider only.'
@@ -450,7 +458,8 @@ def run(args) -> dict:
     agg.write_csv(out_aggregated, aggregated)
 
     report_paths = report.write(outdir, args.stem,
-                                stages=archive.stages_of(args))
+                                stages=archive.stages_of(args),
+                                failed=failed_stage)
     run_dir = archive.save(outdir, args.stem, args, dict(
         n_messages=len(messages),
         levels={level: len(rows) for level, rows in features.items()},

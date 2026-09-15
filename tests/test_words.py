@@ -30,6 +30,67 @@ class CleanTests(unittest.TestCase):
         self.assertEqual(words.clean(''), '')
         self.assertEqual(words.clean(None), '')
 
+    def test_a_message_with_no_speaker_prefix_is_left_alone(self):
+        """`clean` runs on plain message columns too, not only transcripts.
+
+        It used to cut every line at its first colon whatever stood before it,
+        so a bargaining corpus lost the words before every number it argued
+        about: "ratio is 2:1 and i think: yes" came back as "1 and i think:
+        yes".
+        """
+        text = 'ratio is 2:1 and i think: yes'
+        self.assertEqual(words.clean(text), text)
+
+    def test_the_three_shapes_of_the_prefix_are_all_recognised(self):
+        """The adapters and the pipeline write it three ways."""
+        for line in ('Yellow->Orange: hello', 'Yellow -> Orange: hello',
+                     'Yellow to Orange: hello', '1->2: hello'):
+            with self.subTest(line=line):
+                self.assertEqual(words.clean(line), 'hello')
+
+
+class TokenPatternTests(unittest.TestCase):
+    """One-letter words are the people in the conversation.
+
+    scikit-learn's default token pattern needs two characters, so "i" and "u"
+    never reached the model — in a game about who supports whom, the two words
+    that say who.
+    """
+
+    def setUp(self):
+        try:
+            from sklearn.feature_extraction.text import CountVectorizer
+        except ImportError:
+            self.skipTest('scikit-learn is not installed')
+        self.CountVectorizer = CountVectorizer
+
+    def vocabulary(self, texts, **kwargs):
+        fitted = self.CountVectorizer(
+            binary=True, token_pattern=words.TOKEN_PATTERN,
+            **kwargs).fit(texts)
+        return sorted(fitted.vocabulary_)
+
+    def test_single_letter_pronouns_survive(self):
+        self.assertEqual(self.vocabulary(['i support you', 'u and i']),
+                         ['and', 'i', 'support', 'u', 'you'])
+
+    def test_the_default_pattern_is_what_dropped_them(self):
+        """Pinned so the fix cannot be undone by removing one argument."""
+        plain = sorted(self.CountVectorizer(binary=True)
+                       .fit(['i support you', 'u and i']).vocabulary_)
+        self.assertEqual(plain, ['and', 'support', 'you'])
+
+    def test_the_comparison_page_tokenises_the_same_way(self):
+        """Two rows of that table are one representation seen twice."""
+        from chatlens.core import compare
+
+        assembled = compare.build(
+            [{'group_uid': f'g{i // 4}', 'text': 'i support you' if i % 2
+              else 'u and i', 'y': str(i % 2)} for i in range(120)],
+            'y', 'text')
+        words_set = next(s for s in assembled['sets'] if s['kind'] == 'words')
+        self.assertIsNotNone(words_set['matrix'])
+
 
 class PenaltySpellingTests(unittest.TestCase):
     """The bug this exists to prevent: a lasso that is quietly a ridge.
@@ -243,6 +304,58 @@ class CloudSvgTests(unittest.TestCase):
         first = self.words.cloud_svg(self.selected, True)
         second = self.words.cloud_svg(self.selected, True)
         self.assertEqual(first, second)
+
+
+class SeparationTests(unittest.TestCase):
+    """The AUC may not see the rows it is scored on — the vocabulary included.
+
+    The list of coefficients the page draws is fitted on every row on purpose:
+    it is a description of this corpus, not an estimate. The AUC beside it is
+    the estimate, so its vocabulary is chosen inside each fold.
+    """
+
+    def setUp(self):
+        try:
+            import sklearn  # noqa: F401
+        except ImportError:
+            self.skipTest('scikit-learn is not installed')
+
+    def corpus(self, n=240):
+        """A word that appears only in the last fold's groups.
+
+        Fitted on everything it enters the vocabulary; chosen inside each fold
+        it is absent from the four folds that do not hold it.
+        """
+        import random
+
+        rng = random.Random(11)
+        filler = ['we should decide', 'what do you think', 'ok lets do it']
+        out = []
+        for i in range(n):
+            positive = i % 2 == 0
+            text = f'{rng.choice(filler)} {"yes" if positive else "nope"}'
+            out.append({'group_uid': f'g{i // 4}', 'text': text,
+                        'y': '1' if positive else '0'})
+        return out
+
+    def test_the_auc_is_computed_and_bounded(self):
+        found = words.fit(self.corpus(), 'text', 'y')
+        self.assertIsNotNone(found['auc_words'])
+        self.assertGreaterEqual(found['auc_words'], 0.0)
+        self.assertLessEqual(found['auc_words'], 1.0)
+
+    def test_the_displayed_terms_still_come_from_the_whole_corpus(self):
+        """Moving a control back to where it was has to give back what it
+        gave before, and the table describes the corpus in front of you."""
+        first = words.fit(self.corpus(), 'text', 'y')
+        second = words.fit(self.corpus(), 'text', 'y')
+        self.assertEqual([t['term'] for t in first['kept']],
+                         [t['term'] for t in second['kept']])
+        self.assertEqual(first['vocabulary'], second['vocabulary'])
+
+    def test_the_length_baseline_is_still_there(self):
+        found = words.fit(self.corpus(), 'text', 'y')
+        self.assertIsNotNone(found['auc_length'])
 
 
 if __name__ == '__main__':

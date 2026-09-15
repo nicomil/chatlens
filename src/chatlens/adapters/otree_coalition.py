@@ -202,7 +202,7 @@ def has_prolific_label(row) -> bool:
     return bool(PROLIFIC_PID_RE.match((row.get('participant.label') or '').strip()))
 
 
-def select_participants(wide_rows):
+def select_participants(wide_rows, sessions=()):
     """Keep the real participants who were part of a triad.
 
     These are the two conditions the analysis calls for: a valid Prolific
@@ -216,8 +216,17 @@ def select_participants(wide_rows):
     Returns the rows kept and the count of discards by reason.
     """
     kept, dropped = [], {'never_grouped': 0, 'no_prolific_id': 0}
+    allowed = set(sessions or ())
+    if allowed:
+        dropped['outside_declared_sessions'] = 0
     for row in wide_rows:
-        if not is_grouped(row):
+        # First, when the experiment declares its sessions: a participant of a
+        # pilot or a test session is not in the experiment whatever else is true
+        # of them, and counting them under another reason would hide how many
+        # there were.
+        if allowed and (row.get('session.code') or '').strip() not in allowed:
+            dropped['outside_declared_sessions'] += 1
+        elif not is_grouped(row):
             dropped['never_grouped'] += 1
         elif not has_prolific_label(row):
             dropped['no_prolific_id'] += 1
@@ -884,7 +893,8 @@ def write_csv(path: Path, rows):
 
 
 def run(wide: Path, chat: Path, outdir: Path, stem: str,
-        keep_all: bool = False, pseudonymise: bool = False) -> dict:
+        keep_all: bool = False, pseudonymise: bool = False,
+        sessions=()) -> dict:
     """Step 1: merge choices and chat, and build the experiment's variables.
 
     By default only real participants who were part of a triad are kept (see
@@ -903,7 +913,16 @@ def run(wide: Path, chat: Path, outdir: Path, stem: str,
     if keep_all:
         wide_rows, dropped = all_rows, {}
     else:
-        wide_rows, dropped = select_participants(all_rows)
+        wide_rows, dropped = select_participants(all_rows, sessions=sessions)
+        declared = set(sessions or ())
+        missing = sorted(declared - {(r.get('session.code') or '').strip()
+                                     for r in all_rows})
+        if missing:
+            # A code in the list that is not in the export is a typo or the
+            # wrong export, and either way the sample is not the one declared.
+            raise SystemExit(
+                f'\n[sample] sessions names {len(missing)} session(s) the '
+                f'export does not contain: {", ".join(missing)}\n')
 
     wide_by_code = {r['participant.code']: r for r in wide_rows}
 
@@ -982,6 +1001,9 @@ def print_summary(summary: dict) -> None:
     if dropped:
         print(f"  excluded, never grouped      : {dropped['never_grouped']}")
         print(f"  excluded, no Prolific ID     : {dropped['no_prolific_id']}")
+        if 'outside_declared_sessions' in dropped:
+            print(f"  excluded, other sessions     : "
+                  f"{dropped['outside_declared_sessions']}")
     print(f"Participants analysed  : {summary['n_participants']}")
     print(f"Triads reconstructed   : {summary['n_groups']}")
     print(f"Valid triads           : {summary['n_valid_groups']}"

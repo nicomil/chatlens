@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Monday morning, for the heavy RELATIO job below: it installs torch and a
+  # language model, and what it catches is somebody else's release breaking the
+  # extraction rather than a change of ours.
+  schedule:
+    - cron: '0 6 * * 1'
 
 jobs:
   test:
@@ -61,6 +66,12 @@ jobs:
         run: python tests/test_corpus.py
       - name: Sharing an experiment
         run: python tests/test_bundle.py
+      - name: One table per unit
+        run: python tests/test_tables.py
+      - name: Two studies out of one collection
+        run: python tests/test_studies.py
+      - name: One definition of a word
+        run: python tests/test_tokens.py
       - name: The documentation links
         run: python tests/test_docs.py
 
@@ -95,6 +106,33 @@ jobs:
         run: python tests/test_compare.py
       - name: Emotions
         run: python tests/test_emotions.py
+
+  # RELATIO, which the job above does not install: those tests mock the import
+  # away or skip themselves, so the extraction path — the one that needs 1.6 GB
+  # of torch and transformers, and the one a dependency clash breaks first — has
+  # never actually run in CI. Weekly rather than per-push, because it is a long
+  # install for a path that changes rarely, and `continue-on-error` because the
+  # thing most likely to fail is somebody else's release rather than our code.
+  relations:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install everything, including the language model
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[all]"
+          python -m spacy download en_core_web_md
+      - name: Install RELATIO
+        run: chatlens install-relatio
+      - name: It imports, and it extracts
+        run: python tests/relatio_smoke.py
+      - name: The narratives suite, with the real package present
+        run: python tests/test_narratives.py
 
   # A gate, because the tree is clean: the rule set in pyproject is the
   # narrow one that catches something real — dead imports, shadowed names,

@@ -98,8 +98,15 @@ def spine(slug: str, state: dict, current: str = '') -> str:
         inner = (f'<span class="stepnum">{index}</span>'
                  f'<span class="steplabel">{esc(label)}</span>')
         if kind == BLOCKED:
-            items.append(f'<span class="{classes}" data-tip="{attr(reason)}" '
-                         f'tabindex="0">{inner}</span>')
+            # The reason is in `data-tip`, which a stylesheet shows on hover and
+            # a screen reader cannot see at all. `aria-describedby` points at the
+            # same words in the document, so the step announces why it is
+            # blocked rather than only looking greyed out.
+            tip = f'why-{esc(key)}'
+            items.append(
+                f'<span class="{classes}" data-tip="{attr(reason)}" '
+                f'tabindex="0" aria-describedby="{tip}">{inner}'
+                f'<span id="{tip}" class="sronly">{esc(reason)}</span></span>')
         else:
             aria = ' aria-current="step"' if kind == CURRENT else ''
             href = base if key == 'findings' else f'{base}/step/{key}'
@@ -166,19 +173,25 @@ def register(slug: str, findings, current: str = '', refresh: str = '') -> str:
 
 # --- the shell -------------------------------------------------------------
 
-THEME_SCRIPT = (
-    '<script>(function(){try{var t=localStorage.getItem("chatlens-theme");'
-    'if(t){document.documentElement.setAttribute("data-theme",t);}}'
-    'catch(e){}})();</script>'
-)
+# Applied before the first paint, from a file rather than inline: the content
+# security policy this server sends is `script-src 'self'`, so the inline
+# version this replaces was refused by the browser and the reader's choice of
+# theme was lost on every reload. See static/theme.js.
+THEME_SCRIPT = '<script src="/static/theme.js"></script>'
 
 
 def shell(title: str, canvas: str, *, slug: str = '', study: str = '',
-          steps=None, step: str = '', aside: str = '', htmx: bool = True) -> str:
+          steps=None, step: str = '', aside: str = '', htmx: bool = True,
+          selector: str = '') -> str:
     """The only page in the project.
 
     `aside` is the register, when there is one. Without it the canvas takes the
     whole width, which is what a step wants: one form, one decision.
+
+    `selector` is which sample the findings are being read on, when the
+    experiment declares more than one. It sits in the masthead rather than on
+    each page because it applies to all of them at once, and because a reader
+    who has forgotten which study a figure belongs to looks up, not down.
     """
     scripts = '<script src="/static/htmx.min.js"></script>' if htmx else ''
     bar = spine(slug, steps or {}, step) if slug else ''
@@ -195,6 +208,7 @@ def shell(title: str, canvas: str, *, slug: str = '', study: str = '',
 <header class="masthead">
   <a class="brand" href="/">chatlens</a>
   {f'<span class="study">{esc(study)}</span>' if study else ''}
+  {selector}
   <button type="button" class="themetoggle" id="themetoggle"
           aria-label="Switch between the light and the dark theme"
           title="Light or dark">◐</button>
@@ -283,9 +297,13 @@ def bar_cell(share: float, direction: str = '') -> str:
             f'style="width:{width:.1f}%"></span>')
 
 
-def table(headers, rows, *, numeric=(), empty_message='', caption='',
-          sortable: bool = False) -> str:
-    """A data table, or the reason there is not one."""
+def table(headers, rows, *, numeric=(), empty_message='', caption='') -> str:
+    """A data table, or the reason there is not one.
+
+    There used to be a `sortable` flag here that added a class name. Nothing
+    passed it, no script looked for it and no stylesheet styled it, so the only
+    thing it could do was promise a reader that the headings were clickable.
+    """
     if not rows:
         return empty(empty_message or 'Nothing to show here yet.')
 
@@ -303,8 +321,7 @@ def table(headers, rows, *, numeric=(), empty_message='', caption='',
         for row in rows
     )
     legend = f'<caption>{esc(caption)}</caption>' if caption else ''
-    classes = 'grid sortable' if sortable else 'grid'
-    return (f'<div class="scroll"><table class="{classes}">{legend}'
+    return (f'<div class="scroll"><table class="grid">{legend}'
             f'<thead><tr>{head}</tr></thead><tbody>{body}</tbody>'
             f'</table></div>')
 

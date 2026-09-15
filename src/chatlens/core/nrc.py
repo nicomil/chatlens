@@ -31,9 +31,10 @@ specification that uses them.
 from __future__ import annotations
 
 import os
-import re
 from collections import Counter
 from pathlib import Path
+
+from . import tokens
 
 EMOTIONS = ('anger', 'anticipation', 'disgust', 'fear', 'joy', 'sadness',
             'surprise', 'trust')
@@ -43,7 +44,12 @@ CATEGORIES = EMOTIONS + SENTIMENTS
 FORM_URL = 'https://saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm'
 FILENAME = 'NRC-Emotion-Lexicon-Wordlevel-v0.92.txt'
 
-TOKEN = re.compile(r"[a-z']+")
+# The project's one definition of a word, from `core/tokens.py`. This module
+# used to have its own — `[a-z']+`, which lets a token begin with an apostrophe
+# and splits nothing the way the dictionaries split it — so `don't` was one word
+# to the measures and two here, and the two pages counted different things under
+# the same heading.
+TOKEN = tokens.WORD
 
 
 def lexicon_path() -> Path:
@@ -145,21 +151,21 @@ def score(text: str, marked: dict) -> dict:
     rows are all-zero, because those cluster among the short documents and turn
     the emotion columns into a partial proxy for length.
     """
-    tokens = TOKEN.findall((text or '').lower())
+    in_text = tokens.words(text)
     counts = Counter()
     hits = 0
-    for token in tokens:
-        found = marked.get(token)
-        if found:
+    for token in in_text:
+        categories = marked.get(token)
+        if categories:
             hits += 1
-            counts.update(found)
+            counts.update(categories)
 
     return {
-        'words': len(tokens),
+        'words': len(in_text),
         'emotion_words': hits,
         'measured': hits > 0,
         'counts': {c: counts.get(c, 0) for c in CATEGORIES},
-        'shares': {c: (counts.get(c, 0) / len(tokens) if tokens else 0.0)
+        'shares': {c: (counts.get(c, 0) / len(in_text) if in_text else 0.0)
                    for c in CATEGORIES},
     }
 
@@ -171,8 +177,7 @@ def coverage(texts, marked) -> dict:
     rate that is high everywhere means the word list is the problem; one that
     falls with length means the documents are, and no lexicon fixes that.
     """
-    scored = [(len(TOKEN.findall((t or '').lower())), score(t, marked))
-              for t in texts]
+    scored = [(len(tokens.words(t)), score(t, marked)) for t in texts]
     scored = [(n, s) for n, s in scored if n]
     if not scored:
         return {'documents': 0, 'measured': 0, 'buckets': [], 'note': ''}

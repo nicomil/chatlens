@@ -89,6 +89,13 @@ def slug(name: str) -> str:
 
     Accents are folded rather than dropped, so "Ultimatum accentato" does not
     become "ultimatum-accentato" with a hole in the middle.
+
+    The trailing dashes are stripped **after** the cut, not only before it.
+    `path_for` refuses any name that is not its own slug, which is what keeps a
+    URL from naming a folder we did not make; a name whose 65th character fell
+    on a word boundary was truncated to something ending in a dash, so
+    `slug(slug(name))` differed from `slug(name)` and the experiment `create`
+    had just written could not be opened — "Not an experiment name".
     """
     text = unicodedata.normalize('NFKD', str(name))
     text = text.encode('ascii', 'ignore').decode('ascii').lower()
@@ -96,7 +103,7 @@ def slug(name: str) -> str:
     if text in RESERVED:
         # Windows refuses these as folder names whatever we do about it.
         text = f'{text}-experiment'
-    return text[:64]
+    return text[:64].strip('-')
 
 
 def path_for(name: str) -> Path:

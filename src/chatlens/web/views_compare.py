@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import threading
-
-from chatlens.web import ui
+from chatlens.web import active, pagecache, ui
 from chatlens.core import compare, optional
 
-_CACHE = {}
-_LOCK = threading.Lock()
+# A few entries, keyed on the study among other things: see
+# `web/pagecache.py` for why one was not enough.
+_CACHE = pagecache.Cache()
 
 
 _e = ui.esc
@@ -20,12 +19,23 @@ def _participation_line(name: str) -> str:
     On a different sample from everything below — the whole grid rather than the
     rows that carry text — so it is a sentence and not a row in the table.
     Putting it in the table would invite a comparison that is not one.
+
+    Only for an outcome declared per directed pair. The comparison holds a
+    receiver fixed and asks which of the senders facing them was chosen, so it
+    needs a value per direction; an outcome declared per person or per group has
+    none. This used to pick the file by the outcome's unit and then index its
+    rows by `partner_id_in_group` regardless — a column the participant table
+    does not have — so an experiment with an outcome per person raised a
+    KeyError from inside the page and the request died with a traceback on the
+    server and nothing in the browser.
     """
     from chatlens.core import config, outcome as outcome_module, participation
     from chatlens.web import views_participation
 
     declared = config.EXPERIMENT.outcome
     if not declared or declared['kind'] != 'binary':
+        return ''
+    if declared['unit'] != 'dyad_directed':
         return ''
     messages_path = views_participation._latest(config.MERGED_DIR,
                                                 '_messages_long.csv')
@@ -41,12 +51,16 @@ def _participation_line(name: str) -> str:
     members, _source = participation.membership(messages, roster=roster)
     cells = participation.grid(messages, members)
 
+    # `as_binary`, not a test against "0" and "1": every other page reads
+    # yes/no/true/false through it, and a roster exported from a spreadsheet
+    # usually holds words. Comparing strings here made this whole paragraph
+    # disappear on such a study, with nothing said.
     values = {}
     for row in views_participation._read(pairs_path):
-        raw = str(row.get(declared['column'], '')).strip()
-        if raw in ('0', '1'):
+        found = outcome_module.as_binary(row.get(declared['column']))
+        if found is not None:
             values[(row['group_uid'], row['focal_id_in_group'],
-                    row['partner_id_in_group'])] = int(raw)
+                    row['partner_id_in_group'])] = found
     within = participation.within_receiver(cells, values)
     if not within or not within['decided']:
         return ''
@@ -76,7 +90,7 @@ def _scored():
         return None, 'no sklearn'
 
     suffix = f'_{outcome_module.DATASET_OF[declared["unit"]]}_nlp.csv'
-    path = views_participation._latest(config.DATASETS_DIR, suffix)
+    path = views_participation._latest(active.datasets_dir(), suffix)
     if path is None:
         return None, 'no dataset'
     rows = views_participation._read(path)
@@ -85,11 +99,12 @@ def _scored():
     if text_column is None:
         return None, 'no text column'
 
-    key = (declared['column'], declared['unit'],
+    # The study is part of the key: see `active.scope()`.
+    key = (active.scope(), declared['column'], declared['unit'],
            tuple(experiment.narrative_entities))
-    with _LOCK:
-        if _CACHE.get('key') == key:
-            return _CACHE['value'], ''
+    remembered = _CACHE.get(key)
+    if remembered is not None:
+        return remembered, ''
 
     per_unit = terms = None
     key_of = None
@@ -120,6 +135,10 @@ def _scored():
             if per_unit is None:
                 key_of = None
             else:
+                # Narrowed to the chosen study before the threshold is applied:
+                # which relations are frequent enough to test is a fact about
+                # the sample, and `rows` below is that study's rows.
+                per_unit = active.units_within(per_unit, messages)
                 counts = narratives.frequencies(per_unit)
                 terms = [n for n, c in counts.items()
                          if c >= narratives.MIN_DOCUMENTS]
@@ -133,9 +152,7 @@ def _scored():
     except ValueError as exc:
         return None, str(exc)
 
-    with _LOCK:
-        _CACHE.clear()
-        _CACHE.update(key=key, value=value)
+    _CACHE.put(key, value)
     return value, ''
 
 
@@ -147,44 +164,80 @@ def panel(name: str) -> str:
     if problem:
         return _cannot(name, problem)
 
-    rows = ''.join(
-        (f'<tr><td>{_e(r["name"])}</td>'
-         f'<td class="num">{r["features"]}</td>'
-         f'<td class="num">{r["auc"]:.3f}</td>'
-         f'<td class="num">{r["spread"]:.3f}</td>'
-         f'<td>{"" if r["beats_volume"] is None else ("yes" if r["beats_volume"] else "no")}</td></tr>'
-         if r['auc'] is not None else
-         f'<tr class="absent"><td>{_e(r["name"])}</td>'
-         f'<td class="num">—</td><td class="num">—</td>'
-         f'<td class="num">—</td><td>{_e(r.get("why", ""))}</td></tr>')
-        for r in scored['results'])
+    # Three words, because there are three answers. "no" on a difference whose
+    # interval covers both nothing and something asserts more than the sample
+    # carries, and that was the commonest row in the table.
+    said = {compare.YES: 'adds something', compare.NO: 'adds nothing',
+            compare.UNCLEAR: 'too close to call'}
+
+    def cells(r):
+        if r['auc'] is None:
+            return (f'<tr class="absent"><td>{_e(r["name"])}</td>'
+                    f'<td class="num">—</td><td class="num">—</td>'
+                    f'<td class="num">—</td><td class="num">—</td>'
+                    f'<td>{_e(r.get("why", ""))}</td></tr>')
+        if r['kind'] == 'volume':
+            return (f'<tr><td>{_e(r["name"])}</td>'
+                    f'<td class="num">{r["features"]}</td>'
+                    f'<td class="num">{r["auc"]:.3f}</td>'
+                    f'<td class="num">—</td><td class="num">—</td>'
+                    f'<td class="muted">the baseline</td></tr>')
+        interval = ('—' if r.get('ci_low') is None else
+                    f'{r["delta"]:+.3f} '
+                    f'<span class="muted">[{r["ci_low"]:+.3f}, '
+                    f'{r["ci_high"]:+.3f}]</span>')
+        bar = ('—' if r.get('threshold') is None
+               else f'{r["threshold"]:.3f}')
+        return (f'<tr><td>{_e(r["name"])}</td>'
+                f'<td class="num">{r.get("features", "—")}</td>'
+                f'<td class="num">{r["auc"]:.3f}</td>'
+                f'<td class="num">{interval}</td>'
+                f'<td class="num">{bar}</td>'
+                f'<td>{_e(said.get(r.get("verdict"), ""))}</td></tr>')
+
+    rows = ''.join(cells(r) for r in scored['results'])
     table = f'''<div class="scroll"><table class="grid">
 <thead><tr><th>Representation</th><th class="num">Variables</th>
-<th class="num">How well it separates</th>
-<th class="num">Spread across folds</th>
-<th>Beats length alone</th></tr></thead>
+<th class="num">With length, out of sample</th>
+<th class="num">What it adds, and the interval</th>
+<th class="num">Smallest it could show</th>
+<th>Verdict</th></tr></thead>
 <tbody>{rows}</tbody></table></div>'''
 
+    floor = scored.get('min_effect', compare.MEANINGFUL)
     sample = (f'<p class="muted">{scored["rows"]} rows, {scored["folds"]} '
-              f'folds, whole groups held out. Every representation is '
-              f'fitted on the same training rows and scored on the same '
-              f'test rows — a feature set scored on a different split is '
-              f'not being compared to anything.</p>')
+              f'folds, whole groups held out. Every block is fitted beside '
+              f'length on the same training rows and scored on the same test '
+              f'rows, and what is reported is the <b>difference</b> from length '
+              f'alone, fold by fold — the two share their folds, so the paired '
+              f'difference is what has an interval worth quoting. The interval '
+              f'carries the Nadeau-Bengio correction for the overlap between '
+              f'training sets. A block has to clear the larger of {floor:.2f} '
+              f'and the smallest difference this design can observe — the '
+              f'half-width of its interval, in its own column: an effect the '
+              f'sample cannot tell from zero is not considered.</p>')
 
     volume = scored.get('volume')
-    scorable = [r for r in scored['results'] if r['auc'] is not None]
-    winners = [r for r in scorable
-               if r['kind'] != 'volume' and r.get('beats_volume')]
+    content = [r for r in scored['results']
+               if r['kind'] != 'volume' and r.get('delta') is not None]
+    winners = [r for r in content if r.get('verdict') == compare.YES]
+    unsure = [r for r in content if r.get('verdict') == compare.UNCLEAR]
     if winners:
-        best = max(winners, key=lambda r: r['auc'])
-        answer = (f'<span class="with">{_e(best["name"])}</span>, at '
-                  f'<span class="figure">{best["auc"]:.3f}</span> against '
-                  f'<span class="figure">{volume:.3f}</span> for length '
-                  f'alone.')
+        best = max(winners, key=lambda r: r['delta'])
+        answer = (f'<span class="with">{_e(best["name"])}</span>, adding '
+                  f'<span class="figure">{best["delta"]:+.3f}</span> to the '
+                  f'<span class="figure">{volume:.3f}</span> that length '
+                  f'reaches on its own.')
         verdict = ui.YES
+    elif unsure:
+        answer = (f'Cannot be told from this sample. Length reaches '
+                  f'<span class="figure">{volume:.3f}</span>, and '
+                  f'{len(unsure)} of the blocks have an interval that covers '
+                  f'both nothing and something.')
+        verdict = ui.OPEN
     else:
-        answer = ('Nothing. No representation of the content beats how '
-                  f'much was written, at '
+        answer = ('Nothing. No representation of the content adds anything to '
+                  f'how much was written, at '
                   f'<span class="figure">{volume:.3f}</span>.')
         verdict = ui.NO
 
@@ -247,10 +300,24 @@ def _reading() -> str:
     effect and still predict poorly, because it appears in a fraction of the
     rows and brings a handful of variables where a bag of words brings a
     thousand.</p>
-    <p>Length is first because it is the null hypothesis of text analysis:
-    longer documents contain more of everything, and a representation that does
-    not beat "how much was written" has not yet shown that content
-    matters.</p>
-    <p>"How well it separates" is the area under the ROC curve: 0.5 is a coin,
-    1.0 is perfect. The spread beside it is how much that figure moved between
-    folds — a large one means the number is not to be read closely.</p>'''
+    <p><b>The question is what a block adds to length, not how it scores on its
+    own.</b> Longer documents contain more of everything, so a representation
+    can score well by rediscovering who typed more. Each block is therefore put
+    <i>beside</i> length in the same model and compared with length alone: the
+    claim a paper can make is that the features of the message improve the
+    prediction <i>after</i> accounting for the quantity of text.</p>
+    <p>"With length, out of sample" is the area under the ROC curve of the
+    block-plus-length model: 0.5 is a coin, 1.0 is perfect. Beside it is the
+    difference from length alone with its 95% interval, computed on the paired
+    per-fold differences — the two models share their folds, so their errors are
+    correlated and differencing two separate intervals would throw away most of
+    the precision the design has. The interval carries the correction of Nadeau
+    and Bengio (2003) for the overlap between the training sets, which on five
+    folds widens it by about half again.</p>
+    <p><b>Three verdicts, not two.</b> A block adds something when its interval
+    excludes zero and the improvement reaches the declared floor; it adds
+    nothing when the interval rules that floor out; and it is too close to call
+    when the interval covers both — which on a few hundred groups is the
+    commonest answer, and the one a yes-or-no rule got wrong by picking a side.
+    The p-values behind the verdicts carry a Holm correction across the blocks,
+    because they all ask the same question of the same baseline.</p>'''

@@ -348,7 +348,10 @@ class ServerAuthorisationTests(unittest.TestCase):
              'Origin': 'https://evil.example.com'},
             body='command=all')
         self.assertEqual(response.status, 403)
-        self.assertFalse(self.srv.runner.running)
+        # The runner is per workspace now, so it is asked for by the
+        # workspace rather than read off the server module.
+        from chatlens.web import runner as runner_module
+        self.assertFalse(runner_module.current().running)
 
     def test_a_post_marked_cross_site_is_refused(self):
         response, _ = self.request(
@@ -357,7 +360,10 @@ class ServerAuthorisationTests(unittest.TestCase):
              'Sec-Fetch-Site': 'cross-site'},
             body='command=all')
         self.assertEqual(response.status, 403)
-        self.assertFalse(self.srv.runner.running)
+        # The runner is per workspace now, so it is asked for by the
+        # workspace rather than read off the server module.
+        from chatlens.web import runner as runner_module
+        self.assertFalse(runner_module.current().running)
 
     def test_a_post_without_any_token_is_refused(self):
         response, _ = self.request('POST', '/estimate', body='command=all')
@@ -399,6 +405,36 @@ class ServerAuthorisationTests(unittest.TestCase):
             self.assertIn("connect-src 'self'", policy)
         if '<iframe' in body or 'frame-src' in policy:
             self.assertIn("frame-src 'self'", policy)
+
+    def test_the_page_carries_no_script_the_policy_would_refuse(self):
+        """`script-src 'self'` means an inline script never runs.
+
+        The theme was applied by three lines inline in the head, so the
+        browser refused them and a reader's choice of light or dark was lost
+        on every reload — the policy working exactly as written, against a
+        page that had not been told.
+        """
+        import re
+
+        response, payload = self.request('GET', f'/?t={self.srv.TOKEN}')
+        body = payload.decode('utf-8', 'replace')
+        self.assertIn("script-src 'self'",
+                      response.getheader('Content-Security-Policy') or '')
+        inline = [tag for tag in re.findall(r'<script\b[^>]*>(.*?)</script>',
+                                            body, re.S) if tag.strip()]
+        self.assertEqual(inline, [], 'an inline script cannot run under the '
+                                     'policy this server sends')
+
+    def test_the_theme_is_applied_by_a_file_the_browser_may_fetch(self):
+        response, payload = self.request('GET', f'/?t={self.srv.TOKEN}')
+        body = payload.decode('utf-8', 'replace')
+        self.assertIn('/static/theme.js', body)
+        # With the session cookie, which is what a browser sends with it.
+        served, script = self.request(
+            'GET', '/static/theme.js',
+            {'Cookie': f'{self.srv.COOKIE_NAME}={self.srv.TOKEN}'})
+        self.assertEqual(served.status, 200)
+        self.assertIn(b'chatlens-theme', script)
 
     def test_the_report_can_still_be_framed_by_this_page(self):
         """The panel shows the report in an iframe, so the policy must allow it.
@@ -702,6 +738,53 @@ class LibraryRoutingTests(unittest.TestCase):
         loaded = experiment.load(library.path_for('fifth-study'))
         self.assertEqual(loaded.adapter, 'generic_chat')
 
+    # --- an archived run, and the files it produced ------------------------
+
+    def _archived_run(self, slug='first-study'):
+        """A run folder of the shape `archive.save` leaves behind."""
+        import json
+
+        from chatlens.core import library
+
+        run = (library.path_for(slug) / 'output' / 'runs'
+               / '2026-01-01_000000')
+        (run / 'datasets').mkdir(parents=True, exist_ok=True)
+        (run / 'datasets' / 'x_chat_by_partner_nlp.csv').write_text(
+            'group_uid\ng1\n', encoding='utf-8')
+        (run / 'report.html').write_text('<p>report</p>', encoding='utf-8')
+        (run / 'run.json').write_text(json.dumps({
+            'timestamp': '2026-01-01T00:00:00', 'stem': 'x',
+            'stages': ['measures'], 'n_messages': 1, 'levels': {'group': 1},
+            'failed_stage': None}), encoding='utf-8')
+        return run
+
+    def test_every_link_on_a_run_detail_page_is_reachable(self):
+        """They were written to the root, where in library mode nothing of
+        this study is served: each one answered 404."""
+        import re
+
+        self._archived_run()
+        response, body = self.get(
+            '/experiment/first-study/run/2026-01-01_000000')
+        self.assertEqual(response.status, 200)
+
+        links = re.findall(r'(?:href|src)="([^"]*runs/[^"]*)"', body)
+        self.assertTrue(links, 'the run detail page offered no files at all')
+        for link in links:
+            with self.subTest(link=link):
+                self.assertTrue(
+                    link.startswith('/experiment/first-study/'),
+                    f'{link} does not name the study it belongs to')
+                self.assertEqual(self.get(link)[0].status, 200)
+
+    def test_a_run_file_is_served_from_its_own_study(self):
+        """Not from whichever folder the process happened to start in."""
+        self._archived_run()
+        response, body = self.get(
+            '/experiment/first-study/runs/2026-01-01_000000'
+            '/datasets/x_chat_by_partner_nlp.csv')
+        self.assertEqual(response.status, 200)
+        self.assertIn('g1', body)
 
 
 class MappingRoutesTests(unittest.TestCase):
@@ -927,6 +1010,46 @@ class MappingRoutesTests(unittest.TestCase):
         self.assertIn('Saved 2 names', body)
         self.assertEqual(self.config().treatments,
                          {'ctrl': 'Control', 'treat': 'Treated'})
+
+
+class VendoredAssetTests(unittest.TestCase):
+    """The one file in static/ that is not ours.
+
+    The filename carries no version, so which htmx a release shipped could only
+    be learnt by reading minified source — and nothing would have noticed the
+    file being swapped by an editor's "save all" or a bad merge.
+    """
+
+    EXPECTED = 'e209dda5c8235479f3166defc7750e1dbcd5a5c1808b7792fc2e6733768fb447'
+    VERSION = '2.0.4'
+
+    def path(self):
+        return (PROJECT_ROOT / 'src' / 'chatlens' / 'web' / 'static'
+                / 'htmx.min.js')
+
+    def test_it_is_the_version_we_wrote_down(self):
+        import hashlib
+
+        digest = hashlib.sha256(self.path().read_bytes()).hexdigest()
+        self.assertEqual(
+            digest, self.EXPECTED,
+            'htmx.min.js is not the file this release was tested against. If '
+            'the change was deliberate, update VENDORED.md and this test '
+            'together.')
+
+    def test_the_note_says_which_version(self):
+        note = (self.path().parent / 'VENDORED.md').read_text(encoding='utf-8')
+        self.assertIn(self.VERSION, note)
+        self.assertIn(self.EXPECTED, note)
+
+    def test_nothing_else_in_static_is_unaccounted_for(self):
+        """A new file in here is either ours or somebody else's, and the note
+        has to say which."""
+        ours = {'style.css', 'app.js', 'theme.js', 'VENDORED.md'}
+        theirs = {'htmx.min.js'}
+        present = {p.name for p in self.path().parent.iterdir()
+                   if p.is_file() and not p.name.startswith('.')}
+        self.assertEqual(present - ours - theirs, set())
 
 
 if __name__ == '__main__':

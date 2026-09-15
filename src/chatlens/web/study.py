@@ -32,6 +32,22 @@ def _merged_exists() -> bool:
         return False
 
 
+def _last_run_failed() -> str:
+    """Which stage the most recent run did not finish, or ''.
+
+    Read from the archive rather than from the files: a dataset written by a run
+    whose topic stage failed looks exactly like one written by a run that never
+    asked for topics.
+    """
+    from chatlens.core import archive, config
+
+    try:
+        runs = archive.list_runs(config.OUTPUT_DIR)
+    except OSError:
+        return ''
+    return str(runs[0].get('failed_stage') or '') if runs else ''
+
+
 def step_state(experiment) -> dict:
     """Each step of the study's life, in the state it is really in.
 
@@ -61,6 +77,13 @@ def step_state(experiment) -> dict:
         'run': ui.DONE if has_run else ui.TODO,
         'findings': ui.DONE if has_run else ui.TODO,
     }
+    # A run that stopped part-way is not a finished step. The datasets exist, so
+    # the spine said "done" and the reader had no way of knowing the topic
+    # columns were missing from everything downstream.
+    incomplete = _last_run_failed()
+    if has_run and incomplete:
+        state['run'] = (ui.BLOCKED,
+                        f'the last run did not finish: {incomplete}')
     if not ready:
         because = f'{missing} still missing'
         state['columns'] = (ui.BLOCKED, 'the files come first')
@@ -137,9 +160,16 @@ def verdicts() -> dict:
     if problem or not scored:
         return found
 
+    from chatlens.core import compare
+
     volume = scored.get('volume')
+    # The register's note says what a block *adds* to length, which is what the
+    # table now measures. A difference whose interval covers both nothing and
+    # something is `open`: it is a question this sample did not settle, and
+    # marking it as a no claimed an answer.
     by_kind = {row['kind']: row for row in scored['results']}
-    for key, kind in (('words', 'words'), ('narratives', 'narratives')):
+    for key, kind in (('words', 'words'), ('narratives', 'narratives'),
+                      ('emotions', 'emotions')):
         row = by_kind.get(kind)
         if row is None:
             continue
@@ -149,21 +179,28 @@ def verdicts() -> dict:
             # is open, with the reason as its note.
             found[key] = (ui.OPEN if row.get('answered') else ui.UNAVAILABLE,
                           row.get('why', ''))
-        elif row['beats_volume']:
-            found[key] = (ui.YES, f'{row["auc"]:.3f} against {volume:.3f}')
+            continue
+        margin = f'{row["delta"]:+.3f} on top of {volume:.3f}'
+        if row.get('verdict') == compare.YES:
+            found[key] = (ui.YES, f'adds {margin}')
+        elif row.get('verdict') == compare.NO:
+            found[key] = (ui.NO, f'adds nothing to {volume:.3f} for length')
         else:
-            found[key] = (ui.NO, f'{row["auc"]:.3f} against {volume:.3f} '
-                                 f'for length')
+            found[key] = (ui.OPEN, f'{margin}, too close to call')
 
-    winners = [r for r in scored['results']
-               if r['kind'] != 'volume' and r.get('beats_volume')]
-    scorable = [r for r in scored['results'] if r['auc'] is not None]
-    if scorable:
-        best = max(scorable, key=lambda r: r['auc'])
+    content = [r for r in scored['results']
+               if r['kind'] != 'volume' and r.get('delta') is not None]
+    winners = [r for r in content if r.get('verdict') == compare.YES]
+    unsure = [r for r in content if r.get('verdict') == compare.UNCLEAR]
+    if winners:
+        best = max(winners, key=lambda r: r['delta'])
         found['compare'] = (
-            (ui.YES, f'{best["name"].lower()} does best at {best["auc"]:.3f}')
-            if winners else
-            (ui.NO, f'nothing beats length at {volume:.3f}'))
+            ui.YES, f'{best["name"].lower()} adds {best["delta"]:+.3f}')
+    elif unsure:
+        found['compare'] = (
+            ui.OPEN, f'{len(unsure)} too close to call against {volume:.3f}')
+    elif content:
+        found['compare'] = (ui.NO, f'nothing adds to length at {volume:.3f}')
     return found
 
 

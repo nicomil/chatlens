@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import threading
-
-from chatlens.web import ui
+from chatlens.web import active, pagecache, ui
 from chatlens.core import optional, words
 
 REQUIREMENTS = [
@@ -30,10 +28,10 @@ REQUIREMENTS = [
 
 # One fit serves the page and both images, which otherwise arrive as three
 # separate requests and pay for the same model three times. Keyed on everything
-# that changes the answer, and holding one entry: this is a local tool with one
-# user, and a cache that grows is a cache that has to be managed.
-_CACHE = {}
-_LOCK = threading.Lock()
+# that changes the answer — the study included, see `active.scope()` — and
+# holding a few entries rather than one, so moving between two studies does not
+# refit both on every move.
+_CACHE = pagecache.Cache()
 
 
 _e = ui.esc
@@ -85,7 +83,7 @@ def _dataset():
     if not declared:
         return None, None, 'no outcome'
     suffix = f'_{outcome_module.DATASET_OF[declared["unit"]]}_nlp.csv'
-    path = views_participation._latest(config.DATASETS_DIR, suffix)
+    path = views_participation._latest(active.datasets_dir(), suffix)
     if path is None:
         return None, declared, 'no dataset'
     return views_participation._read(path), declared, ''
@@ -102,17 +100,18 @@ def result(query):
     if text_column is None:
         return None, declared, 'no text column', params
 
-    key = (tuple(sorted(params.items())), declared['column'], declared['unit'])
-    with _LOCK:
-        if _CACHE.get('key') == key:
-            return _CACHE['value'], declared, '', params
+    # The study is part of the key, not only the settings: see
+    # `active.scope()` for what sharing an entry between two experiments did.
+    key = (active.scope(), tuple(sorted(params.items())), declared['column'],
+           declared['unit'])
+    remembered = _CACHE.get(key)
+    if remembered is not None:
+        return remembered, declared, '', params
     try:
         value = words.fit(rows, text_column, declared['column'], **params)
     except ValueError as exc:
         return None, declared, str(exc), params
-    with _LOCK:
-        _CACHE.clear()
-        _CACHE.update(key=key, value=value)
+    _CACHE.put(key, value)
     return value, declared, '', params
 
 

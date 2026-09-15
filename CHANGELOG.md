@@ -8,6 +8,97 @@ Notable changes to chatlens. The format follows
 
 ### Added
 
+- **`[sample] sessions`: the experimenter names the sessions that are the
+  study.** Everything else in the export — pilots, internal tests, sessions
+  launched without the recruitment parameter — is left out and counted under its
+  own reason. It replaces a rule that only happened to be right: the missing
+  Prolific label coincided with the test sessions on the coalition collection,
+  and on that collection the declared list gives a merge identical byte for byte
+  to the one before it. A session in the list that the export does not contain
+  stops the merge, since it is either a typo or the wrong export.
+- **Every block of measures as regressors, for the logit and for a LASSO.** The
+  text analysis in these papers is exploratory: it supplies covariates, and the
+  experimenter chooses, standardises and penalises them in Stata. So each
+  study's `stata/` folder now carries two files. `goodshape` is the 111
+  experimental columns followed by all the measures as raw values — the
+  standardised copies left out — together with the relations, the NRC emotions,
+  one indicator per topic, and a 1-4 ordinal version of every category share
+  (1 absent, then the thirds of the rows where it occurs, with the cut points
+  in the codebook). `complete` adds the bag of words: unigrams and bigrams as
+  raw counts of what the focal participant sent, one column per term in at least
+  ten documents of the study (`--bow-min-documents`), bigrams never spanning two
+  messages. About 1 250 columns on one study, which opens in every edition of
+  Stata.
+
+- **A sample selector in the dashboard**, for an experiment that declares more
+  than one study. It sits in the masthead because it applies to every findings
+  page at once, and each page then reads that study's own tables — the same
+  figures, the same terms, the same verdicts, computed on that sample. On the
+  collection this was built for the participation grid goes from 531 groups
+  pooled to 355 and 356, which is the number every interval in either paper
+  rests on. The chosen sample is part of the key each page caches under, so
+  moving between the two does not serve one study's model under the other's
+  name, and a study whose tables have not been built yet is shown with a line
+  saying what is on screen is still the pooled sample.
+- **`core/tokens.py`: one definition of a word.** Two token sets, named and
+  documented: `words`, which is letters and internal apostrophes, for every
+  dictionary measure, and `terms`, which admits digits, for the bag of words.
+  Four modules had four regular expressions before, so the same message could
+  be 40 words on one page and 42 on another.
+- **A count of what is identifying in the messages themselves.** Pseudonymising
+  rewrites the identifier columns and the module has always said that this does
+  not make a dataset anonymous, because people write their addresses and their
+  phone numbers into a chat window. The bundle manifest now carries a count of
+  what a pattern can find — addresses, links, long numbers, handles — so an
+  ethics submission has a figure instead of "some risk", with the stated limit
+  that no pattern finds a name.
+- **A notice when the corpus is not in English.** Every dictionary here is an
+  English word list, which was said in one comment in one module. The share of
+  function words is the check, and below a quarter the pages say the numbers
+  below are not measuring what their labels claim.
+- **`topics-legacy`, an extra for the environment TopicGPT wants.** Its
+  requirements pin `openai<2`, `anthropic<1` and `numpy<2`, so installing it
+  into a shared interpreter pulls all three back; the pin is now a declared
+  state with a documented alternative, which is a second virtual environment for
+  the topic stage alone.
+- **A weekly CI job that installs RELATIO and extracts with it.** The suites
+  mock the package away or skip themselves, so the path that needs 1.6 GB of
+  torch and transformers — and the one a dependency clash breaks first — had
+  never run. `tests/relatio_smoke.py` is the same check by hand.
+- **`static/VENDORED.md`**, recording the one file in the static folder that is
+  not ours, with its version and its SHA-256, and a test that checks the hash.
+  The filename carries no version, so the only way to know which htmx was in a
+  release was to read the minified source.
+
+- **`[[studies]]`, and `chatlens studies`: two papers out of one collection.**
+  A 2x2 with one cell not run supports two comparisons — baseline against each
+  of the other arms — and those are two samples, so two replication packages.
+  The reason it is not cosmetic is that the standardised language indices are
+  computed over the sample by design: on the collection this was built for, the
+  same baseline participant has a Clout of 59.8 in one study and 68.9 in the
+  other, off an identical raw score. So each study gets the measures stage
+  re-applied to its own rows — which is what recomputes those columns — with the
+  rubric ratings and the topics copied across from the pooled run rather than
+  paid for again. The datasets land in `output/studies/<slug>/`, deliberately
+  not beside the pooled ones: `01_prepare.do` finds its input by globbing
+  `output/datasets/` and aborts when the glob matches more than one file. A
+  `study.json` records what the sample was, because every interval in the paper
+  follows from that count.
+- **The experiment's own Stata layout**, for the collection that has one. The
+  111 columns the experimenter's do-files are written against, under his names
+  rather than the ones `chatlens tables` derives mechanically, with the
+  resolved-choice and dyadic-chat columns computed the way he computes them and
+  our measures appended. Verified column by column against his file: 110 of the
+  111 identical on every row of both studies, the one difference being the
+  transcript, which stays in the form every page and every measure here reads. A
+  `.dta` is written beside the CSV when pandas is installed, with the variable
+  labels and the transcript as `strL`; the CSV is what the do-files read, and a
+  `.dta` that cannot be written is not an error.
+- **`first_sender_id_in_group`**, among the measures of every unit: who opened
+  the conversation. At the pair level it is the first mover, a choice that
+  nothing else in the output records — the counts say how much each person
+  wrote, never who began.
+
 - **`chatlens tables`: every measure in one table per unit, for Stata and R.**
   The two datasets again, with the relations and the NRC emotions added — the
   two findings computed by their pages that never reached a file — every
@@ -46,6 +137,170 @@ Notable changes to chatlens. The format follows
 
 ### Fixed
 
+- **The comparison could call an effect the design cannot see.** A block was
+  held to a fixed 0.02 of AUC, and on one study of 355 groups the interval
+  cannot tell 0.02 from zero. The bar is now the larger of 0.02 and the smallest
+  difference this design can observe — the half-width of the block's interval —
+  shown in its own column, so an effect below what the sample can resolve is
+  not considered.
+
+- **The comparison fitted its vocabulary on the rows it then scored.** The term
+  matrix and the scaler were built once, over every row, and only then split
+  into folds, so each fold's model had seen the test rows' vocabulary and their
+  means. Everything that learns from the data now sits in a pipeline fitted
+  inside the fold. Measured on the real corpus the difference this makes is
+  below the noise — the selection steps are unsupervised, so the leak is real
+  but small — which is worth saying plainly: the reason to fix it is that a
+  replication package has to be defensible line by line, not that the number
+  moved.
+- **The comparison answered the wrong question.** It ranked representations
+  against each other, when what a paper needs to know is whether a
+  representation adds anything to knowing how much was written. Each block is
+  now fitted **beside** `log(words + 1)` rather than instead of it, and the
+  table reports the paired per-fold difference with a 95% interval, the standard
+  error corrected for the overlap between cross-validation folds after Nadeau
+  and Bengio (2003), Holm's step-down across the blocks, and a three-state
+  verdict — adds something, adds nothing, too close to call. The third state is
+  the commonest on a few hundred groups and had no way of being said before. On
+  one study rather than the pooled collection the smallest difference either
+  paper can resolve is about 0.040 of AUC, against 0.030 pooled; the 0.02 the
+  page used as its bar is too permissive for both.
+- **The Anthropic rubric could not run on the version of the SDK the project
+  asked for.** It is built on `client.messages.parse` with an output schema, a
+  call that arrived in `anthropic` 0.77.0, and `pyproject.toml` declared
+  `>=0.40,<1` — a floor left behind from when the module used `messages.create`.
+  So an environment could satisfy every declared dependency and still fail with
+  an `AttributeError` on the first call of a paid run. It is not hypothetical:
+  the project's own virtual environment happens to hold 0.125.0 and is fine,
+  while a second interpreter on the same machine resolved to 0.69.0, where the
+  method does not exist. The floor is now the version that introduced the call,
+  the upper bound is `<2` after checking that 1.0.0 still has it, `chatlens
+  status` says so in words when something has put an older one back, and the
+  preflight that exists to fail before spending checks it too.
+- **One execution log for every experiment.** The runner was a single global,
+  and with it the log, the Stop button and the refusal "a run is already in
+  progress": a run started on one study showed its log on another study's page,
+  and that page could not start anything. There is a runner per workspace now,
+  and a page whose experiment is idle while another is busy says which one is
+  busy.
+- **A page for a second experiment could wait for ever.** The guard that keeps
+  two experiments from sharing the module state waited without a timeout, so a
+  page that computes for minutes — and the other study's log, polling once a
+  second — held a second tab with no page, no message and nothing to distinguish
+  waiting from broken. It waits ten seconds and then answers 503 with a sentence
+  saying which study is computing.
+- **A silent standardisation of a single unit.** With fewer than two units the
+  z-score is not defined, and the columns were written as 0 and 50 — a value
+  that reads like a measurement. They are left empty now, and a sample with two
+  or more units that genuinely has no variation still gets 0 and 50, which is
+  what that means.
+- **A report of a failed run read as a complete one.** The stage that failed was
+  recorded in `run.json` and nowhere the reader looks, so a report missing its
+  topic columns looked like a study without topics. Both renderings now open
+  with what did not finish.
+- **The archive extracted a shared study without a filter or a ceiling.** The
+  tar member filter that refuses absolute paths and links is now explicit rather
+  than left to the Python version's default, and the sum of the declared member
+  sizes is checked before anything is written.
+- **An upload could overwrite a file, or land while a run was reading it.** The
+  first keeps a `.replaced` copy of what was there; the second is refused while
+  a run is in progress, with the reason.
+- **The spending confirmation never appeared in the dashboard.** It asks on a
+  terminal, and in the dashboard's subprocess there is no terminal, so every run
+  under the refusal ceiling started without asking. The page asks before
+  starting, with the estimate and what it is made of.
+- **"Run: done" on a run that failed.** The spine looked for a dataset, not for
+  how the last run ended.
+- **"Appears after the first run"** where the estimate of paid calls should be:
+  it read the run archive, and the counts it needs are in the merge.
+- **The words page's CSV called `C` a penalty.** It is scikit-learn's inverse of
+  one, so a reader rebuilding the model in R or Stata from that column had it
+  backwards. The column is named for what it holds.
+- **Two documents describing the same run, each missing half of it.** The static
+  report knew the coverage, the treatments and the data-quality notes and none
+  of the findings; the findings export knew the findings and nothing about what
+  they were computed on. The export now opens with the sample it rests on.
+- **Accessibility of the explanations and the figures.** The hover tips were
+  invisible to a screen reader — they are `aria-describedby` now — the word
+  clouds carried `role="img"` with no accessible name, and the five-step spine
+  did not fold at the narrow breakpoint, so the first thing on a small screen
+  was a row that would not fit.
+- Extra headers that cost nothing and close the gap between "this page never
+  uses the camera" and "the browser will not let it": `Permissions-Policy`,
+  `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`.
+
+- **`median_gap_seconds` was not the median.** With an even number of gaps
+  between turns it returned the upper of the two middle values, so a pair with
+  gaps of ten and twenty seconds was reported as twenty. It is
+  `statistics.median` now, the same function the corpus page already used, so a
+  figure on a page and the same figure in a dataset agree.
+- **A study's findings could be another study's.** The words, relations and
+  comparison pages each remember their last result, and the key said what the
+  analysis depends on — the outcome column, the unit, the entities, the knobs —
+  and nothing about which study it came from. Two experiments configured alike,
+  which is what copying one to try a variation produces, shared one entry: the
+  second opened was served the first one's model, figures, AUC and verdicts,
+  with nothing on screen to say so. The register's ✓ and ✗ read from the same
+  cache.
+- **Every file of an archived run answered 404** in the library, the report
+  included: the links were written to the root, where what is served is
+  whichever folder the dashboard process was started in and not the study.
+- **The comparison page died on an outcome declared per person.** It chose the
+  file by the outcome's unit and then indexed its rows by a column only the
+  directed-pair table has, so the request ended in a traceback on the server
+  and nothing in the browser. The paragraph it opens with also read the outcome
+  by comparing strings to "0" and "1", so on the yes/no column a roster
+  exported from a spreadsheet carries, it silently showed nothing.
+- **The multiple-testing correction was half a correction.** Benjamini-Hochberg
+  adjusts a p-value to `p × m / rank` and then pulls each one down to the
+  smallest such value at or above its rank; only the first step was there, so
+  the q-values were not monotone and a relation could be reported as weaker
+  than one it dominates. On a family of five the smallest p came out at .005
+  where the method gives .0028, and the count of survivors inherited it.
+- **One-letter words never reached the model.** scikit-learn's default token
+  pattern requires two characters, so "i" and "u" were dropped from the bag of
+  words before it was fitted — in a game about who supports whom, the two words
+  that say who. The dictionary measures have always counted them, so two parts
+  of the tool disagreed about what a word is.
+- **The transcript cleaner cut every line at its first colon**, whatever stood
+  before it, and it is applied to plain message columns as well as to
+  transcripts: `"ratio is 2:1 and i think: yes"` became `"1 and i think: yes"`,
+  so a bargaining corpus lost the words before every number it argued about.
+  Only a real `Yellow -> Orange:` prefix is removed now.
+- **The theme was forgotten on every reload.** It was applied by an inline
+  script, which the content security policy this server sends refuses — the
+  policy working as written against a page that had not been told. It is a file
+  now, still loaded before the first paint, so there is no flash either.
+- **Relations went untested where there was no text to count.** With no
+  transcript column the length control was passed a function returning zero for
+  every row: log words was a constant, every design was singular, every fit
+  raised and was skipped, and the page reported that nothing had been frequent
+  enough to test — a claim about the corpus, made when no model had been fitted.
+  The control is now left out and its absence is stated beside the table.
+- An experiment whose name ran past 64 characters on a word boundary got a slug
+  ending in a dash, which `path_for` then refused: the study `create` had just
+  written could not be opened.
+- The table the pages describe was chosen by modification time on every
+  experiment that is not the oTree one, because the stem lookup asked for an
+  input role only that adapter has and the failure was swallowed. So a pilot
+  merged in August could be described as the current study.
+- A run in the list could be reached from the keyboard but not opened with it:
+  the row said `role="button"` and htmx was listening for a click alone.
+- "Check again" on the relations page could not change its answer. Two things
+  remember that RELATIO is missing — the import outcome, kept for the life of
+  the process, and the import machinery's directory cache — and neither was
+  cleared, so somebody who had just run the command the page printed was told
+  to run it again.
+- The rubric's judge models and TopicGPT's were listed twice each, once as the
+  dropdown and once as the runner's allow-list, kept in step by hand: a model
+  added to one alone either never appeared or was dropped from the command
+  without a word. Each list now has one home.
+- Dictionary entries that no tokeniser in the project can produce — `"'m"`,
+  `"'re"`, `"n't"` — were listed as if they counted. The whole forms beside
+  them are what does the work.
+- `ui.table` took a `sortable` flag that added a class name no script looked
+  for and no stylesheet styled, so the only thing it could do was promise a
+  reader the headings were clickable.
 - **The spending guard was not guarding.** `check` decided whether to refuse
   after it had already returned, so a ceiling below the confirmation threshold
   never applied: `--max-calls 10` let a run of nine hundred calls through, and
