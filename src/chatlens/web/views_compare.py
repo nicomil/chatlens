@@ -12,6 +12,9 @@ _CACHE = pagecache.Cache()
 
 _e = ui.esc
 
+# See `ui.finding`'s `method` parameter.
+METHOD = 'Nested models, paired AUC, Nadeau-Bengio correction'
+
 
 def _participation_line(name: str) -> str:
     """The strongest result is often not in the text, and belongs at the top.
@@ -245,6 +248,7 @@ def panel(name: str) -> str:
         'Which representation of the text is worth using?',
         answer,
         verdict=verdict,
+        method=METHOD,
         evidence=_participation_line(name) + sample + table,
         detail=f'<p>{_e(compare.verdict(scored))}</p>',
         how_to_read=_reading())
@@ -256,6 +260,7 @@ def _cannot(name: str, problem: str) -> str:
     if problem == 'no outcome':
         return ui.finding(
             question, 'Not yet: nothing has been declared to explain.',
+            method=METHOD,
             evidence=ui.blocked(
                 'This finding needs an outcome',
                 'Every representation here is scored on how well it separates '
@@ -265,6 +270,7 @@ def _cannot(name: str, problem: str) -> str:
     if problem == 'not binary':
         return ui.finding(
             question, 'Not with this outcome.',
+            method=METHOD,
             evidence=ui.blocked(
                 'This finding needs a yes/no outcome',
                 'It compares how well each representation separates two '
@@ -275,6 +281,7 @@ def _cannot(name: str, problem: str) -> str:
             'words', ['scikit-learn', 'matplotlib', 'wordcloud'])
         return ui.finding(
             question, 'Not on this machine yet.',
+            method=METHOD,
             evidence=ui.blocked(
                 'This finding needs scikit-learn',
                 'The models are fitted with it. Nothing is installed on your '
@@ -285,12 +292,13 @@ def _cannot(name: str, problem: str) -> str:
     if problem == 'no dataset':
         return ui.finding(
             question, 'Not yet: nothing has been measured.',
+            method=METHOD,
             evidence=ui.blocked(
                 'This finding needs a run',
                 'It reads the dataset the measures stage writes. Run the '
                 'analysis once — the free preset is enough.',
                 retry=f'/experiment/{_e(name)}/step/run'))
-    return ui.finding(question, 'Something is in the way.',
+    return ui.finding(question, 'Something is in the way.', method=METHOD,
                       evidence=ui.notice(_e(problem), 'bad'))
 
 

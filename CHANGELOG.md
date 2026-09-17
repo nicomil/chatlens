@@ -8,6 +8,21 @@ Notable changes to chatlens. The format follows
 
 ### Added
 
+- **A technical name under every finding's question**, and a glossary in the
+  register itself. Every title in the dashboard has always been a
+  plain-English question — "Which words go with X?", never "run a
+  bag-of-words model" — which is right for a reader who does not know what to
+  call the thing they want, and left one who already does with nowhere to
+  search: the phrase "bag of words" appeared in no title anywhere in the
+  project, nor did "RELATIO" or "NRC". `ui.finding()` takes an optional
+  `method=` now, printed once under the question, and the register carries a
+  standing "Looking for a method by name" disclosure that also points rubric
+  and topics — which have no page of their own yet — at the run's report
+  instead of leaving them unmentioned.
+- **A link to the illustrated guide from inside the running app.** It existed
+  only as a file (`GUIDE.md`, published at
+  `nicomil.github.io/chatlens/guide/`) that a reader had to already know to
+  look for; the masthead now carries a link to it, next to the theme toggle.
 - **`[sample] sessions`: the experimenter names the sessions that are the
   study.** Everything else in the export — pilots, internal tests, sessions
   launched without the recruitment parameter — is left out and counted under its
@@ -137,6 +152,15 @@ Notable changes to chatlens. The format follows
 
 ### Fixed
 
+- **A definite "no" jumped above the orientation pages a moment after the
+  study loaded.** The register sorts by verdict, and it used to put "no"
+  right after "yes" — fine for a register that already has its verdicts, but
+  this one fills in *after* the page has painted: a reader lands on a fresh
+  study, sees "What was said" and "Who spoke to whom" first, and a second
+  later two crossed-out entries jump above both of them because two blocks on
+  this corpus came back negative. A "no" still outranks a question nothing
+  has settled, so it is not pushed to the very end; it can no longer leapfrog
+  the two pages a first-time reader has not reached yet.
 - **The comparison could call an effect the design cannot see.** A block was
   held to a fixed 0.02 of AUC, and on one study of 355 groups the interval
   cannot tell 0.02 from zero. The bar is now the larger of 0.02 and the smallest

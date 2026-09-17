@@ -138,8 +138,19 @@ def register(slug: str, findings, current: str = '', refresh: str = '') -> str:
     `refresh` is where the same list, with its verdicts worked out, will come
     from. The verdicts are the point of the register and they are expensive, so
     the list arrives at once and fills in rather than holding the page.
+
+    A definite "no" sits with the still-open questions, not between "yes" and
+    them. It used to come second, right after "yes" — which reads fine on a
+    register that already has verdicts, but this one fills in *after* the
+    page has painted: the reader loads a fresh study, sees "What was said"
+    and "Who spoke to whom" first, and a second later two crossed-out entries
+    — "adds nothing to length" — jump above both of them, because on this
+    corpus two blocks came back negative. A definite no still belongs ahead of
+    an unanswerable question, so it is not pushed to the very end; it is only
+    no longer allowed to leapfrog the orientation pages a first-time reader
+    has not gotten to yet.
     """
-    order = {YES: 0, NO: 1, OPEN: 2, UNAVAILABLE: 3}
+    order = {YES: 0, OPEN: 1, NO: 2, UNAVAILABLE: 3}
     rows = []
     for finding in sorted(findings, key=lambda f: (order.get(f['verdict'], 9),
                                                    f.get('order', 0))):
@@ -168,7 +179,46 @@ def register(slug: str, findings, current: str = '', refresh: str = '') -> str:
            f'page</span></span></a>') if slug else ''
     return (f'<aside class="register" aria-label="What this study can answer"'
             f'{arriving}>'
-            f'<h2>Findings</h2>{"".join(rows)}{out}</aside>')
+            f'<h2>Findings</h2>{"".join(rows)}{out}{_glossary(slug)}</aside>')
+
+
+def _glossary(slug: str) -> str:
+    """The technique's name, for a reader who arrived already knowing it.
+
+    Every title in this register is a plain-English question — "Which words
+    go with X?", never "run a bag-of-words model" — which is right for a
+    reader who does not yet know what to call the thing they want, and wrong
+    for one who does: nothing on this page contains the phrase "bag of
+    words", or "RELATIO", or "NRC", so a search for any of them by name comes
+    back empty even while standing on the right page. One static list, so a
+    search finds it regardless of which page is open.
+
+    Rubric and topics point at the run's static report rather than at an entry
+    here: they have no page of their own in this register yet, and saying so
+    plainly beats pretending the six entries above are the whole of what a
+    paid run computed.
+    """
+    def link(href: str, label: str) -> str:
+        return f'<a href="{href}">{esc(label)}</a>' if slug else esc(label)
+
+    report_href = f'/experiment/{esc(slug)}/report.html'
+    finding_href = lambda entry_id: f'/experiment/{esc(slug)}/findings/{entry_id}'
+
+    rows = (
+        ('Bag of words', link(finding_href('words'), 'The words')),
+        ('RELATIO, relation extraction',
+         link(finding_href('narratives'), 'The relations')),
+        ('NRC Emotion Lexicon', link(finding_href('emotions'), 'The emotions')),
+        ('Nested models, AUC comparison',
+         link(finding_href('compare'), 'Which representation to trust')),
+        ('Rubric (LLM judge)', link(report_href, "the run's report")),
+        ('TopicGPT', link(report_href, "the run's report")),
+    )
+    items = ''.join(f'<li><b>{esc(term)}</b> — {dest}</li>'
+                    for term, dest in rows)
+    return disclosure(
+        'Looking for a method by name',
+        f'<ul class="glossary">{items}</ul>')
 
 
 # --- the shell -------------------------------------------------------------
@@ -209,6 +259,8 @@ def shell(title: str, canvas: str, *, slug: str = '', study: str = '',
   <a class="brand" href="/">chatlens</a>
   {f'<span class="study">{esc(study)}</span>' if study else ''}
   {selector}
+  <a class="guidelink" href="https://nicomil.github.io/chatlens/guide/"
+     target="_blank" rel="noopener">Guide</a>
   <button type="button" class="themetoggle" id="themetoggle"
           aria-label="Switch between the light and the dark theme"
           title="Light or dark">◐</button>
@@ -229,7 +281,7 @@ def shell(title: str, canvas: str, *, slug: str = '', study: str = '',
 
 def finding(question: str, answer: str, *, evidence: str = '',
             detail: str = '', how_to_read: str = '', controls: str = '',
-            verdict: str = OPEN) -> str:
+            verdict: str = OPEN, method: str = '') -> str:
     """Question, answer, evidence, detail, how to read it — in that order.
 
     The order is the argument. Every one of these screens used to open with a
@@ -237,12 +289,25 @@ def finding(question: str, answer: str, *, evidence: str = '',
     answer in a grey sentence halfway down. The answer is the largest text on
     the screen now, and the reasoning is one click away rather than in front of
     it.
+
+    `method` is the technical name of what the page is actually doing — "bag
+    of words", "RELATIO", "the NRC Emotion Lexicon" — printed once, small,
+    under the question. Every title in this project is a plain-English
+    question by design, on purpose, for a reader who does not yet know what to
+    call the thing they want: nobody arrives asking for "a penalised logistic
+    regression over unigrams and bigrams". But it means a reader who *does*
+    already know the name — because a colleague used it, because a method
+    section has to cite it — cannot find it anywhere on the page: the phrase
+    "bag of words" appears in no title in this codebase. `method` is that
+    bridge, and only that: it changes no computation and nothing below it.
     """
     parts = [
         f'<div class="finding {esc(verdict)}">',
         f'<h1 class="question">{esc(question)}</h1>',
-        f'<p class="answer">{answer}</p>',
     ]
+    if method:
+        parts.append(f'<p class="method-tag muted">{esc(method)}</p>')
+    parts.append(f'<p class="answer">{answer}</p>')
     if controls:
         parts.append(f'<div class="controls">{controls}</div>')
     if evidence:

@@ -124,22 +124,26 @@ def _bars(rows) -> str:
 
 QUESTION = 'What emotional content is in these conversations?'
 
+# See `ui.finding`'s `method` parameter.
+METHOD = 'NRC Emotion Lexicon'
+
 
 def panel() -> str:
     if not nrc.available():
         return ui.finding(
-            QUESTION, 'Not without the word list.',
+            QUESTION, 'Not without the word list.', method=METHOD,
             evidence=_missing_panel())
     try:
         marked = nrc.load()
     except (OSError, ValueError) as exc:
         return ui.finding(QUESTION, 'The word list could not be read.',
-                          evidence=ui.notice(_e(exc), 'bad'))
+                          method=METHOD, evidence=ui.notice(_e(exc), 'bad'))
 
     texts, source = _texts_and_source()
     if not texts:
         return ui.finding(
             QUESTION, 'Not yet: there are no documents to score.',
+            method=METHOD,
             evidence=ui.blocked(
                 'This finding needs a run',
                 'It scores the documents the measures stage writes. That '
@@ -209,6 +213,7 @@ measured would look uniformly unemotional.</p>'''
     return ui.finding(
         QUESTION,
         answer,
+        method=METHOD,
         evidence=provenance + tiles + caveat + contain,
         detail=where,
         how_to_read='''<p>Eight emotions and two sentiments, from a word list.

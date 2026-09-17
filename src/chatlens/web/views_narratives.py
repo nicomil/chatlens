@@ -202,6 +202,9 @@ SHOWN = 12
 
 QUESTION = 'Read as who does what to whom, what was said — and what matters?'
 
+# See `ui.finding`'s `method` parameter.
+METHOD = 'RELATIO: subject-verb-object extraction'
+
 
 def panel(name: str, query=None) -> str:
     """The finding, and — on "Check again" — a fresh look for the package.
@@ -228,6 +231,7 @@ def panel(name: str, query=None) -> str:
     if not experiment.narrative_entities:
         return ui.finding(
             QUESTION, 'Not yet: no entities have been declared.',
+            method=METHOD,
             controls=controls,
             evidence=ui.blocked(
                 'This finding needs the words that name someone',
@@ -241,6 +245,7 @@ def panel(name: str, query=None) -> str:
     if problem == 'no messages':
         return ui.finding(
             QUESTION, 'Not yet: nothing has been merged.',
+            method=METHOD,
             controls=controls,
             evidence=ui.blocked(
                 'This finding needs the merge',
@@ -254,7 +259,7 @@ def panel(name: str, query=None) -> str:
             # what it needs, one command each, not only that it cannot run.
             evidence += _requirements_panel(experiment.narrative_model)
         return ui.finding(QUESTION, 'Something is in the way.',
-                          controls=controls, evidence=evidence)
+                          method=METHOD, controls=controls, evidence=evidence)
     body = ''
 
     common = found['frequencies'].most_common(SHOWN)
@@ -351,6 +356,7 @@ q&nbsp;&lt;&nbsp;0.10.</p>
         QUESTION,
         answer,
         verdict=verdict,
+        method=METHOD,
         controls=controls,
         evidence=body,
         how_to_read='''<p>A relation has a direction, which a word count does

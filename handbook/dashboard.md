@@ -7,6 +7,15 @@ exist for scripting and for the stages that take minutes.
 Each page answers one question, and they are ordered so the cheap and certain
 ones come first.
 
+Every title below is a plain-English question by design — a reader is not
+expected to arrive already knowing what to call the thing they want. If you
+came looking for a method by its own name instead — "bag of words", "RELATIO",
+"NRC" — open **Looking for a method by name** at the bottom of the findings
+list on the left. It also points the two paid stages, the rubric and the
+topics, at the report a run writes: they have no page of their own here yet.
+The **Guide** link in the masthead is the illustrated version of this page,
+screenshot by screenshot, kept in sync with the running interface.
+
 ### Which sample, first of all
 
 When the experiment declares more than one study — see

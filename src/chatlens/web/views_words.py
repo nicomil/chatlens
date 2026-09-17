@@ -36,6 +36,10 @@ _CACHE = pagecache.Cache()
 
 _e = ui.esc
 
+# The name a reader already knows this by, printed once under the question:
+# see `ui.finding`'s `method` parameter for why.
+METHOD = 'Bag of words: unigrams and bigrams, penalised logistic regression'
+
 
 def _params(query) -> dict:
     """The knobs, taken from the query string and forced into range.
@@ -265,6 +269,7 @@ def panel(name: str, query) -> str:
         f'Which words go with {label}?',
         answer,
         verdict=verdict,
+        method=METHOD,
         controls=_controls(name, params),
         evidence=f'{warning}<p class="muted">{summary}</p>{baseline}{clouds}',
         detail=f'<h2>The terms</h2>{table}',
@@ -285,6 +290,7 @@ def _cannot(name: str, problem: str) -> str:
     if problem == 'no outcome':
         return ui.finding(
             question, 'Not yet: nothing has been declared to explain.',
+            method=METHOD,
             evidence=ui.blocked(
                 'This finding needs an outcome',
                 'The terms are chosen by how well they separate one column. '
@@ -293,6 +299,7 @@ def _cannot(name: str, problem: str) -> str:
     if problem == 'no dataset':
         return ui.finding(
             question, 'Not yet: nothing has been measured.',
+            method=METHOD,
             evidence=ui.blocked(
                 'This finding needs a run',
                 'It reads the dataset built for the outcome\'s unit. Run the '
@@ -301,12 +308,13 @@ def _cannot(name: str, problem: str) -> str:
     if problem == 'no text column':
         return ui.finding(
             question, 'Not on this dataset.',
+            method=METHOD,
             evidence=ui.blocked(
                 'This finding needs a column of text',
                 'The dataset built for that unit carries no transcript to '
                 'read.',
                 retry=f'/experiment/{_e(name)}/step/outcome'))
-    return ui.finding(question, 'Something is in the way.',
+    return ui.finding(question, 'Something is in the way.', method=METHOD,
                       evidence=ui.notice(_e(problem), 'bad'))
 
 
@@ -381,6 +389,7 @@ def body(name: str, query=None) -> str:
     waiting = ui.finding(
         f'Which words go with {label}?',
         'Working it out…',
+        method=METHOD,
         evidence=ui.spinner('Fitting the model and drawing the figures…'))
     return (f'<div id="wordpanel"'
             f' hx-get="/experiment/{_e(name)}/findings/words/panel'

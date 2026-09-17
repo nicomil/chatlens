@@ -174,7 +174,18 @@ code { font-family: var(--font-mono); font-size: .88em; }
   color: var(--ink); text-decoration: none; letter-spacing: -.01em;
 }
 .masthead .study { color: var(--muted); font-size: var(--text-sm); }
-.masthead .themetoggle { margin-left: auto; order: 2; }
+.masthead .themetoggle { margin-left: auto; order: 3; }
+/* A way into the illustrated guide from inside the running app, which had
+   none: the guide existed only as a file a reader had to already know to go
+   looking for. Always present, unlike the sample selector, so it needs its
+   own claim on the free space when the selector is not there to make one. */
+.guidelink {
+  margin-left: auto; order: 2; align-self: center;
+  color: var(--muted); font-size: var(--text-sm); text-decoration: none;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+}
+.guidelink:hover { color: var(--accent); border-color: var(--accent); }
 
 /* Which sample the findings are computed on. In the masthead because it applies
    to every page at once, and to the left of the theme toggle because it is
@@ -304,6 +315,9 @@ code { font-family: var(--font-mono); font-size: .88em; }
   border-radius: 0;
 }
 .register .entry.export .mark { color: var(--accent); }
+.register .explain { margin-top: var(--space-4); font-size: var(--text-xs); }
+.register .glossary { margin: 0; padding-left: 1.1em; }
+.register .glossary li { margin-bottom: var(--space-2); }
 
 /* Put together as a document: each finding keeps its shape, with a rule
    between them so the page reads as a sequence rather than as one long
@@ -329,6 +343,12 @@ code { font-family: var(--font-mono); font-size: .88em; }
 .question {
   font-size: var(--text-lg); font-weight: 600; line-height: 1.25;
   margin: 0 0 var(--space-3); max-width: var(--measure); letter-spacing: -.01em;
+}
+/* The name a reader who already knows it would search for — "bag of words",
+   "RELATIO" — printed once beneath the plain-English question so the two are
+   never only one or the other. See `ui.finding`'s `method` parameter. */
+.method-tag {
+  font-size: var(--text-sm); margin: calc(-1 * var(--space-2)) 0 var(--space-4);
 }
 /* The answer is the largest thing on the screen. It used to be a grey sentence
    halfway down, under the controls. */

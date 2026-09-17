@@ -216,6 +216,21 @@ class FindingShapeTests(unittest.TestCase):
                     self.assertIn('class="question"', body, entry)
                     self.assertIn('class="answer"', body, entry)
 
+    def test_each_finding_names_its_method_even_when_it_cannot_answer(self):
+        """A reader who already knows the technique's name — "bag of
+        words", "RELATIO" — cannot find it anywhere, on any page, because
+        every title here is a plain-English question by design. `method=`
+        is the one place the name is actually printed, and it has to survive
+        every blocked state too: a bare study with nothing declared yet is
+        the commonest state there is."""
+        expected = {'words': 'bag of words', 'narratives': 'relatio',
+                   'emotions': 'nrc', 'compare': 'nadeau-bengio'}
+        with active.experiment('bare-study'):
+            bodies = self._bodies()
+            for entry, needle in expected.items():
+                with self.subTest(finding=entry):
+                    self.assertIn(needle, bodies[entry]().lower())
+
     def test_a_panel_is_the_computed_thing_not_the_placeholder(self):
         """A panel request is the fill-in. Answering it with the same
         placeholder the page already showed leaves the screen saying "Working
@@ -249,6 +264,62 @@ class FindingShapeTests(unittest.TestCase):
         ])
         self.assertIn('entry no', markup)
         self.assertNotIn('entry bad', markup)
+
+    def test_a_no_does_not_leapfrog_the_orientation_pages(self):
+        """It used to sort second, right after `yes` — so on a study where
+        Words and Emotions come back negative, those two entries jumped above
+        `What was said` and `Who spoke to whom` a moment after the page had
+        already painted them in the right order, because the register's
+        async refresh reorders by verdict. A `no` is still an answer, so it
+        stays ahead of a question nothing has settled — but not ahead of the
+        two orientation pages, which are always `open`."""
+        markup = ui.register('s', [
+            {'id': 'emotions', 'name': 'The emotions', 'verdict': ui.NO,
+             'note': '', 'order': 5},
+            {'id': 'corpus', 'name': 'What was said', 'verdict': ui.OPEN,
+             'note': '', 'order': 0},
+            {'id': 'participation', 'name': 'Who spoke to whom',
+             'verdict': ui.OPEN, 'note': '', 'order': 1},
+        ])
+        self.assertLess(markup.index('What was said'),
+                        markup.index('The emotions'))
+        self.assertLess(markup.index('Who spoke to whom'),
+                        markup.index('The emotions'))
+
+    def test_a_yes_still_leads(self):
+        """The register's whole point survives the reordering: a definite
+        answer still outranks an open question."""
+        markup = ui.register('s', [
+            {'id': 'corpus', 'name': 'What was said', 'verdict': ui.OPEN,
+             'note': '', 'order': 0},
+            {'id': 'compare', 'name': 'Which representation to trust',
+             'verdict': ui.YES, 'note': '', 'order': 2},
+        ])
+        self.assertLess(markup.index('Which representation to trust'),
+                        markup.index('What was said'))
+
+    def test_the_register_offers_a_glossary_of_method_names(self):
+        """Nothing on any page ever says "bag of words" or "RELATIO" in so
+        many words — the titles are plain-English questions by design — so a
+        reader who already knows the method's name has nowhere to search for
+        it. This is the bridge, always present regardless of what is passed."""
+        markup = ui.register('bare-study', [])
+        for term in ('Bag of words', 'RELATIO', 'NRC', 'TopicGPT', 'Rubric'):
+            self.assertIn(term, markup)
+        self.assertIn('/experiment/bare-study/findings/words', markup)
+        self.assertIn('/experiment/bare-study/report.html', markup)
+
+    def test_the_glossary_still_renders_without_a_slug(self):
+        """Single-workspace mode has no experiment slug to link through."""
+        markup = ui.register('', [])
+        self.assertIn('Bag of words', markup)
+        self.assertNotIn('href="/experiment//', markup)
+
+    def test_the_shell_links_to_the_published_guide(self):
+        """The illustrated walkthrough existed only as a file nobody inside
+        the running app was ever pointed at."""
+        page = ui.shell('t', '<p>x</p>')
+        self.assertIn('nicomil.github.io/chatlens/guide', page)
 
 
 def _write_csv(path, rows):

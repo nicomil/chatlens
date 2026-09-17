@@ -25,8 +25,24 @@ e la correzione suggerita. La sezione finale è un piano ordinato per priorità.
 > tutte le dipendenze dichiarate e fallire comunque alla prima chiamata a
 > pagamento). Chiusi anche tutti i punti di
 > sicurezza affrontabili senza cambiare architettura — S1, S3, S4, S6, S9 —
-> tutta la sezione interfaccia (U1–U10) e i miglioramenti M4, M5a, M5b, M5c,
-> M6, M7, M9, M10.
+> quasi tutta la sezione interfaccia — U1, U2, U3, U6, U7 (mitigato, non
+> risolto: vedi correzione sotto), U8, U9, U10 — e i miglioramenti M4, M5a,
+> M5b, M5c, M6, M7, M9, M10.
+>
+> **Correzione del 17 settembre**, dopo una nuova verifica sul codice invece
+> che sulla memoria di quanto fatto: **U4 e U5 non erano affatto chiuse**.
+> Nessuna delle sei voci in `views_findings.BODIES` si chiama `rubric` o
+> `topics`; i risultati di quelle due fasi restano solo nel report statico
+> (`core/report.py`), mai nel registro del dashboard. Anche U7 era sovrastimata:
+> l'export ha guadagnato la sezione "what was analysed" (coverage, trattamenti,
+> note), ma rubric/topics restano assenti dall'export e Words/Compare/Emotions
+> restano assenti dal report — lo split fra i due documenti non è stato
+> ricomposto, solo attenuato. Il piano
+> `reviews/2026-09-17-piano-ux-orientamento.md` affronta questi due punti più
+> un problema nuovo trovato navigando davvero l'interfaccia: il registro si
+> riordina da solo un istante dopo il caricamento, e nessun titolo di pagina
+> contiene mai il nome tecnico del metodo che applica (mai "bag of words",
+> mai "RELATIO", mai "NRC" in nessun H1).
 >
 > B8 e B9 sono stati implementati nella forma decisa dallo sperimentatore:
 > pipeline dentro ogni fold di `GroupKFold`, e modelli annidati con differenza
